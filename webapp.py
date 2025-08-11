@@ -9,7 +9,7 @@ from src.api.user import router as user_router
 from src.api.admin import router as admin_router
 from src.database.checkpointer import get_checkpointer_ctx
 from src.graphs.main_graph import create_main_graph
-from src.graphs.travel.travel_graph import get_graph_instance_count
+# Unified single marketing graph architecture; travel graph count no longer relevant.
 
 AGENTS_DESCRIPTION_PATH = os.path.join(
     os.path.dirname(os.path.abspath(__file__)),
@@ -69,10 +69,7 @@ async def health_check():
 
 
 
-@debug_router.get("/debug/graph_count")
-async def graph_count():
-    """Return the number of times the graph has been created (singleton debug)."""
-    return {"graph_instance_count": get_graph_instance_count()}
+# Deprecated debug endpoint removed (multi-subgraph architecture retired)
 
 
 app.include_router(debug_router)

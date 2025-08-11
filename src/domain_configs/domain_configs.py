@@ -57,3 +57,25 @@ WOLT_FOOD = {
     "embedding_model": "models/text-embedding-004",
     "output_dimensionality_query": 512
 }
+
+# Marketing domain configuration for unified 'chatbot' graph
+MARKETING_DOMAIN = {
+    "domain_context": "marketing, digital marketing, branding, SEO, content strategy, social media, campaigns, customer engagement, lead generation, email marketing, analytics",
+    "domain_instructions": (
+        "Provide practical, ethical marketing guidance focused on strategy, messaging, channel selection, and performance improvement. "
+        "Do NOT fabricate performance data. If asked about metrics without context, request clarification. "
+        "When discussing SEO, emphasize value-driven content and user intent. Avoid black-hat tactics. "
+        "For campaign ideas, tailor suggestions to the provided industry and audience."
+    ),
+    "domain_examples": [
+        "How can we increase organic traffic for a SaaS product?",
+        "Give me 5 email subject line ideas for a product launch",
+        "What KPIs should we track for a B2B lead generation campaign?",
+        "How to improve landing page conversion rate?",
+    ],
+    "regulatory_requirements": "GDPR (if handling user data), advertising platform policies, local privacy regulations",
+    "collection_name": "marketing_store",
+    "namespace": "marketing_demo",
+    "embedding_model": "models/text-embedding-004",
+    "output_dimensionality_query": 768,
+}
