@@ -1,0 +1,104 @@
+.venv/
+__pycache__/
+travel2.backup.sqlite travel2.sqlite
+.mypy_cache/
+.env
+
+# Large database files
+*.sqlite
+*.db
+tests/*.sqlite
+tests/*.db
+
+# Logs
+*.log
+logs/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporary files
+tmp/
+temp/
+
+# Model files
+*.model
+*.pkl
+*.joblib
+
+# Google credentials
+text-to-speech.json
+
+
+# Backup files
+*.backup
+*.bak
+docs
+docs/
+docs/*
+demo
+demo/
+
+# Client applications and test projects
+web-client
+web-client/.next
+web-client/node_modules
+
+# Node.js dependencies
+node_modules/
+*.node
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+.pnpm-debug.log*
+
+# Client build artifacts
+dist/
+build/
+.next/
+.nuxt/
+.cache/
+.parcel-cache/
+.vite/
+
+# Client environment files
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Client package lock files
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# Client runtime files
+.vercel/
+.netlify/
+
+# Client testing
+coverage/
+.nyc_output/
+.jest/
+
+# Client TypeScript
+*.tsbuildinfo
+.tscache/
+
+# Client specific ignores
+*.tgz
+*.tar.gz
+.eslintcache
+.stylelintcache
+
+# Scripts cho client
+start-client.sh
+start-client.bat

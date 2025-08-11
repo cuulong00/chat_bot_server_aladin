@@ -1,0 +1,70 @@
+services:
+  chatbot:
+    build: .
+    ports:
+      - "2024:2024"
+    environment:
+      # Copy from your .env file - IMPORTANT: Use secure values in production
+      - TAVILY_API_KEY=${TAVILY_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - GROQ_API_KEY=${GROQ_API_KEY}
+      - SERPAPI_API_KEY=${SERPAPI_API_KEY}
+      - HF_TOKEN=${HF_TOKEN}
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_SERVICE_KEY=${SUPABASE_SERVICE_KEY}
+      - POSTGRES_HOST=${POSTGRES_HOST}
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - DATABASE_CONNECTION=${DATABASE_CONNECTION}
+      - POSTGRES_URI_CUSTOM=${POSTGRES_URI_CUSTOM}
+      - QDRANT_HOST=${QDRANT_HOST}
+      - QDRANT_PORT=${QDRANT_PORT}
+      - EMBEDDING_MODEL=${EMBEDDING_MODEL}
+      - POSTGRES_URI=${POSTGRES_URI}
+      - DB_URI=${DB_URI}
+      - DB_HOST=${DB_HOST}
+      - DB_PORT=${DB_PORT}
+      - DB_NAME=${DB_NAME}
+      - DB_USER=${DB_USER}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - MARIADB_HOST=${MARIADB_HOST}
+      - MARIADB_PORT=${MARIADB_PORT}
+      - MARIADB_DATABASE=${MARIADB_DATABASE}
+      - MARIADB_USER=${MARIADB_USER}
+      - MARIADB_PASSWORD=${MARIADB_PASSWORD}
+      - GOOGLE_SEARCH=${GOOGLE_SEARCH}
+      - GOOGLE_APPLICATION_CREDENTIALS=${GOOGLE_APPLICATION_CREDENTIALS}
+      - FILE_ID=${FILE_ID}
+      - SELECTED_SHEET=${SELECTED_SHEET}
+      - VIDEO_DIRECTORY=${VIDEO_DIRECTORY}
+      - WHISPER_URL_STT=${WHISPER_URL_STT}
+      - CREATE_SSML_URL_STT=${CREATE_SSML_URL_STT}
+      - DURATION=${DURATION}
+      - LANGUAGE_CODE=${LANGUAGE_CODE}
+      - VOICE_NAME=${VOICE_NAME}
+      - ENGLISH_RATE=${ENGLISH_RATE}
+      - VIETNAMESE_MIN_RATE=${VIETNAMESE_MIN_RATE}
+      - GENDER_STR=${GENDER_STR}
+      - UPLOAD_TO_YOUTUBE=${UPLOAD_TO_YOUTUBE}
+      - WHISPER_MODEL=${WHISPER_MODEL}
+      - THREAD_API_BASE_URL=${THREAD_API_BASE_URL}
+      - LANGSMITH_API_KEY=${LANGSMITH_API_KEY}
+      - LANGSMITH_API_KEY1=${LANGSMITH_API_KEY1}
+      - LANGSMITH_PROJECT=${LANGSMITH_PROJECT}
+    volumes:
+      - ./text-to-speech.json:/app/text-to-speech.json:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:2024/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - chatbot-network
+
+networks:
+  chatbot-network:
+    driver: bridge

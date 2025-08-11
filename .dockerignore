@@ -1,0 +1,84 @@
+# Docker deployment files
+Dockerfile
+docker-compose.yml
+.env
+.env.docker
+.env.production
+
+# Deployment scripts
+deploy.sh
+DEPLOYMENT.md
+
+# Local development
+.env.local
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+pip-log.txt
+pip-delete-this-directory.txt
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# Coverage directory used by tools like istanbul
+coverage/
+
+# nyc test coverage
+.nyc_output
+
+# Dependency directories
+node_modules/
+
+# Optional npm cache directory
+.npm
+
+# Optional eslint cache
+.eslintcache
+
+# Backup files
+*.backup
+*.bak
+
+# Temporary files
+tmp/
+temp/
+
+# Google credentials (sensitive)
+text-to-speech.json
+*-credentials.json
+*-service-account.json
+
+# Database
+*.db
+*.sqlite
+
+# Model files
+*.model
+*.pkl
+*.joblib
