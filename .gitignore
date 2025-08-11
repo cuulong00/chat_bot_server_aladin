@@ -102,3 +102,5 @@ coverage/
 # Scripts cho client
 start-client.sh
 start-client.bat
+.env
+.evn.*
