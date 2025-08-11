@@ -3,6 +3,8 @@ __pycache__/
 travel2.backup.sqlite travel2.sqlite
 .mypy_cache/
 .env
+.env.production
+leaked_env_backup_do_not_commit.txt
 
 # Large database files
 *.sqlite
@@ -102,5 +104,7 @@ coverage/
 # Scripts cho client
 start-client.sh
 start-client.bat
+# Duplicate patterns cleanup & typo fix
+# (keep single .env above). Also ignore any mistakenly typed .env variants
 .env
-.evn.*
+.env.*
