@@ -6,6 +6,7 @@ travel2.backup.sqlite travel2.sqlite
 .env.production
 leaked_env_backup_do_not_commit.txt
 .env.example
+.env.docker
 
 # Large database files
 *.sqlite
