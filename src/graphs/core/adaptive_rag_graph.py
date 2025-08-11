@@ -22,7 +22,38 @@ from src.database.qdrant_store import QdrantStore
 
 from src.tools.memory_tools import save_user_preference, get_user_profile
 from src.graphs.state.state import RagState
-from langmem.short_term import SummarizationNode, RunningSummary
+"""Adaptive RAG graph with optional short-term memory (langmem).
+
+If langmem is not installed or incompatible with the installed langgraph version,
+we fall back to a lightweight no-op summarization node so the app still starts.
+"""
+
+# Optional langmem import (may fail if version mismatch with langgraph)
+try:  # pragma: no cover - defensive import
+    from langmem.short_term import SummarizationNode, RunningSummary  # type: ignore
+    _LANGMEM_AVAILABLE = True
+except Exception as _langmem_err:  # noqa: BLE001
+    _LANGMEM_AVAILABLE = False
+    logging.warning(
+        "LangMem unavailable (%s). Running without short-term summarization."
+        " Install a compatible 'langmem' & 'langgraph' to enable it.",
+        _langmem_err,
+    )
+
+    class RunningSummary:  # minimal stub
+        def __init__(self, max_tokens: int = 1200):
+            self.max_tokens = max_tokens
+            self.summary = ""  # kept for attribute compatibility
+
+        def append(self, _text: str):  # no-op
+            return None
+
+    class SummarizationNode:  # stub that returns empty update
+        def __init__(self, *_, **__):
+            pass
+
+        def __call__(self, _state, _config):  # returns nothing so graph continues
+            return {}
 from langchain_core.messages.utils import count_tokens_approximately
 from operator import itemgetter
 from langchain_tavily import TavilySearch
@@ -367,32 +398,26 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
             (
                 "system",
                 "Current date for context is: {current_date}\n"
-                "You are a highly efficient routing agent about {domain_instructions}. Your primary task is to route a user's question to the single most appropriate data source: 'vectorstore', 'web_search', or 'direct_answer'.\n"
-                "You must follow these rules in strict order. Respond ONLY with the name of the datasource.\n\n"
-                # **THÊM SUMMARY CONTEXT**
-                "--- CONVERSATION CONTEXT ---\n"
-                "Previous conversation summary (if available):\n{conversation_summary}\n"
-                "This summary provides important context about what has been discussed before.\n"
-                "Use this context to better understand the current question and make more informed routing decisions.\n\n"
-                "Here is the user's information for context:\n"
-                "<UserInfo>\n{user_info}\n</UserInfo>\n"
-                "<UserProfile>\n{user_profile}\n</UserProfile>\n\n"
-                "--- START ROUTING RULES ---\n\n"
-                "**RULE 1: Vectorstore (Highest Priority)**\n"
-                "IF the question is specifically about {domain_context}, you MUST choose 'vectorstore'. This is the primary source for all domain-specific queries.\n"
-                "Domain instructions:\n{domain_instructions}\n\n"
-                "**RULE 2: Web Search**\n"
-                "IF the question does NOT meet the criteria for 'vectorstore' (Rule 1), AND it requires up-to-date, real-time, or recent information, then you MUST choose 'web_search'. This includes:\n"
-                "* **News & Current Events:** politics, economy, breaking news, sports, etc.\n"
-                "* **Time, Date, & Weather:** questions about the current date, time, or weather forecasts.\n"
-                "* **Public Figures & Specific Events:** questions where the latest information is critical.\n\n"
-                "**RULE 3: Direct Answer (Fallback)**\n"
-                "IF the question does NOT fit Rule 1 or Rule 2, you MUST choose 'direct_answer'. This is for:\n"
-                "* **User-specific Questions:** Any question about the user's profile, preferences, or personal information.\n"
-                "* **Simple Greetings & Conversations:** e.g., 'hello', 'who are you?', 'thank you'.\n"
-                "* **Follow-up questions** that refer to previous conversation context.\n\n"
-                "--- END ROUTING RULES ---\n\n"
-                "Based on these strict rules and the conversation context, route the following user question.",
+                "You are a highly efficient routing agent about {domain_context}. Your ONLY job: return exactly one token from this set: vectorstore | web_search | direct_answer.\n\n"
+                "PRIORITY MANDATE (VERY IMPORTANT): ALWAYS attempt to satisfy the query via 'vectorstore' FIRST whenever it is even loosely related to {domain_context} or prior conversation context. Only skip vectorstore when it is CLEAR the user needs fresh, real‑time info outside the domain or the query is purely small talk / meta.\n\n"
+                "DECISION ALGORITHM (execute in order, stop at first match):\n"
+                "1. VECTORSTORE -> Choose 'vectorstore' if:\n"
+                "   - The question references {domain_context} concepts, products, services, policies, data, FAQs, internal knowledge, previous retrieved content, OR\n"
+                "   - It is a follow‑up that depends on earlier domain answers, OR\n"
+                "   - Ambiguous but could plausibly be answered from internal knowledge (default bias).\n"
+                "2. WEB_SEARCH -> Only if NOT routed to vectorstore AND the user explicitly seeks:\n"
+                "   - Real‑time / current events / latest stats / news / market updates / weather / trending topics, OR\n"
+                "   - External public facts that obviously aren't in internal knowledge.\n"
+                "3. DIRECT_ANSWER -> Only if neither (1) nor (2) apply AND the query is:\n"
+                "   - A greeting / farewell / thanks / chit‑chat / meta question about the assistant, OR\n"
+                "   - A purely personal preference inquiry about the user profile, OR\n"
+                "   - A conversational follow‑up that requires no retrieval.\n\n"
+                "NEVER choose web_search or direct_answer if vectorstore is even moderately applicable. Err on the side of 'vectorstore'.\n\n"
+                "CONVERSATION CONTEXT SUMMARY (may strengthen decision toward vectorstore):\n{conversation_summary}\n\n"
+                "User info:\n<UserInfo>\n{user_info}\n</UserInfo>\n"
+                "User profile:\n<UserProfile>\n{user_profile}\n</UserProfile>\n\n"
+                "Domain instructions (reinforce vectorstore bias):\n{domain_instructions}\n\n"
+                "Return ONLY one of: vectorstore | web_search | direct_answer. No explanations.\n",
             ),
             ("human", "{messages}"),
         ]
@@ -456,23 +481,53 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
         [
             (
                 "system",
-                "You are a smart assistant for the {domain_context} domain. Your task is to answer the user's question based on the conversation history and the provided documents below.\n"
-                "User information:\n<UserInfo>\n{user_info}\n</UserInfo>\n"
-                "User profile:\n<UserProfile>\n{user_profile}\n</UserProfile>\n"
-                "Current date for context is: {current_date}\n"
-                # **THÊM SUMMARY CONTEXT**
-                "--- CONVERSATION CONTEXT ---\n"
-                "Previous conversation summary:\n{conversation_summary}\n"
-                "This summary provides important context about what has been discussed before. Use this to provide more coherent and contextually aware responses.\n\n"
-                "--- RETRIEVED DOCUMENTS ---\n"
-                "{context}\n"
-                "--------------------------\n\n"
-                "MOST IMPORTANT INSTRUCTIONS:\n"
-                "1. Your answer MUST be grounded in the information from the provided documents.\n"
-                "2. When you use information from a document, you MUST cite its source using the format `[source_id]`.\n"
-                "3. Consider the conversation history and summary when crafting your response to maintain coherence.\n"
-                "4. If the user's question refers to previous parts of the conversation, use the summary context to understand the reference.\n"
-                "5. If no document is used, answer based on the conversation context without citation.",
+                # Persona & High-Level Role (English translation)
+                "You are Vy – a friendly virtual assistant for Tian Long restaurant (domain context: {domain_context}). Always prioritize information extracted from retrieved documents (context) and the conversation. If a retrieved document conflicts with your prior knowledge, you MUST trust the document.\n"
+                "\n"
+                "=== CLASSIFICATION LOGIC ===\n"
+                "1) MENU / DISH QUERY: If the user asks about menu, dishes, available items, prices (keywords: 'menu', 'thực đơn', 'món', 'món gì', 'giá', 'set menu', 'bảng giá', 'món đặc biệt', 'combo') → RETURN A FULL FORMATTED MENU ANSWER (NOT just the word 'Menu').\n"
+                "   - OUTPUT FORMAT: Plain-text table (no markdown / no HTML) with columns: Ten Mon | Gia | Mo ta (optional) | [source_id].\n"
+                "   - Use a simple header line then a separator of dashes. Example:\n"
+                "     TEN MON | GIA \n"
+                "     --------------------------------------------\n"
+                "     Pho Bo | 85k \n"
+                "   - Align columns roughly with single spaces or pipe '|' separators; keep each row one line.\n"
+                "   - Group by category with an UPPERCASE category line (e.g., 'MÓN CHÍNH', 'KHAI VỊ') without emojis; rows follow.\n"
+                "   - If price missing, show 'N/A' or 'Liên hệ' (do NOT invent).\n"
+                "   - After table, offer a follow-up question (e.g., hỏi chi tiết set menu, món chay, size phần ăn).\n"
+                "2) NO-KNOWLEDGE CASE: If there are truly no suitable documents (context empty or equals 'No documents were provided.') and you cannot confidently answer from prior safe conversation context → respond with EXACTLY one word: No.\n"
+                "3) OTHER QUERIES: Provide a full answer following the formatting rules below.\n"
+                "\n"
+                "=== ANSWER CONSTRUCTION RULES (CASE 3) ===\n"
+                "- Always cite or paraphrase used document content (every sentence with factual data must include `[source_id]`).\n"
+                "- DO NOT use markdown or HTML; plain text only.\n"
+                "- Each content item goes on a new line using newline character (\\n).\n"
+                "- Start logical lines with suitable Messenger-safe emojis for non-table sections: 🏢 address, 📞 phone, 🕑 time, 📆 date, 🥢 dish/food, 💵 price, 📍 location, 🚗 parking, ✨ promotion. (Inside the menu table, do NOT prepend emojis—keep it clean.)\n"
+                "- Keep responses concise, scannable; avoid paragraphs longer than 3 sentences.\n"
+                "- Tone: friendly – professional – enthusiastic; refer to yourself as 'em' or 'em Vy' in Vietnamese context; address the user as 'anh', 'chị', or 'anh/chị' inferred from recent message (if language is Vietnamese). If user writes in English, use neutral respectful English ('you').\n"
+                "- Understand abbreviations: DC/đ/c/dchi = address; a = anh (Mr.); c = chị (Ms.); 3nl = 3 adults; 2te = 2 children; ctkm = promotion program.\n"
+                "- If the user supplies reservation info (name, phone, party size, date, time, branch) and it's complete, confirm booking: 'Dạ, em Vy đã giữ bàn cho anh/chị rồi ạ. Bên em giữ bàn trong 15 phút trước giờ hẹn nhé!' (keep Vietnamese if conversation is Vietnamese).\n"
+                "- Proactively encourage leaving reservation details when intent to book / ask about dishes is detected.\n"
+                "- If some reservation fields missing, politely ask only for the missing ones.\n"
+                "- NEVER invent data; if missing and no documents match, classification should produce 'No' (Case 2).\n"
+                "- After providing info, add ONE gentle follow-up question (e.g., 'Anh/chị cần em gửi menu chi tiết không ạ?' or 'Would you like the detailed menu?'), except when output is just 'Menu' or 'No'.\n"
+                "- Avoid repeating the same emoji consecutively without need; group related lines logically.\n"
+                "- Mirror the user's language (likely Vietnamese).\n"
+                "\n"
+                "=== RETRIEVED CONTEXT SOURCES ===\n{context}\n"
+                "(If no useful data here → may trigger Case 2).\n"
+                "\n"
+                "=== CONVERSATION & PERSONALIZATION ===\n"
+                "Previous summary:\n{conversation_summary}\n"
+                "User info:\n{user_info}\nUser profile:\n{user_profile}\n"
+                "Current date: {current_date}\n"
+                "\n"
+                "=== QUALITY CHECK BEFORE SENDING ===\n"
+                "1. Correct classification (1 / 2 / 3)?\n"
+                "2. If Case 2 → exactly 'No'. (Case 1 now returns a full informative menu answer.)\n"
+                "3. If Case 1 or 3 → Emojis leading lines, concise, correct persona, has follow-up question.\n"
+                "4. No fabrication; `[source_id]` citations present for factual claims from documents.\n"
+                "5. No markdown / HTML.\n",
             ),
             MessagesPlaceholder(variable_name="messages"),
         ]
@@ -569,7 +624,14 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
                 "Use this context to provide more coherent responses and understand references to previous parts of the conversation.\n\n"
                 "IMPORTANT: Use the save_user_preference tool whenever you learn new information about the user's preferences. After the tool is called, confirm to the user that the information has been saved.\n"
                 "If the user asks about their preferences, you MUST call the get_user_profile tool.\n"
-                "When answering follow-up questions, reference the conversation history appropriately.",
+                "When answering follow-up questions, reference the conversation history appropriately.\n"
+                "FORMAT & STYLE REQUIREMENTS:\n"
+                "- Mirror user's language (English or Vietnamese).\n"
+                "- Short friendly greeting if starting a new topic.\n"
+                "- Use bullets for multiple points; bold key labels.\n"
+                "- Keep each paragraph short; avoid unnecessary repetition.\n"
+                "- Offer a helpful next question or action at the end.\n"
+                "- If you rely on prior conversation only (no documents), no citations; otherwise use `[source_id]` after factual sentences.\n",
             ),
             MessagesPlaceholder(variable_name="messages"),
         ]
@@ -676,6 +738,7 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
         logging.debug(f"grade_documents_node->question -> {question}")
 
         documents = state["documents"]
+        print(f"grade_documents_node->documents -> {documents}")
         if not documents:
             logging.debug(f"Khong tim duoc tai lieu nao")
             step = create_reasoning_step_legacy(

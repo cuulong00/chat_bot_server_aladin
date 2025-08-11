@@ -2,7 +2,28 @@ from typing import Annotated, Literal, Optional
 from langgraph.graph.message import AnyMessage, add_messages
 from langchain_core.messages import BaseMessage, ToolMessage, HumanMessage, AIMessage
 from typing_extensions import TypedDict
-from langmem.short_term import SummarizationNode, RunningSummary
+"""State definitions with optional langmem dependency.
+
+If langmem is not installed or incompatible with current langgraph version,
+we provide a lightweight RunningSummary stub so the rest of the graph can run.
+"""
+try:  # pragma: no cover
+    from langmem.short_term import RunningSummary  # type: ignore
+    _LANGMEM_AVAILABLE = True
+except Exception as _lm_err:  # noqa: BLE001
+    _LANGMEM_AVAILABLE = False
+    import logging
+    logging.warning(
+        "LangMem unavailable in state module (%s). Using stub RunningSummary.", _lm_err
+    )
+
+    class RunningSummary:  # type: ignore
+        def __init__(self, max_tokens: int = 1200):
+            self.max_tokens = max_tokens
+            self.summary = ""  # compatibility attribute
+
+        def append(self, _text: str):  # no-op
+            return None
 from operator import add
 from dataclasses import dataclass
 from typing import TypedDict, Annotated, List

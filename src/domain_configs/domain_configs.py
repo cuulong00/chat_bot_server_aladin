@@ -60,22 +60,34 @@ WOLT_FOOD = {
 
 # Marketing domain configuration for unified 'chatbot' graph
 MARKETING_DOMAIN = {
-    "domain_context": "marketing, digital marketing, branding, SEO, content strategy, social media, campaigns, customer engagement, lead generation, email marketing, analytics",
+    # Re-purposed for Tian Long restaurant virtual assistant (Vy)
+    "domain_context": (
+        "Tian Long restaurant, Vietnamese cuisine, menu, dishes, dish availability, pricing, set menu, promotions, branches, "
+        "locations, reservation, booking, table holding policy, opening hours, contact information, seating capacity, dietary notes, "
+        "parking, customer service"
+    ),
     "domain_instructions": (
-        "Provide practical, ethical marketing guidance focused on strategy, messaging, channel selection, and performance improvement. "
-        "Do NOT fabricate performance data. If asked about metrics without context, request clarification. "
-        "When discussing SEO, emphasize value-driven content and user intent. Avoid black-hat tactics. "
-        "For campaign ideas, tailor suggestions to the provided industry and audience."
+        "Act as a customer support & reservation assistant (name: Vy). Always answer using retrieved restaurant data when available. "
+        "If data is missing, ask concise clarifying questions; do NOT invent menu items, prices, promotions, or policies. "
+        "Prioritize: 1) Menu / dishes & prices; 2) Reservation details (name, phone, party size adults/children, date, time, branch); "
+        "3) Branch information (address, hours, contact); 4) Current promotions if not already shared. "
+        "If user intent implies booking but info incomplete, politely collect missing fields. "
+        "Keep answers concise, emoji-friendly (Messenger safe), and in the user's language (mostly Vietnamese). "
+        "Confirm table hold (15 minutes before scheduled time) only after all reservation fields are present."
     ),
     "domain_examples": [
-        "How can we increase organic traffic for a SaaS product?",
-        "Give me 5 email subject line ideas for a product launch",
-        "What KPIs should we track for a B2B lead generation campaign?",
-        "How to improve landing page conversion rate?",
+        "Menu hôm nay có những món gì?",
+        "Giá set menu cho 4 người là bao nhiêu?",
+        "Anh đặt bàn tối nay lúc 19h cho 3 người lớn 2 trẻ em được không?",
+        "Nhà hàng có cơ sở nào ở Cầu Giấy không?",
+        "Có khuyến mãi gì cuối tuần này không?",
+        "Cho xin số hotline cơ sở Times City",
+        "Em giữ bàn giúp anh 6 người lúc 12h trưa mai nhé",
     ],
-    "regulatory_requirements": "GDPR (if handling user data), advertising platform policies, local privacy regulations",
-    "collection_name": "marketing_store",
-    "namespace": "marketing_demo",
+    "regulatory_requirements": "Food safety compliance, local restaurant service & consumer protection regulations",
+    # Keep existing collection/namespace unless a new restaurant collection is ingested; rename later if needed.
+    "collection_name": "aladin_maketing",
+    "namespace": "maketing",
     "embedding_model": "models/text-embedding-004",
     "output_dimensionality_query": 768,
 }

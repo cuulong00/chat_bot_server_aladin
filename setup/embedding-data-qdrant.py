@@ -10,7 +10,6 @@ Improvements in this patch:
 """
 
 from qdrant_client.http.models import VectorParams, Distance
-from __future__ import annotations  # future compatibility
 
 import sys
 from pathlib import Path
@@ -40,6 +39,7 @@ from langchain_community.document_loaders import (
     TextLoader,
     Docx2txtLoader,
 )
+from langchain_core.documents import Document
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 try:
@@ -64,11 +64,44 @@ EMBEDDING_MODELS: Dict[str, Callable[[], Any]] = {
     # "nomic": lambda: NomicEmbeddings(...),
 }
 
-# Loader registry for extensibility
+# --- Robust text loader with encoding fallbacks ---
+def _safe_load_text(file_path: str) -> List[Document]:
+    """Load a text file trying multiple encodings to avoid UnicodeDecodeError.
+
+    Strategy:
+    1. Optional explicit encoding via env TEXT_FILE_ENCODING (comma separated list)
+    2. Default candidates: utf-8, utf-8-sig, cp1252, latin-1
+    3. On final failure: raise RuntimeError summarizing attempts
+
+    latin-1 is *lossy* but guarantees a decode; we place it last.
+    """
+    candidates_env = os.getenv("TEXT_FILE_ENCODING")
+    if candidates_env:
+        candidates = [c.strip() for c in candidates_env.split(",") if c.strip()]
+    else:
+        candidates = ["utf-8", "utf-8-sig", "cp1252", "latin-1"]
+    errors_mode = os.getenv("TEXT_FILE_ENCODING_ERRORS", "strict")
+    failures: List[str] = []
+    for enc in candidates:
+        try:
+            with open(file_path, "r", encoding=enc, errors=errors_mode) as rf:
+                text = rf.read()
+            # Attach chosen encoding into metadata for traceability
+            return [Document(page_content=text, metadata={"source": file_path, "encoding": enc})]
+        except Exception as e:  # noqa: BLE001 keep broad to collect all attempts
+            failures.append(f"{enc}: {e}")
+            continue
+    raise RuntimeError(
+        f"Failed to decode text file '{file_path}' with encodings: {candidates}.\nAttempts: "
+        + " | ".join(failures)
+    )
+
+
+# Loader registry for extensibility (order is not relevant except .txt uses robust loader)
 LOADER_REGISTRY: Dict[str, Callable[[str], Any]] = {
     ".pdf": lambda f: PyPDFLoader(f).load(),
     ".docx": lambda f: Docx2txtLoader(f).load(),
-    ".txt": lambda f: TextLoader(f).load(),
+    ".txt": _safe_load_text,
 }
 
 
@@ -342,7 +375,7 @@ if __name__ == "__main__":
     args = parse_args()
 
     # Default file if none provided
-    default_file = PROJECT_ROOT / "data" / "maketing_data.md"
+    default_file = PROJECT_ROOT / "data" / "maketing_data.txt"
     resolved_files: List[str] = []
     if args.files:
         for f in args.files:
