@@ -1,5 +1,25 @@
-from qdrant_client.http.models import VectorParams, Distance
+"""Embedding ingestion pipeline for Qdrant.
 
+Improvements in this patch:
+ - Robust project root resolution so `src` module can be imported even when script executed from any cwd
+ - Path handling via pathlib (removes Windows backslash escape issues & SyntaxWarning)
+ - CLI arguments (override files, urls, collection, model, namespace, chunk params)
+ - Safety checks for required environment variables (e.g. GOOGLE_API_KEY when using Gemini)
+ - Optional automatic USER_AGENT default to reduce warnings
+ - Graceful handling when input file missing
+"""
+
+from qdrant_client.http.models import VectorParams, Distance
+from __future__ import annotations  # future compatibility
+
+import sys
+from pathlib import Path
+
+# --- Project root & import path bootstrap ---
+THIS_FILE = Path(__file__).resolve()
+PROJECT_ROOT = THIS_FILE.parent.parent  # repo root
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 def get_vector_size(model_key: str) -> int:
     if model_key == "gemini-embedding-exp-03-07":
@@ -10,9 +30,10 @@ def get_vector_size(model_key: str) -> int:
 
 import os
 from dotenv import load_dotenv
-import google.generativeai as genai
 import logging
 from typing import List, Optional, Dict, Any, Callable
+import argparse
+import google.generativeai as genai
 from langchain_community.document_loaders import (
     WebBaseLoader,
     PyPDFLoader,
@@ -21,7 +42,13 @@ from langchain_community.document_loaders import (
 )
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-from src.database.qdrant_store import QdrantStore
+try:
+    from src.database.qdrant_store import QdrantStore
+except ModuleNotFoundError as e:  # Fallback informative error
+    raise ModuleNotFoundError(
+        "Cannot import 'src'. Ensure you run inside project root or PYTHONPATH includes it. "
+        f"PROJECT_ROOT attempted: {PROJECT_ROOT}"
+    ) from e
 
 logger = logging.getLogger("embedding_pipeline")
 
@@ -281,34 +308,66 @@ def run_embedding_pipeline(
     print(f"[run_embedding_pipeline] Finished embedding and storing.")
 
 
-if __name__ == "__main__":
-    # Example usage: customize as needed
-    files = []
-    urls = [
-        "https://uiic.co.in/sites/default/files/uploads/downloadcenter/Rural%20&%20Social%20-%20Dairy%20Package%20Insurance_3.pdf",
-        "https://uiic.co.in/sites/default/files/uploads/downloadcenter/Overseas%20Mediclaim%20Schengen%20Policy.pdf",
-        "https://uiic.co.in/sites/default/files/uploads/downloadcenter/Loss%20of%20License%20Policy(Individual%20and%20Group).pdf",
-    ]
-    run_embedding_pipeline(
-        files=files,
-        urls=urls,
-        collection_name="insurance_store",
-        domain="insurance",
-        chunk_size=384,
-        chunk_overlap=64,
-        model_name="text-embedding-004",
-        namespace="insurance_demo",
-    )
+def parse_args():
+    parser = argparse.ArgumentParser(description="Embed documents & ingest into Qdrant")
+    parser.add_argument("--files", nargs="*", default=None, help="List of local file paths")
+    parser.add_argument("--urls", nargs="*", default=None, help="List of URLs to load")
+    parser.add_argument("--collection", default="aladin_maketing", help="Qdrant collection name")
+    parser.add_argument("--domain", default="maketing", help="Domain metadata tag")
+    parser.add_argument("--namespace", default="maketing", help="Namespace for storage")
+    parser.add_argument("--model", default="text-embedding-004", help="Embedding model alias")
+    parser.add_argument("--chunk-size", type=int, default=384)
+    parser.add_argument("--chunk-overlap", type=int, default=64)
+    parser.add_argument("--user-id", default=None)
+    parser.add_argument("--department", default=None)
+    parser.add_argument("--no-force-delete", action="store_true", help="(reserved) backward compatible placeholder")
+    return parser.parse_args()
 
-    # run_embedding_pipeline(
-    #     files=files,
-    #     urls=urls,
-    #     collection_name="accounting_store",
-    #     domain="accounting",
-    #     department="finance",
-    #     user_id="user123",
-    #     chunk_size=384,
-    #     chunk_overlap=64,
-    #     model_name="google",
-    #     namespace="accounting_demo"
-    # )
+
+def ensure_user_agent():
+    if not os.getenv("USER_AGENT"):
+        # Set a benign default to reduce warning noise; user can override.
+        os.environ["USER_AGENT"] = "embedding-pipeline/1.0 (+https://example.local)"
+
+
+def validate_env_for_model(model_alias: str):
+    if model_alias.lower() in {"gemini-embedding-exp-03-07", "google", "text-embedding-004", "google-text-embedding-004", "models/text-embedding-004"}:
+        if not os.getenv("GOOGLE_API_KEY"):
+            print("⚠️  GOOGLE_API_KEY not set. Gemini embedding calls may fail.")
+
+
+if __name__ == "__main__":
+    load_dotenv()
+    ensure_user_agent()
+    args = parse_args()
+
+    # Default file if none provided
+    default_file = PROJECT_ROOT / "data" / "maketing_data.md"
+    resolved_files: List[str] = []
+    if args.files:
+        for f in args.files:
+            p = Path(f)
+            if not p.is_file():
+                print(f"⚠️  Skipping missing file: {p}")
+                continue
+            resolved_files.append(str(p))
+    else:
+        if default_file.is_file():
+            resolved_files.append(str(default_file))
+        else:
+            print(f"❌ Default data file not found: {default_file}")
+            sys.exit(1)
+
+    validate_env_for_model(args.model)
+
+    run_embedding_pipeline(
+        files=resolved_files,
+        urls=args.urls or [],
+        collection_name=args.collection,
+        domain=args.domain,
+        chunk_size=args.chunk_size,
+        chunk_overlap=args.chunk_overlap,
+        model_name=args.model,
+        namespace=args.namespace,
+        user_id=args.user_id,
+    )
