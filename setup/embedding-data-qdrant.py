@@ -164,8 +164,8 @@ def embed_and_store(
     qdrant_store: QdrantStore,
     collection_name: Optional[str] = None,
     metadata: Optional[Dict[str, Any]] = None,
-    chunk_size: int = 384,
-    chunk_overlap: int = 64,
+    chunk_size: int = 800,
+    chunk_overlap: int = 200,
     model_name: Optional[str] = None,
     namespace: Optional[str] = None,
 ):
@@ -286,8 +286,8 @@ def run_embedding_pipeline(
     domain: Optional[str] = None,
     department: Optional[str] = None,
     user_id: Optional[str] = None,
-    chunk_size: int = 384,
-    chunk_overlap: int = 64,
+    chunk_size: int = 800,
+    chunk_overlap: int = 200,
     model_name: str = "google",
     namespace: Optional[str] = None,
     force_delete_collection: bool = True,
@@ -346,11 +346,11 @@ def parse_args():
     parser.add_argument("--files", nargs="*", default=None, help="List of local file paths")
     parser.add_argument("--urls", nargs="*", default=None, help="List of URLs to load")
     parser.add_argument("--collection", default="aladin_maketing", help="Qdrant collection name")
-    parser.add_argument("--domain", default="maketing", help="Domain metadata tag")
-    parser.add_argument("--namespace", default="maketing", help="Namespace for storage")
+    parser.add_argument("--domain", default="restaurant_list", help="Domain metadata tag")
+    parser.add_argument("--namespace", default="restaurant_list", help="Namespace for storage")
     parser.add_argument("--model", default="text-embedding-004", help="Embedding model alias")
-    parser.add_argument("--chunk-size", type=int, default=384)
-    parser.add_argument("--chunk-overlap", type=int, default=64)
+    parser.add_argument("--chunk-size", type=int, default=800)
+    parser.add_argument("--chunk-overlap", type=int, default=200)
     parser.add_argument("--user-id", default=None)
     parser.add_argument("--department", default=None)
     parser.add_argument("--no-force-delete", action="store_true", help="(reserved) backward compatible placeholder")

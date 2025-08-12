@@ -8,17 +8,18 @@ from src.graphs.core.adaptive_rag_graph import (
 )
 from src.database.qdrant_store import QdrantStore
 from src.tools.accounting_tools import accounting_tools  # Reuse generic tools; replace with marketing tools if available
+from src.tools.reservation_tools import reservation_tools  # NEW: Import reservation tools
 from src.database.checkpointer import get_checkpointer
 from src.domain_configs.domain_configs import MARKETING_DOMAIN
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
 # Initialize LLMs (can adjust per availability)
-primary_llm = ChatOpenAI(model="gpt-4.1-mini", streaming=True, temperature=0)
+primary_llm = ChatOpenAI(model="gpt-4o-mini", streaming=True, temperature=1)
 llm_grade_documents = ChatGoogleGenerativeAI(model="gemini-1.5-flash", disable_streaming=True, temperature=0)
 llm_router = ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=0, disable_streaming=True)
-llm_rewrite = ChatOpenAI(model="gpt-4.1-mini", disable_streaming=True, temperature=0)
-llm_generate_direct = ChatOpenAI(model="gpt-4.1-mini", streaming=True, temperature=0)
+llm_rewrite = ChatOpenAI(model="gpt-4o-mini", disable_streaming=True, temperature=1)
+llm_generate_direct = ChatOpenAI(model="gpt-4o-mini", streaming=True, temperature=1)
 llm_hallucination_grader = ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=0, disable_streaming=True)
 llm_summarizer = primary_llm
 llm_contextualize = primary_llm
@@ -28,6 +29,9 @@ retriever = QdrantStore(
     output_dimensionality_query=MARKETING_DOMAIN["output_dimensionality_query"],
     embedding_model=MARKETING_DOMAIN["embedding_model"],
 )
+
+# Combine tools: accounting tools + reservation tools
+domain_tools = accounting_tools + reservation_tools  # NEW: Include reservation tools
 
 # Build uncompiled graph
 uncompiled_graph = create_adaptive_rag_graph(
@@ -40,7 +44,7 @@ uncompiled_graph = create_adaptive_rag_graph(
     llm_summarizer=llm_summarizer,
     llm_contextualize=llm_contextualize,
     retriever=retriever,
-    tools=accounting_tools,  # TODO: replace with dedicated marketing tools when available
+    tools=domain_tools,  # NEW: Use combined tools
     DOMAIN=MARKETING_DOMAIN,
 )
 
