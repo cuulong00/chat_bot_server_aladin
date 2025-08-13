@@ -56,9 +56,9 @@ if [ ! -f .env ]; then
   fi
 fi
 
-# Ensure docker-compose exposes 2025:2025 (container listens on 2024)
-if ! grep -q '"2025:2025"' docker-compose.yml; then
-  warn "Make sure docker-compose.yml maps 2025:2025 under services.chatbot."
+# Ensure docker-compose exposes 2024:2024 (container listens on 2024)
+if ! grep -q '"2024:2024"' docker-compose.yml; then
+  warn "Make sure docker-compose.yml maps 2024:2024 under services.chatbot."
 fi
 
 # Build and run
