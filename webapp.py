@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from src.api.user import router as user_router
 from src.api.admin import router as admin_router
+from src.api.facebook import router as fb_router
 from src.database.checkpointer import get_checkpointer_ctx
 from src.graphs.main_graph import create_main_graph
 # Unified single marketing graph architecture; travel graph count no longer relevant.
@@ -43,6 +44,7 @@ app.add_middleware(
 # Add user_router
 app.include_router(user_router)
 app.include_router(admin_router)
+app.include_router(fb_router)
 
 @app.get("/agents", response_class=JSONResponse, tags=["Agents"])
 async def get_agents():

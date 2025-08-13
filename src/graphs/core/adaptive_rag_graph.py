@@ -1,11 +1,22 @@
 import logging
 import traceback
 import copy
+import time
+import os
+from pathlib import Path
 
 from typing import List, TypedDict, Annotated, Literal
 
 from datetime import datetime
 
+# Import centralized logging configuration
+from src.core.logging_config import (
+    setup_advanced_logging,
+    log_exception_details,
+    get_logger,
+    log_business_event,
+    log_performance_metric
+)
 
 from langchain_core.messages import BaseMessage, ToolMessage, HumanMessage, AIMessage
 from langgraph.graph import StateGraph, END
@@ -53,17 +64,15 @@ except Exception as _langmem_err:  # noqa: BLE001
         def __init__(self, *_, **__):
             pass
 
-        def __call__(self, _state, _config):  # returns nothing so graph continues
+        def __call__(self, state: RagState, config: RunnableConfig):  # returns nothing so graph continues
             return {}
 from langchain_core.messages.utils import count_tokens_approximately
 from operator import itemgetter
 from langchain_tavily import TavilySearch
 from src.nodes.nodes import *
 
-# --- Setup Detailed Logging ---
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
-)
+# Get logger for this module
+logger = get_logger(__name__)
 
 
 # --- State Reset and Management Functions ---
@@ -76,32 +85,47 @@ def get_current_user_question(state: RagState) -> str:
     if not question:
         # Fallback to last human message
         messages = state.get("messages", [])
-        for msg in reversed(messages):
-            if isinstance(msg, HumanMessage):
-                question = extract_text_from_message_content(msg.content)
-                break
-    return question.strip() if question else ""
+        if messages:
+            for msg in reversed(messages):
+                if isinstance(msg, HumanMessage):
+                    question = extract_text_from_message_content(msg.content)
+                    break
+        else:
+            # Nếu không có messages, kiểm tra input
+            input_data = state.get("input", {})
+            if isinstance(input_data, dict) and "messages" in input_data:
+                input_messages = input_data["messages"]
+                for msg in reversed(input_messages):
+                    if isinstance(msg, dict) and msg.get("type") == "human":
+                        question = msg.get("content", "")
+                        break
+    
+    # Fallback cuối cùng
+    if not question:
+        question = "Câu hỏi không rõ ràng"
+        logging.warning("No valid question found in state, using fallback")
+    
+    return question.strip() if question else "Câu hỏi không rõ ràng"
 
 
-def reset_reasoning_steps_for_new_query(state: RagState) -> dict:
+def reset_state_for_new_query(state: RagState) -> dict:
     """
-    Reset reasoning steps for a completely new user query.
-    This prevents accumulation of reasoning steps from previous queries.
+    Reset state for a completely new user query.
+    This ensures clean state for new queries.
     
     Args:
         state: Current RAG state
         
     Returns:
-        dict: State update with reset reasoning_steps
+        dict: State update with reset state
     """
     # Get current user question to compare
     current_question = get_current_user_question(state)
     
-    # Always reset reasoning_steps for new query to prevent accumulation
-    logging.info(f"🧹 Resetting reasoning steps for new query: {current_question[:50]}{'...' if len(current_question) > 50 else ''}")
+    # Reset state for new query to prevent accumulation
+    logging.info(f"🧹 Resetting for new query: {current_question[:50]}{'...' if len(current_question) > 50 else ''}")
     
     return {
-        "reasoning_steps": [],  # Always start fresh
         "question": current_question,  # Ensure question is set in state
     }
 
@@ -155,65 +179,7 @@ def should_summarize_conversation(state: RagState) -> bool:
     return should_summarize
 
 
-# --- Utility Functions for Stream Writer ---
-def emit_reasoning_step(node_name: str, summary: str, status: str = "processing", details: dict = None, context_question: str = ""):
-    """
-    Utility function to emit reasoning steps using LangGraph's custom stream writer.
-    
-    Args:
-        node_name: Name of the node (e.g., 'router', 'retrieve', etc.)
-        summary: Human-readable summary of what the node is doing
-        status: 'processing' or 'completed' 
-        details: Optional dictionary with additional details
-        context_question: User question for context (will be truncated if too long)
-    
-    Returns:
-        bool: True if successfully emitted, False otherwise
-    """
-    try:
-        from langgraph.config import get_stream_writer
-        writer = get_stream_writer()
-        if writer:
-            # Truncate context question for better UX
-            truncated_question = context_question[:50] + '...' if len(context_question) > 50 else context_question
-            
-            writer({
-                "reasoning_step": {
-                    "node": node_name,
-                    "summary": summary,
-                    "status": status,
-                    "details": details or {},
-                    "context_question": truncated_question
-                }
-            })
-            return True
-        else:
-            logging.warning(f"Stream writer not available for node: {node_name}")
-            return False
-    except Exception as e:
-        # Log error but don't break the flow
-        logging.error(f"Stream writer error in {node_name}: {e}")
-        return False
 
-
-def create_reasoning_step_legacy(node_name: str, summary: str, details: dict = None):
-    """
-    Create reasoning step in legacy format for backward compatibility.
-    This is used in the return statements to maintain existing functionality.
-    
-    Args:
-        node_name: Name of the node
-        summary: Summary description  
-        details: Optional details dictionary
-        
-    Returns:
-        dict: Reasoning step in legacy format
-    """
-    return {
-        "node": node_name,
-        "summary": summary,
-        "details": details or {}
-    }
 
 
 def truncate_for_logging(data, max_len=250):
@@ -307,39 +273,180 @@ class Assistant:
                 running_summary = summary_obj.summary
                 logging.debug(f"running_summary:{running_summary}")
 
+        # Kiểm tra và xử lý user data an toàn
+        user_data = state.get("user", {})
+        if not user_data:
+            logging.warning("No user data found in state, using defaults")
+            user_data = {
+                "user_info": {"user_id": "unknown"},
+                "user_profile": {}
+            }
+        
+        user_info = user_data.get("user_info", {"user_id": "unknown"})
+        user_profile = user_data.get("user_profile", {})
+
         prompt = {
             **state,
-            "user_info": state.get("user")["user_info"],
-            "user_profile": state.get("user")["user_profile"],
+            "user_info": user_info,
+            "user_profile": user_profile,
             "conversation_summary": running_summary,
         }
+        
+        # Validate that essential fields exist
+        if not prompt.get("messages"):
+            logging.error("No messages found in prompt data")
+            prompt["messages"] = "Câu hỏi không rõ ràng"
+        
         return prompt
 
     def __call__(self, state: RagState, config: RunnableConfig):
-        while True:
-            config["configurable"]["user_id"] = state.get("user")["user_info"][
-                "user_id"
-            ]
+        """
+        Execute the assistant with improved retry mechanism and fallback handling.
+        
+        Handles empty LLM responses by retrying with exponential backoff and providing
+        graceful fallback when max retries are reached.
+        """
+        max_retries = 0
+        retry_count = 0
+        base_delay = 0.5  # Base delay in seconds
+        
+        #while retry_count <= max_retries:
+        try:
+            # Configure user ID for request context - với xử lý an toàn
+            user_data = state.get("user", {})
+            user_info = user_data.get("user_info", {}) if user_data else {}
+            user_id = user_info.get("user_id", "unknown") if user_info else "unknown"
+            
+            if "configurable" not in config:
+                config["configurable"] = {}
+            config["configurable"]["user_id"] = user_id
+            
+            # Prepare prompt data for LLM
             prompt = self.binding_prompt(state)
+            
+            # Validate prompt before sending to LLM
+            if not prompt or not prompt.get("messages"):
+                logging.error("Empty or invalid prompt data")
+                raise ValueError("Prompt data is empty or missing required fields")
+            
+            # Invoke LLM with current configuration
             result = self.runnable.invoke(prompt, config)
-
-            # Nếu là structured output (Pydantic model), trả về luôn
+            
+            # For structured output (Pydantic model), return immediately
             if not hasattr(result, "tool_calls"):
+                logging.debug(f"Assistant: Structured output returned after {retry_count} retries")
                 return result
-
-            # Nếu là message object, kiểm tra nội dung
-            if not result.tool_calls and (
-                not getattr(result, "content", None)
-                or (
-                    isinstance(result.content, list)
-                    and not result.content[0].get("text")
+            
+            # Validate message content for completeness
+            if self._is_valid_response(result):
+                if retry_count > 0:
+                    logging.info(f"Assistant: Valid response received after {retry_count} retries")
+                return result
+            
+            # Handle retry logic for invalid responses
+            retry_count += 1
+            if retry_count <= max_retries:
+                delay = base_delay * (2 ** (retry_count - 1))  # Exponential backoff
+                logging.warning(
+                    f"Assistant: Empty/invalid response from LLM, retrying... "
+                    f"({retry_count}/{max_retries}) - waiting {delay}s"
                 )
-            ):
-                messages = state.get("messages", [])
-                logging.warning("Empty response from LLM, retrying...")
+                
+                # Add small delay to prevent rapid successive calls
+                time.sleep(delay)
             else:
-                break
-        return result
+                logging.error(f"Assistant: Max retries ({max_retries}) reached, providing fallback response")
+                return self._create_fallback_response(state)
+                
+        except Exception as e:
+            retry_count += 1
+            user_id = state.get("user", {}).get("user_info", {}).get("user_id", "unknown")
+            
+            # Kiểm tra lỗi cụ thể của Gemini
+            if "contents is not specified" in str(e):
+                logging.error(f"Gemini API error - empty contents detected. Prompt validation failed.")
+                logging.debug(f"State keys: {list(state.keys()) if state else 'None'}")
+                logging.debug(f"Messages in state: {state.get('messages', 'None')}")
+            
+            # Log detailed exception information to file
+            log_exception_details(
+                exception=e,
+                context=f"Assistant LLM call failure (attempt {retry_count})",
+                user_id=user_id
+            )
+            
+            if retry_count <= max_retries:
+                delay = base_delay * (2 ** (retry_count - 1))
+                logging.warning(f"Assistant: Retrying after exception - waiting {delay}s")
+                time.sleep(delay)
+            else:
+                logging.error(f"Assistant: Max retries reached after exceptions, providing fallback")
+                return self._create_fallback_response(state)
+        
+        # Should never reach here, but provide fallback just in case
+        return self._create_fallback_response(state)
+
+    def _is_valid_response(self, result) -> bool:
+        """
+        Validate if the LLM response contains meaningful content.
+        
+        Args:
+            result: The result from LLM invocation
+            
+        Returns:
+            bool: True if response is valid, False otherwise
+        """
+        # Check for tool calls - these are always valid
+        if hasattr(result, "tool_calls") and result.tool_calls:
+            return True
+        
+        # Check content validity
+        content = getattr(result, "content", None)
+        
+        if not content:
+            return False
+        
+        # Handle string content
+        if isinstance(content, str):
+            return content.strip() != ""
+        
+        # Handle list content (multimodal messages)
+        if isinstance(content, list):
+            for item in content:
+                if isinstance(item, dict) and item.get("text", "").strip():
+                    return True
+            return False
+        
+        # For other content types, consider non-empty as valid
+        return bool(content)
+
+    def _create_fallback_response(self, state: RagState):
+        """
+        Create a graceful fallback response when LLM fails after retries.
+        
+        Args:
+            state: Current conversation state
+            
+        Returns:
+            AIMessage: Fallback response message
+        """
+        # Get user info for personalized fallback
+        user_info = state.get("user", {}).get("user_info", {})
+        user_name = user_info.get("name", "anh/chị")
+        
+        # Create contextual fallback message
+        fallback_content = (
+            f"Xin lỗi {user_name}, em đang gặp vấn đề kỹ thuật tạm thời. "
+            f"Vui lòng thử lại sau hoặc liên hệ hotline 1900 636 886 để được hỗ trợ trực tiếp. "
+            f"Em rất xin lỗi vì sự bất tiện này! 🙏"
+        )
+        
+        logging.info(f"Assistant: Providing fallback response for user: {user_info.get('user_id', 'unknown')}")
+        
+        return AIMessage(
+            content=fallback_content,
+            additional_kwargs={"fallback_response": True}
+        )
 
 
 # --- Graph Definition Function ---
@@ -600,7 +707,6 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
                 "- **QUAN TRỌNG:** Kiểm tra lịch sử cuộc hội thoại để xác định loại lời chào phù hợp:\n"
                 "  • Nếu đây là tin nhắn đầu tiên (ít tin nhắn trong lịch sử) → chào hỏi đầy đủ\n"
                 "  • Nếu đã có cuộc hội thoại trước đó → chỉ cần 'Dạ anh/chị' ngắn gọn\n"
-                "- Sử dụng `[source_id]` để trích dẫn thông tin từ tài liệu\n"
                 "- Không bịa đặt thông tin\n"
                 "- Sử dụng định dạng markdown/HTML để tạo nội dung đẹp mắt\n"
                 "- Emoji phong phú và phù hợp\n"
@@ -796,35 +902,11 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
         # Get current user question for consistent context
         current_question = get_current_user_question(state)
         logging.debug(f"route_question->current_question -> {current_question}")
-        
-        # Emit processing reasoning step
-        emit_reasoning_step(
-            node_name="router",
-            summary=f"🎯 Analyzing query to determine best data source: {current_question[:50]}{'...' if len(current_question) > 50 else ''}",
-            status="processing",
-            context_question=current_question
-        )
 
         result = router_assistant(state, config)
         datasource = result.datasource
         
-        # Emit completion reasoning step
-        emit_reasoning_step(
-            node_name="router",
-            summary=f"🎯 Routed to '{datasource}' for query: {current_question[:50]}{'...' if len(current_question) > 50 else ''}",
-            status="completed",
-            details={"decision": datasource},
-            context_question=current_question
-        )
-
-        # Create legacy reasoning step for return value (backward compatibility)
-        step = create_reasoning_step_legacy(
-            node_name="router",
-            summary=f"Định tuyến câu hỏi tới '{datasource}' cho: {current_question[:50]}{'...' if len(current_question) > 50 else ''}",
-            details={"question": current_question, "decision": datasource}
-        )
-        
-        return {"datasource": datasource, "reasoning_steps": [step]}
+        return {"datasource": datasource}
 
     def retrieve(state: RagState, config: RunnableConfig):
         logging.info("---NODE: RETRIEVE---")
@@ -838,48 +920,37 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
                 "search_attempts": state.get("search_attempts", 0) + 1,
             }
 
-        # Emit processing reasoning step
-        emit_reasoning_step(
-            node_name="retrieve",
-            summary=f"📚 Searching knowledge base for: {question[:50]}{'...' if len(question) > 50 else ''}",
-            status="processing",
-            context_question=question
-        )
-
-        logging.debug(f"retrieve->question -> {question}")
-        
-        # Use QueryClassifier for clean, maintainable query classification
-        classifier = QueryClassifier(domain="restaurant")
-        classification = classifier.classify_query(question)
-        
-        # Use dynamic retrieval limit based on classification
-        limit = classification["retrieval_limit"]
-        documents = retriever.search(
-            namespace=DOMAIN["collection_name"], query=question, limit=limit
-        )
-        logging.info(f"Retrieved {len(documents)} documents.")
-        
-        # Emit completion reasoning step
-        emit_reasoning_step(
-            node_name="retrieve",
-            summary=f"📚 Found {len(documents)} relevant documents for: {question[:50]}{'...' if len(question) > 50 else ''}",
-            status="completed",
-            details={"documents_found": len(documents)},
-            context_question=question
-        )
+        try:
+            logging.debug(f"retrieve->question -> {question}")
             
-        # Create legacy reasoning step for return value (backward compatibility)
-        step = create_reasoning_step_legacy(
-            node_name="retrieve",
-            summary=f"Truy xuất {len(documents)} tài liệu cho: {question[:50]}{'...' if len(question) > 50 else ''}",
-            details={"query": question, "documents_found": len(documents)}
-        )
-        
-        return {
-            "documents": documents,
-            "search_attempts": state.get("search_attempts", 0) + 1,
-            "reasoning_steps": [step],
-        }
+            # Use QueryClassifier for clean, maintainable query classification
+            classifier = QueryClassifier(domain="restaurant")
+            classification = classifier.classify_query(question)
+            
+            # Use dynamic retrieval limit based on classification
+            limit = classification["retrieval_limit"]
+            documents = retriever.search(
+                namespace=DOMAIN["collection_name"], query=question, limit=limit
+            )
+            logging.info(f"Retrieved {len(documents)} documents.")
+            
+            return {
+                "documents": documents,
+                "search_attempts": state.get("search_attempts", 0) + 1,
+            }
+        except Exception as e:
+            user_id = state.get("user", {}).get("user_info", {}).get("user_id", "unknown")
+            log_exception_details(
+                exception=e,
+                context=f"Retrieve node failure for question: {question[:100]}",
+                user_id=user_id
+            )
+            
+            # Return empty results on error
+            return {
+                "documents": [],
+                "search_attempts": state.get("search_attempts", 0) + 1,
+            }
 
     def grade_documents_node(state: RagState, config: RunnableConfig):
         logging.info("---NODE: GRADE DOCUMENTS---")
@@ -895,25 +966,11 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
         logging.debug(f"grade_documents_node->question -> {question}")
 
         documents = state["documents"]
-        print(f"grade_documents_node->documents -> {documents}")
+        
         if not documents:
             logging.debug(f"Khong tim duoc tai lieu nao")
-            step = create_reasoning_step_legacy(
-                node_name="grade_documents",
-                summary="Không có tài liệu để đánh giá",
-                details={"documents_count": 0}
-            )
-            return {"documents": [], "reasoning_steps": [step]}
+            return {"documents": []}
 
-        # Emit processing reasoning step
-        emit_reasoning_step(
-            node_name="grade_documents",
-            summary=f"📋 Evaluating {len(documents)} documents for relevance",
-            status="processing",
-            details={"total_documents": len(documents)},
-            context_question=question
-        )
-            
         filtered_docs = []
         for d in documents:
             if isinstance(d, tuple) and len(d) > 1 and isinstance(d[1], dict):
@@ -938,61 +995,48 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
             f"Finished grading. {len(filtered_docs)} of {len(documents)} documents are relevant."
         )
 
-        # Emit completion reasoning step
-        emit_reasoning_step(
-            node_name="grade_documents",
-            summary=f"📋 Found {len(filtered_docs)} relevant documents out of {len(documents)}",
-            status="completed",
-            details={"relevant_docs": len(filtered_docs), "total_docs": len(documents)},
-            context_question=question
-        )
-
-        step = create_reasoning_step_legacy(
-            node_name="grade_documents",
-            summary=f"Đánh giá tài liệu: {len(filtered_docs)}/{len(documents)} tài liệu phù hợp",
-            details={"relevant_docs": len(filtered_docs), "total_docs": len(documents)}
-        )
-        
-        return {"documents": filtered_docs, "reasoning_steps": [step]}
+        return {"documents": filtered_docs}
 
     def rewrite(state: RagState, config: RunnableConfig):
         logging.info("---NODE: REWRITE---")
         original_question = get_current_user_question(state)
         logging.debug(f"rewrite->original_question -> {original_question}")
         
-        # Emit processing reasoning step
-        emit_reasoning_step(
-            node_name="rewrite",
-            summary=f"✏️ Rewriting query for better retrieval: {original_question[:50]}{'...' if len(original_question) > 50 else ''}",
-            status="processing",
-            context_question=original_question
-        )
+        # Kiểm tra state trước khi gọi assistant
+        if not original_question or original_question == "Câu hỏi không rõ ràng":
+            logging.warning("Rewrite node: No valid question found, using fallback")
+            return {
+                "question": "Cần thông tin về nhà hàng Tian Long",
+                "rewrite_count": state.get("rewrite_count", 0) + 1,
+                "documents": [],
+            }
         
-        rewritten_question_msg = rewrite_assistant(state, config)
-        new_question = rewritten_question_msg.content
-        logging.info(f"Rewritten question for retrieval: {new_question}")
-        
-        # Emit completion reasoning step
-        emit_reasoning_step(
-            node_name="rewrite",
-            summary=f"✏️ Query rewritten successfully: {new_question[:50]}{'...' if len(new_question) > 50 else ''}",
-            status="completed",
-            details={"original_query": original_question, "new_query": new_question},
-            context_question=original_question
-        )
-        
-        step = create_reasoning_step_legacy(
-            node_name="rewrite",
-            summary=f"Viết lại câu hỏi để tìm kiếm tốt hơn",
-            details={"original_query": original_question, "new_query": new_question}
-        )
-        
-        return {
-            "question": new_question,
-            "rewrite_count": state.get("rewrite_count", 0) + 1,
-            "documents": [],
-            "reasoning_steps": [step],
-        }
+        try:
+            rewritten_question_msg = rewrite_assistant(state, config)
+            new_question = rewritten_question_msg.content
+            logging.info(f"Rewritten question for retrieval: {new_question}")
+            
+            return {
+                "question": new_question,
+                "rewrite_count": state.get("rewrite_count", 0) + 1,
+                "documents": [],
+            }
+        except Exception as e:
+            user_id = state.get("user", {}).get("user_info", {}).get("user_id", "unknown")
+            log_exception_details(
+                exception=e,
+                context=f"Rewrite node failure for question: {original_question[:100]}",
+                user_id=user_id
+            )
+            
+            # Fallback rewrite
+            fallback_question = f"Thông tin về {original_question}"
+            logging.warning(f"Rewrite failed, using fallback: {fallback_question}")
+            return {
+                "question": fallback_question,
+                "rewrite_count": state.get("rewrite_count", 0) + 1,
+                "documents": [],
+            }
 
     def web_search_node(state: RagState, config: RunnableConfig):
         logging.info("---NODE: WEB SEARCH---")
@@ -1006,14 +1050,6 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
             return {"documents": [], "web_search_attempted": True}
 
         logging.debug(f"web_search_node->query_search -> {query_search}")
-        
-        # Emit processing reasoning step
-        emit_reasoning_step(
-            node_name="web_search",
-            summary=f"🌐 Searching the internet for: {query_search[:50]}{'...' if len(query_search) > 50 else ''}",
-            status="processing",
-            context_question=query_search
-        )
         
         search_results = web_search_tool.invoke({"query": query_search}, config)
 
@@ -1035,27 +1071,11 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
             web_documents.append((f"web_{i}", {"content": doc_text}, 1.0))
 
         logging.info(f"Found {len(web_documents)} results from web search.")
-        
-        # Emit completion reasoning step
-        emit_reasoning_step(
-            node_name="web_search",
-            summary=f"🌐 Found {len(web_documents)} web results for: {query_search[:50]}{'...' if len(query_search) > 50 else ''}",
-            status="completed",
-            details={"results_found": len(web_documents)},
-            context_question=query_search
-        )
-        
-        step = create_reasoning_step_legacy(
-            node_name="web_search",
-            summary=f"Tìm kiếm web với từ khóa: {query_search}",
-            details={"query": query_search, "results_found": len(web_documents)}
-        )
 
         return {
             "documents": web_documents,
             "web_search_attempted": True,
             "search_attempts": state.get("search_attempts", 0) + 1,
-            "reasoning_steps": [step],
         }
 
     def generate(state: RagState, config: RunnableConfig):
@@ -1065,66 +1085,27 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
         logging.debug(f"generate->current_question -> {current_question}")
         logging.debug(f"generate->documents_count -> {documents_count}")
         
-        # Emit processing reasoning step
-        emit_reasoning_step(
-            node_name="generate",
-            summary=f"🤖 Generating answer using {documents_count} documents",
-            status="processing",
-            details={"documents_count": documents_count},
-            context_question=current_question
-        )
+        try:
+            generation = generation_assistant(state, config)
+        except Exception as e:
+            user_id = state.get("user", {}).get("user_info", {}).get("user_id", "unknown")
+            log_exception_details(
+                exception=e,
+                context=f"Generate node failure for question: {current_question[:100]}",
+                user_id=user_id
+            )
+            # Return error response
+            generation = {"messages": [{"role": "assistant", "content": "Xin lỗi, có lỗi xảy ra khi tạo câu trả lời. Vui lòng thử lại."}]}
         
-        generation = generation_assistant(state, config)
-        
-        # Emit completion reasoning step
-        emit_reasoning_step(
-            node_name="generate",
-            summary=f"🤖 Answer generated successfully based on {documents_count} documents",
-            status="completed",
-            details={"documents_used": documents_count, "has_tool_calls": hasattr(generation, "tool_calls") and bool(generation.tool_calls)},
-            context_question=current_question
-        )
-        
-        step = create_reasoning_step_legacy(
-            node_name="generate",
-            summary=f"Tạo câu trả lời dựa trên {documents_count} tài liệu",
-            details={
-                "question": current_question[:100] + "..." if len(current_question) > 100 else current_question,
-                "documents_used": documents_count
-            }
-        )
-        
-        return {"messages": [generation], "reasoning_steps": [step]}
+        return {"messages": [generation]}
 
     def hallucination_grader_node(state: RagState, config: RunnableConfig):
         logging.info("---NODE: HALLUCINATION GRADER---")
         current_question = get_current_user_question(state)
         generation_message = state["messages"][-1]
         
-        # Emit processing reasoning step
-        emit_reasoning_step(
-            node_name="hallucination_grader",
-            summary=f"🔍 Verifying answer accuracy against source documents",
-            status="processing",
-            context_question=current_question
-        )
-        
         if not state.get("documents") or hasattr(generation_message, "tool_calls"):
-            # Emit completion reasoning step for skip case
-            emit_reasoning_step(
-                node_name="hallucination_grader",
-                summary=f"🔍 Skipping hallucination check (no documents or tool calls)",
-                status="completed",
-                details={"result": "grounded", "reason": "no_documents_or_tool_calls"},
-                context_question=current_question
-            )
-            
-            step = create_reasoning_step_legacy(
-                node_name="hallucination_grader", 
-                summary="Bỏ qua kiểm tra ảo giác (không có tài liệu hoặc có tool calls)",
-                details={"result": "grounded"}
-            )
-            return {"hallucination_score": "grounded", "reasoning_steps": [step]}
+            return {"hallucination_score": "grounded"}
             
         score = hallucination_grader_assistant(state, config)
         logging.info(f"---HALLUCINATION SCORE: {score.binary_score.upper()}---")
@@ -1138,23 +1119,7 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
             "web_search_attempted", False
         ):
             update["force_suggest"] = True
-            
-        # Emit completion reasoning step
-        emit_reasoning_step(
-            node_name="hallucination_grader",
-            summary=f"🔍 Answer verification: {'✅ Grounded' if grading_result == 'grounded' else '❌ Not grounded'}",
-            status="completed",
-            details={"result": grading_result, "force_suggest": update.get("force_suggest", False)},
-            context_question=current_question
-        )
         
-        step = create_reasoning_step_legacy(
-            node_name="hallucination_grader",
-            summary=f"Đánh giá ảo giác: {grading_result}",
-            details={"result": grading_result}
-        )
-        
-        update["reasoning_steps"] = [step]
         logging.debug(f"hallucination_grader_node->update:{update}")
         return update
 
@@ -1166,73 +1131,20 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
         messages = state.get("messages", [])
         is_tool_reentry = len(messages) > 0 and isinstance(messages[-1], ToolMessage)
         
-        if not is_tool_reentry:
-            # Emit processing reasoning step only for first entry
-            emit_reasoning_step(
-                node_name="generate_direct",
-                summary=f"💬 Generating direct response for: {current_question[:50]}{'...' if len(current_question) > 50 else ''}",
-                status="processing",
-                context_question=current_question
-            )
-        
         response = direct_answer_assistant(state, config)
         
-        if not is_tool_reentry:
-            # Emit completion reasoning step only for first entry
-            emit_reasoning_step(
-                node_name="generate_direct",
-                summary=f"💬 Direct response generated successfully",
-                status="completed",
-                details={"has_tool_calls": hasattr(response, "tool_calls") and bool(response.tool_calls)},
-                context_question=current_question
-            )
-            
-            # Create legacy reasoning step only for first entry
-            step = create_reasoning_step_legacy(
-                node_name="generate_direct",
-                summary=f"Tạo câu trả lời trực tiếp",
-                details={"question": current_question[:100] + "..." if len(current_question) > 100 else current_question}
-            )
-            
-            return {"messages": [response], "reasoning_steps": [step]}
-        else:
-            # Tool re-entry: don't add reasoning step to avoid duplicates
-            logging.info("🔄 GENERATE_DIRECT: Re-entry from tools, skipping reasoning step to avoid duplicates")
-            return {"messages": [response]}
+        return {"messages": [response]}
 
     def force_suggest_node(state: RagState, config: RunnableConfig):
         logging.info("---NODE: FORCE SUGGEST---")
         current_question = get_current_user_question(state)
         
-        # Emit processing reasoning step
-        emit_reasoning_step(
-            node_name="force_suggest",
-            summary=f"💡 Providing suggestion when no relevant info found",
-            status="processing",
-            context_question=current_question
-        )
-        
         response = suggestive_assistant(state, config)
-        
-        # Emit completion reasoning step
-        emit_reasoning_step(
-            node_name="force_suggest",
-            summary=f"💡 Suggestion provided for query refinement",
-            status="completed",
-            context_question=current_question
-        )
-        
-        step = create_reasoning_step_legacy(
-            node_name="force_suggest",
-            summary=f"Đưa ra gợi ý khi không tìm thấy thông tin phù hợp",
-            details={"question": current_question[:100] + "..." if len(current_question) > 100 else current_question}
-        )
 
         return {
             "messages": [response],
             "skip_hallucination": True,
             "force_suggest": False,
-            "reasoning_steps": [step],
         }
 
     # --- Conditional Edges ---

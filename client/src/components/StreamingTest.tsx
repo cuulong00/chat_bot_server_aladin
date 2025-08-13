@@ -91,50 +91,72 @@ export default function StreamingTest({ apiUrl, assistantId }: { apiUrl: string;
         const lines = buffer.split('\n');
         buffer = lines.pop() || '';
         for (const line of lines) {
+          // Bỏ qua heartbeat messages
+          if (line.trim() === ': heartbeat' || line.trim() === '') {
+            continue;
+          }
+          
           if (line.startsWith('data: ')) {
             try {
-              const data = JSON.parse(line.slice(6));
-              gotData = true;
-              console.log('🔍 Streaming data received:', data);
+              const dataStr = line.slice(6);
+              if (!dataStr.trim()) continue; // Bỏ qua data trống
               
-              // Kiểm tra nhiều định dạng streaming khác nhau
-              if (data.event === 'messages/partial') {
-                console.log('📝 messages/partial event:', data.data);
+              const data = JSON.parse(dataStr);
+              gotData = true;
+              
+              // Xử lý định dạng LangGraph streaming
+              if (Array.isArray(data)) {
+                for (const item of data) {
+                  // Kiểm tra AIMessageChunk với content
+                  if (item.type === 'AIMessageChunk' && item.content) {
+                    accumulatedContent += item.content;
+                    setStreamingContent(accumulatedContent);
+                    // Chỉ log mỗi 5 tokens để tránh spam
+                    if (accumulatedContent.length % 5 === 0) {
+                      console.log('✅ Streaming progress:', accumulatedContent.length + ' chars');
+                    }
+                  }
+                  // Kiểm tra AIMessage hoàn chỉnh
+                  else if (item.type === 'ai' && typeof item.content === 'string') {
+                    if (item.content.length > accumulatedContent.length) {
+                      accumulatedContent = item.content;
+                      setStreamingContent(accumulatedContent);
+                      console.log('✅ Updated full content:', accumulatedContent.length + ' chars');
+                    }
+                  }
+                }
+              }
+              // Xử lý event-based streaming
+              else if (data.event === 'messages/partial') {
                 if (data.data && Array.isArray(data.data)) {
                   for (const item of data.data) {
                     if (item.type === 'ai' && typeof item.content === 'string') {
                       if (item.content.length > accumulatedContent.length) {
                         accumulatedContent = item.content;
                         setStreamingContent(accumulatedContent);
-                        console.log('✅ Updated streaming content:', accumulatedContent);
                       }
                     }
                   }
                 }
-              } else if (data.event === 'on_chat_model_stream') {
-                console.log('🤖 on_chat_model_stream event:', data.data);
+              }
+              else if (data.event === 'on_chat_model_stream') {
                 if (data.data && data.data.chunk && data.data.chunk.content) {
                   accumulatedContent += data.data.chunk.content;
                   setStreamingContent(accumulatedContent);
-                  console.log('✅ Updated streaming content from chunk:', accumulatedContent);
                 }
-              } else if (Array.isArray(data)) {
-                console.log('📋 Array data:', data);
-                for (const item of data) {
-                  if (item.type === 'ai' && typeof item.content === 'string') {
-                    if (item.content.length > accumulatedContent.length) {
-                      accumulatedContent = item.content;
-                      setStreamingContent(accumulatedContent);
-                     
-                    }
-                  }
-                }
-              } else {
-                console.log('❓ Unknown streaming format:', data);
               }
             } catch (e) {
-              console.log('❌ Invalid JSON in streaming:', line);
+              // Bỏ qua lỗi JSON parse cho heartbeat và metadata
+              if (line.includes('heartbeat') || line.includes('event:')) {
+                continue;
+              }
+              console.log('❌ JSON parse error:', line.substring(0, 100));
             }
+          }
+          // Xử lý event lines riêng biệt
+          else if (line.startsWith('event: ')) {
+            const eventType = line.slice(7);
+            console.log('📡 Event:', eventType);
           }
         }
       }
