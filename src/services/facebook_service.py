@@ -105,58 +105,69 @@ class FacebookMessengerService:
 
         await asyncio.sleep(seconds)
 
-    # --- Agent ---
-    async def call_agent(self, app_state, user_id: str, text: str) -> str:
-        graph = getattr(app_state, "graph", None)
-        if graph is None:
-            logger.error("App state has no graph; cannot call agent")
-            return "Xin lỗi, hệ thống đang bận. Bạn vui lòng thử lại sau nhé."
-
-        # Create input payload compatible with LangGraph structure
-        from langchain_core.messages import HumanMessage
-        
-        input_payload = {
-            "messages": [HumanMessage(content=text, id=f"fb-{user_id}")]
-        }
-        config = {"configurable": {"thread_id": f"fb-{user_id}"}}
-
+    # --- Agent Integration ---
+    async def call_agent(self, app_state, user_id: str, message: str) -> str:
+        """Call the agent and handle the response"""
         try:
-            if hasattr(graph, "ainvoke"):
-                result = await graph.ainvoke(input_payload, config)
-            else:
-                import asyncio
-                result = await asyncio.to_thread(graph.invoke, input_payload, config)
-
-            content: Optional[str] = None
-            if isinstance(result, dict):
-                msgs = result.get("messages") or []
-                for msg in reversed(msgs):
-                    # Handle both dict and LangChain message objects
-                    if hasattr(msg, 'content'):
-                        # LangChain message object
-                        if hasattr(msg, 'type') and msg.type in ("ai", "AIMessage"):
-                            content = msg.content
-                            break
-                        elif msg.__class__.__name__ in ("AIMessage", "AssistantMessage"):
-                            content = msg.content
-                            break
-                    elif isinstance(msg, dict):
-                        # Dict message format
-                        if msg.get("type") in ("ai", "AIMessage"):
-                            content = msg.get("content")
-                            if content:
-                                break
-                                
-                if not content:
-                    content = result.get("answer") or result.get("content")
-                    
-            if not content:
-                content = "Cảm ơn bạn! Mình đã nhận được tin nhắn và sẽ phản hồi sớm."
+            # Validate user_id format
+            if not user_id or not user_id.isdigit():
+                logger.error(f"Invalid user_id format: {user_id}")
+                return "Xin lỗi, có lỗi xảy ra. Vui lòng thử lại sau."
+            
+            logger.info(f"🤖 Calling agent for user {user_id[:10]}...")
+            
+            inputs = {
+                "question": message,
+                "user_id": user_id,
+                "session_id": f"facebook_session_{user_id}",
+            }
+            
+            logger.info(f"📝 Agent inputs prepared: {inputs}")
+            
+            result = await self.call_agent_stream(app_state, inputs)
+            logger.info(f"✅ Agent result type: {type(result)}")
+            
+            # Handle streaming response
+            if hasattr(result, '__aiter__'):
+                final_content = ""
+                async for chunk in result:
+                    logger.info(f"📦 Stream chunk type: {type(chunk)}, content: {chunk}")
+                    if isinstance(chunk, dict) and "content" in chunk:
+                        final_content += chunk["content"]
+                    elif isinstance(chunk, str):
+                        final_content += chunk
                 
-            return str(content)
-        except Exception as e:  # noqa: BLE001
-            logger.exception("Agent invocation failed: %s", e)
-            return "Xin lỗi, hệ thống gặp sự cố tạm thời. Bạn vui lòng thử lại sau nhé."
+                if final_content.strip():
+                    logger.info(f"📝 Final streamed content: {final_content[:100]}...")
+                    return final_content.strip()
+            
+            # Handle direct response
+            if isinstance(result, dict):
+                if "response" in result:
+                    content = result["response"]
+                elif "content" in result:
+                    content = result["content"]
+                elif "answer" in result:
+                    content = result["answer"]
+                elif "output" in result:
+                    content = result["output"]
+                else:
+                    content = str(result)
+                    
+                logger.info(f"📝 Direct response content: {content[:100]}...")
+                return content
+            
+            elif isinstance(result, str):
+                logger.info(f"📝 String response: {result[:100]}...")
+                return result
+            
+            else:
+                logger.warning(f"⚠️ Unexpected result type: {type(result)}, value: {result}")
+                return "Tôi đã nhận được tin nhắn của bạn. Cảm ơn bạn!"
+                
+        except Exception as e:
+            logger.exception(f"❌ Error calling agent: {e}")
+            return "Xin lỗi, có lỗi xảy ra khi xử lý tin nhắn. Vui lòng thử lại sau."
 
     # --- Entry processing ---
     async def handle_webhook_event(self, app_state, body: Dict[str, Any]) -> None:
@@ -169,6 +180,12 @@ class FacebookMessengerService:
                 for messaging in entry.get("messaging", []):
                     sender = messaging.get("sender", {}).get("id")
                     if not sender:
+                        logger.warning("No sender ID found in messaging event")
+                        continue
+                    
+                    # Skip test/invalid sender IDs
+                    if sender.startswith("TEST_") or sender == "TEST_USER_123":
+                        logger.info(f"Skipping test sender ID: {sender}")
                         continue
 
                     message = messaging.get("message")
@@ -176,13 +193,24 @@ class FacebookMessengerService:
                         text = (message.get("text") or "").strip()
                         if not text:
                             continue
+                        
+                        logger.info(f"Processing message from {sender}: {text[:50]}...")
                         reply = await self.call_agent(app_state, sender, text)
-                        await self.send_message(sender, reply)
+                        
+                        if reply:
+                            logger.info(f"Sending reply to {sender}: {reply[:50]}...")
+                            await self.send_message(sender, reply)
+                        else:
+                            logger.warning(f"No reply generated for {sender}")
 
                     postback = messaging.get("postback")
                     if postback and postback.get("payload"):
                         payload = postback["payload"]
+                        logger.info(f"Processing postback from {sender}: {payload}")
                         reply = await self.call_agent(app_state, sender, payload)
-                        await self.send_message(sender, reply)
+                        
+                        if reply:
+                            await self.send_message(sender, reply)
+                            
         except Exception as e:  # noqa: BLE001
             logger.exception("Error handling Facebook webhook: %s", e)
