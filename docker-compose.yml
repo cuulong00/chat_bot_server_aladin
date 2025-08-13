@@ -53,6 +53,12 @@ services:
       - LANGSMITH_API_KEY=${LANGSMITH_API_KEY}
       - LANGSMITH_API_KEY1=${LANGSMITH_API_KEY1}
       - LANGSMITH_PROJECT=${LANGSMITH_PROJECT}
+      # Facebook Messenger integration
+      - FB_PAGE_ACCESS_TOKEN=${FB_PAGE_ACCESS_TOKEN}
+      - FB_APP_SECRET=${FB_APP_SECRET}
+      - FB_VERIFY_TOKEN=${FB_VERIFY_TOKEN}
+      - FB_API_VERSION=${FB_API_VERSION}
+      - APP_ID=${APP_ID}
     volumes:
       - ./text-to-speech.json:/app/text-to-speech.json:ro
     restart: unless-stopped
