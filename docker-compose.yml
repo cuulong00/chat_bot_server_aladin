@@ -2,7 +2,7 @@ services:
   chatbot:
     build: .
     ports:
-      - "2025:2024"
+      - "2025:2025"
     environment:
       # Copy from your .env file - IMPORTANT: Use secure values in production
       - TAVILY_API_KEY=${TAVILY_API_KEY}
