@@ -12,8 +12,15 @@ from src.tools.accounting_tools import accounting_tools
 from langchain_openai import ChatOpenAI
 from langchain_google_genai import ChatGoogleGenerativeAI
 from src.database.checkpointer import get_checkpointer
+from src.api.facebook import router as facebook_router
 
 load_dotenv()
+
+# Setup logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
 
 # Include the full adaptive RAG graph implementation here
 from src.graphs.core.adaptive_rag_graph import create_adaptive_rag_graph
@@ -31,9 +38,25 @@ def compile_graph(checkpointer: BaseCheckpointSaver):
     llm_hallucination_grader = ChatGoogleGenerativeAI(
         model="gemini-1.5-flash-latest", temperature=0
     )
+    llm_summarizer = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+    llm_contextualize = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+    
     retriever = QdrantStore(
         collection_name="accounting_store", embedding_model="text-embedding-3-small"
     )
+    
+    # Domain configuration for restaurant/accounting
+    DOMAIN = {
+        "domain_context": "nhà hàng lẩu bò tươi Tian Long",
+        "domain_instructions": "Hỗ trợ khách hàng về thực đơn, địa chỉ, ưu đãi và đặt bàn",
+        "domain_examples": [
+            "Thực đơn có những món gì?",
+            "Địa chỉ các chi nhánh?", 
+            "Có ưu đãi gì không?",
+            "Tôi muốn đặt bàn"
+        ],
+        "collection_name": "accounting_store"
+    }
 
     adaptive_graph = create_adaptive_rag_graph(
         llm=accounting_llm,
@@ -42,8 +65,11 @@ def compile_graph(checkpointer: BaseCheckpointSaver):
         llm_rewrite=llm_rewrite,
         llm_generate_direct=llm_generate_direct,
         llm_hallucination_grader=llm_hallucination_grader,
+        llm_summarizer=llm_summarizer,
+        llm_contextualize=llm_contextualize,
         retriever=retriever,
         tools=accounting_tools,
+        DOMAIN=DOMAIN,
     )
 
     compiled_app = adaptive_graph.compile(checkpointer=checkpointer)
@@ -52,8 +78,16 @@ def compile_graph(checkpointer: BaseCheckpointSaver):
 
 
 app = FastAPI()
+
+# Register Facebook router
+app.include_router(facebook_router)
+
+# Setup checkpointer and compile graph
 checkpointer = get_checkpointer()
 adaptive_rag_app = compile_graph(checkpointer)
+
+# Store graph in app state for Facebook service to access
+app.state.graph = adaptive_rag_app
 
 
 @app.post("/invoke")

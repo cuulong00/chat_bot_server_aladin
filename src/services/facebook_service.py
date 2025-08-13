@@ -112,10 +112,11 @@ class FacebookMessengerService:
             logger.error("App state has no graph; cannot call agent")
             return "Xin lỗi, hệ thống đang bận. Bạn vui lòng thử lại sau nhé."
 
+        # Create input payload compatible with LangGraph structure
+        from langchain_core.messages import HumanMessage
+        
         input_payload = {
-            "messages": [
-                {"type": "human", "content": text, "id": f"fb-{user_id}"}
-            ]
+            "messages": [HumanMessage(content=text, id=f"fb-{user_id}")]
         }
         config = {"configurable": {"thread_id": f"fb-{user_id}"}}
 
@@ -124,21 +125,34 @@ class FacebookMessengerService:
                 result = await graph.ainvoke(input_payload, config)
             else:
                 import asyncio
-
                 result = await asyncio.to_thread(graph.invoke, input_payload, config)
 
             content: Optional[str] = None
             if isinstance(result, dict):
                 msgs = result.get("messages") or []
                 for msg in reversed(msgs):
-                    if isinstance(msg, dict) and msg.get("type") in ("ai", "AIMessage"):
-                        content = msg.get("content")
-                        if content:
+                    # Handle both dict and LangChain message objects
+                    if hasattr(msg, 'content'):
+                        # LangChain message object
+                        if hasattr(msg, 'type') and msg.type in ("ai", "AIMessage"):
+                            content = msg.content
                             break
+                        elif msg.__class__.__name__ in ("AIMessage", "AssistantMessage"):
+                            content = msg.content
+                            break
+                    elif isinstance(msg, dict):
+                        # Dict message format
+                        if msg.get("type") in ("ai", "AIMessage"):
+                            content = msg.get("content")
+                            if content:
+                                break
+                                
                 if not content:
                     content = result.get("answer") or result.get("content")
+                    
             if not content:
                 content = "Cảm ơn bạn! Mình đã nhận được tin nhắn và sẽ phản hồi sớm."
+                
             return str(content)
         except Exception as e:  # noqa: BLE001
             logger.exception("Agent invocation failed: %s", e)
