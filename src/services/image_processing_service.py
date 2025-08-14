@@ -6,6 +6,7 @@ import logging
 import httpx
 import base64
 import os
+import asyncio
 from typing import Optional, Dict, Any, List
 from io import BytesIO
 from PIL import Image
@@ -70,30 +71,36 @@ class ImageProcessingService:
     async def _analyze_with_gemini(self, image_data: bytes, context: str) -> str:
         """Analyze image using Google Gemini Vision."""
         try:
-            # Convert to PIL Image
-            image = Image.open(BytesIO(image_data))
+            # Move blocking operations to a separate thread
+            def _sync_gemini_analysis():
+                # Convert to PIL Image
+                image = Image.open(BytesIO(image_data))
+                
+                # Prepare prompt for restaurant context
+                prompt = f"""
+                Bạn là trợ lý AI của nhà hàng Aladdin. Hãy phân tích hình ảnh này và mô tả nội dung một cách chi tiết.
+                
+                Nếu đây là:
+                - Hình ảnh món ăn: Mô tả món ăn, nguyên liệu, cách trình bày
+                - Menu/thực đơn: Liệt kê các món ăn và giá cả nếu có thể đọc được
+                - Hình ảnh nhà hàng: Mô tả không gian, bàn ghế, trang trí
+                - Hóa đơn/bill: Đọc thông tin chi tiết về các món đã đặt
+                - Khác: Mô tả nội dung hình ảnh một cách chính xác
+                
+                Bối cảnh thêm: {context}
+                
+                Hãy trả lời bằng tiếng Việt một cách thân thiện và chi tiết.
+                """
+                
+                # Generate response (this might make blocking calls internally)
+                response = self.model.generate_content([prompt, image])
+                return response.text if response.text else None
             
-            # Prepare prompt for restaurant context
-            prompt = f"""
-            Bạn là trợ lý AI của nhà hàng Aladdin. Hãy phân tích hình ảnh này và mô tả nội dung một cách chi tiết.
+            # Run the blocking operation in a thread pool
+            result = await asyncio.to_thread(_sync_gemini_analysis)
             
-            Nếu đây là:
-            - Hình ảnh món ăn: Mô tả món ăn, nguyên liệu, cách trình bày
-            - Menu/thực đơn: Liệt kê các món ăn và giá cả nếu có thể đọc được
-            - Hình ảnh nhà hàng: Mô tả không gian, bàn ghế, trang trí
-            - Hóa đơn/bill: Đọc thông tin chi tiết về các món đã đặt
-            - Khác: Mô tả nội dung hình ảnh một cách chính xác
-            
-            Bối cảnh thêm: {context}
-            
-            Hãy trả lời bằng tiếng Việt một cách thân thiện và chi tiết.
-            """
-            
-            # Generate response
-            response = self.model.generate_content([prompt, image])
-            
-            if response.text:
-                return f"📸 **Phân tích hình ảnh:**\n{response.text}"
+            if result:
+                return f"📸 **Phân tích hình ảnh:**\n{result}"
             else:
                 return "Không thể phân tích nội dung hình ảnh."
                 
@@ -104,9 +111,14 @@ class ImageProcessingService:
     async def _basic_image_info(self, image_data: bytes) -> str:
         """Basic image info when AI analysis is not available."""
         try:
-            image = Image.open(BytesIO(image_data))
-            width, height = image.size
-            format_name = image.format or "Unknown"
+            # Move PIL operations to a separate thread to avoid blocking calls
+            def _get_image_info():
+                image = Image.open(BytesIO(image_data))
+                width, height = image.size
+                format_name = image.format or "Unknown"
+                return width, height, format_name
+            
+            width, height, format_name = await asyncio.to_thread(_get_image_info)
             size_kb = len(image_data) // 1024
             
             return f"""📸 **Thông tin hình ảnh:**
