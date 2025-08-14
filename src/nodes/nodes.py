@@ -26,6 +26,7 @@ from src.agents.Agents import (
 
 
 from src.tools.user_tools import get_user_info, get_latest_thread_id_by_user
+import os
 
 
 # --- Utility Functions for Stream Writer (shared) ---
@@ -187,14 +188,27 @@ def user_info(state: State, config: RunnableConfig):
         
         return {**state, **updates}
 
-    user_info_data = get_user_info.invoke({"user_id": user_id})
-    if "error" in user_info_data:
-        raise ValueError(f"User info error: {user_info_data['error']}")
-    thread_id = get_latest_thread_id_by_user.invoke({"user_id": user_id})
-    if not thread_id:
-        thread_id = str(uuid.uuid4())
-    user_profile = {}
-    user = User(user_info=user_info_data, user_profile=user_profile)
+    # Allow bypassing DB lookup for user info (e.g., when only Facebook data is available)
+    BYPASS_USER_DB = os.getenv("BYPASS_USER_DB", "0") == "1"
+    if BYPASS_USER_DB:
+        # Minimal user info sourced from the Facebook PSID
+        user_info_data = {"user_id": user_id, "name": None, "email": None, "phone": None, "address": None}
+        thread_res = get_latest_thread_id_by_user.invoke({"user_id": user_id})
+        thread_id = (thread_res or {}).get("thread_id") if isinstance(thread_res, dict) else None
+        if not thread_id:
+            thread_id = str(uuid.uuid4())
+        user_profile = {}
+        user = User(user_info=user_info_data, user_profile=user_profile)
+    else:
+        user_info_data = get_user_info.invoke({"user_id": user_id})
+        if "error" in user_info_data:
+            raise ValueError(f"User info error: {user_info_data['error']}")
+        thread_res = get_latest_thread_id_by_user.invoke({"user_id": user_id})
+        thread_id = (thread_res or {}).get("thread_id") if isinstance(thread_res, dict) else None
+        if not thread_id:
+            thread_id = str(uuid.uuid4())
+        user_profile = {}
+        user = User(user_info=user_info_data, user_profile=user_profile)
     
     # RESET: Start with clean reasoning_steps and set current question
     new_state = {
