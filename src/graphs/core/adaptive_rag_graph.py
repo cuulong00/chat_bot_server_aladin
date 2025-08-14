@@ -1130,9 +1130,11 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
         has_attachment = _has_attachment_metadata(current_question)
         logging.debug(f"route_question->has_attachment_metadata: {has_attachment}")
         
-        # Check if this looks like image analysis that should go to direct_answer
-        if datasource != "direct_answer" and ("📸" in current_question or "Phân tích hình ảnh" in current_question or "hình ảnh" in current_question.lower()):
-            logging.warning(f"⚠️ POTENTIAL ROUTING ISSUE: Image analysis message routed to '{datasource}' instead of 'direct_answer'")
+        # Check if this looks like image analysis with attachment metadata
+        if has_attachment and datasource != "process_document":
+            logging.warning(f"⚠️ POTENTIAL ROUTING ISSUE: Message with attachments routed to '{datasource}' instead of 'process_document'")
+        elif "📸" in current_question and "Phân tích hình ảnh" in current_question and datasource != "process_document":
+            logging.warning(f"⚠️ POTENTIAL ROUTING ISSUE: Pre-analyzed image message routed to '{datasource}' instead of 'process_document'")
         
         return {"datasource": datasource}
 

@@ -392,7 +392,7 @@ class FacebookMessengerService:
                         # Facebook may send text and attachments in separate webhook events
                         # Need to merge them if they arrive within a short time window
                         message_timestamp = messaging.get("timestamp", time.time() * 1000)
-                        merge_key = f"{sender}_{int(message_timestamp // 3000)}"  # 3-second window
+                        merge_key = f"{sender}_{int(message_timestamp // 10000)}"  # 10-second window
                         
                         # Initialize pending messages storage if not exists
                         if not hasattr(self, '_pending_messages'):
@@ -402,9 +402,9 @@ class FacebookMessengerService:
                         now = time.time()
                         pending_messages = self._pending_messages
                         
-                        # Clean up old pending messages (older than 10 seconds)
+                        # Clean up old pending messages (older than 12 seconds to accommodate smart delay)
                         for key in list(pending_messages.keys()):
-                            if now - pending_messages[key]['created_at'] > 10:
+                            if now - pending_messages[key]['created_at'] > 12:
                                 del pending_messages[key]
                         
                         if merge_key in pending_messages:
@@ -429,8 +429,25 @@ class FacebookMessengerService:
                                 'created_at': now
                             }
                             
+                            # SMART DELAY: Only delay messages that might be waiting for attachments
+                            # Check if message contains image-related keywords that suggest attachment coming
+                            should_wait_for_merge = any(keyword in text.lower() for keyword in [
+                                'mô tả ảnh', 'xem ảnh', 'ảnh này', 'hình này', 'hình ảnh này',
+                                'phân tích ảnh', 'ảnh trên', 'hình trên', 'xem hình',
+                                'describe image', 'analyze image', 'this image', 'this picture'
+                            ]) and not attachment_info  # Only if no attachments yet
+                            
+                            if should_wait_for_merge:
+                                # Wait longer for potential image attachment
+                                delay_time = 8.0
+                                logger.info(f"🕐 SMART DELAY: Waiting {delay_time}s for potential image attachment (text: '{text[:50]}...')")
+                            else:
+                                # Process immediately for normal messages
+                                delay_time = 0.1
+                                logger.info(f"⚡ FAST PROCESS: Normal message, processing in {delay_time}s (text: '{text[:50]}...')")
+                            
                             # Set a delayed task to process if no merge happens
-                            asyncio.create_task(self._process_after_delay(app_state, sender, merge_key, 2.0))
+                            asyncio.create_task(self._process_after_delay(app_state, sender, merge_key, delay_time))
                             
                             
         except Exception as e:
