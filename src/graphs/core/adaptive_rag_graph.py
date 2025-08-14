@@ -241,9 +241,9 @@ def get_question_from_state(state: RagState) -> str:
 
 # --- Pydantic Models for Structured Output ---
 class RouteQuery(BaseModel):
-    datasource: Literal["vectorstore", "web_search", "direct_answer"] = Field(
+    datasource: Literal["vectorstore", "web_search", "direct_answer", "process_document"] = Field(
         ...,
-        description="Given a user question, choose to route it to web search, a vectorstore, or to answer directly.",
+        description="Given a user question, choose to route it to web search, a vectorstore, to answer directly, or to process documents/images.",
     )
 
 
@@ -507,25 +507,32 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
             (
                 "system",
                 "Current date for context is: {current_date}\n"
-                "You are a highly efficient routing agent about {domain_context}. Your ONLY job: return exactly one token from this set: vectorstore | web_search | direct_answer.\n\n"
+                "You are a highly efficient routing agent about {domain_context}. Your ONLY job: return exactly one token from this set: vectorstore | web_search | direct_answer | process_document.\n\n"
                 "DECISION ALGORITHM (execute in order, stop at first match):\n"
-                "1. DIRECT_ANSWER (ACTION/CONFIRMATION/SMALL TALK/IMAGE ANALYSIS) -> Choose 'direct_answer' if the user is:\n"
-                "   - **PRIORITY: Message starts with '📸 **Phân tích hình ảnh:**' or contains image analysis content - ALWAYS route to direct_answer**, OR\n"
+                "1. PROCESS_DOCUMENT (DOCUMENT/IMAGE ANALYSIS) -> Choose 'process_document' if the user:\n"
+                "   - **PRIORITY: Message starts with '📸 **Phân tích hình ảnh:**' or contains pre-analyzed image content - ALWAYS route to process_document**, OR\n"
+                "   - Sends or mentions documents, files, attachments, images that need analysis, OR\n"
+                "   - Asks about content in images, photos, documents they have sent (mentions of 'hình ảnh', 'ảnh', 'photo', 'image', 'xem được', 'trong hình', 'giao diện', 'tài liệu', 'file', 'đính kèm'), OR\n"
+                "   - Questions that reference visual or document content that requires analysis tools rather than knowledge retrieval, OR\n"
+                "   - Requests analysis or description of attached media content.\n"
+                "   Rationale: these require specialized document/image processing capabilities and tools.\n"
+                "2. DIRECT_ANSWER (ACTION/CONFIRMATION/SMALL TALK) -> Choose 'direct_answer' if the user is:\n"
                 "   - Giving confirmation/negation or supplying details in an ongoing flow (e.g., 'không có ai sinh nhật', '7h tối nay', '3 người lớn 2 trẻ em'), OR\n"
                 "   - Expressing intent to perform an action like booking ('đặt bàn', 'đặt chỗ', 'book', 'booking', 'giữ bàn'), OR\n"
                 "   - Greeting/thanks/chit‑chat/meta about the assistant, OR\n"
-                "   - Asking about or updating personal preferences, OR\n"
-                "   - Asking about content in images, photos, documents they have sent (mentions of 'hình ảnh', 'ảnh', 'photo', 'image', 'xem được', 'trong hình', 'giao diện', analysis of visual content), OR\n"
-                "   - Questions that reference visual or document content that requires analysis tools rather than knowledge retrieval.\n"
-                "   Rationale: these do not require knowledge retrieval; they should be handled by tools, conversational logic, or image analysis.\n"
-                "2. VECTORSTORE -> Choose 'vectorstore' only if the user asks for information that should come from internal knowledge (menu, địa chỉ, chi nhánh, hotline, chính sách, ưu đãi, FAQ…) and is NOT merely confirming/continuing an action.\n"
-                "3. WEB_SEARCH -> Only if neither (1) nor (2) apply AND the user clearly needs real‑time external info.\n\n"
-                "IMPORTANT: If both (1) and (2) could apply, prefer 'direct_answer' when the user is clearly in a booking or confirmation step.\n\n"
+                "   - Asking about or updating personal preferences.\n"
+                "   Rationale: these do not require knowledge retrieval; they should be handled by conversational logic and tools.\n"
+                "3. VECTORSTORE -> Choose 'vectorstore' only if the user asks for information that should come from internal knowledge (menu, địa chỉ, chi nhánh, hotline, chính sách, ưu đãi, FAQ…) and is NOT merely confirming/continuing an action or sending documents.\n"
+                "4. WEB_SEARCH -> Only if none of (1), (2), or (3) apply AND the user clearly needs real‑time external info.\n\n"
+                "IMPORTANT: \n"
+                "- If message contains document/image content or analysis → ALWAYS choose 'process_document'\n"
+                "- If both direct_answer and vectorstore could apply, prefer 'direct_answer' when the user is clearly in a booking or confirmation step\n"
+                "- Document/image content takes highest priority over other routing decisions\n\n"
                 "CONVERSATION CONTEXT SUMMARY (may strengthen decision toward vectorstore):\n{conversation_summary}\n\n"
                 "User info:\n<UserInfo>\n{user_info}\n</UserInfo>\n"
                 "User profile:\n<UserProfile>\n{user_profile}\n</UserProfile>\n\n"
                 "Domain instructions (reinforce vectorstore bias):\n{domain_instructions}\n\n"
-                "Return ONLY one of: vectorstore | web_search | direct_answer. No explanations.\n",
+                "Return ONLY one of: vectorstore | web_search | direct_answer | process_document. No explanations.\n",
             ),
             ("human", "{messages}"),
         ]
@@ -1012,6 +1019,65 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
     direct_answer_runnable = direct_answer_prompt | llm_generate_direct_with_tools
     direct_answer_assistant = Assistant(direct_answer_runnable)
 
+    # 8. Document/Image Processing Assistant
+    document_processing_prompt = ChatPromptTemplate.from_messages(
+        [
+            (
+                "system",
+                "Bạn là Vy – chuyên gia phân tích tài liệu và hình ảnh của nhà hàng lẩu bò tươi Tian Long (domain context: {domain_context}). "
+                "Bạn được gọi khi khách hàng gửi hình ảnh, tài liệu hoặc yêu cầu phân tích nội dung đính kèm.\n"
+                "\n"
+                "🎯 **VAI TRÒ CHUYÊN BIỆT:**\n"
+                "- Chuyên gia phân tích hình ảnh và tài liệu về ẩm thực, nhà hàng\n"
+                "- Nhận diện và mô tả món ăn, thực đơn, không gian nhà hàng\n"
+                "- Đưa ra lời khuyên dựa trên nội dung hình ảnh\n"
+                "- Kết nối nội dung phân tích với dịch vụ của Tian Long\n"
+                "\n"
+                "📸 **XỬ LÝ HÌNH ẢNH:**\n"
+                "- **Phân tích món ăn:** Mô tả chi tiết món ăn, nguyên liệu, cách chế biến, đánh giá độ hấp dẫn\n"
+                "- **Phân tích thực đơn:** Đọc và liệt kê các món ăn, giá cả nếu có thể nhìn thấy\n"
+                "- **Phân tích không gian:** Mô tả không gian nhà hàng, bàn ghế, trang trí, không khí\n"
+                "- **Phân tích hóa đơn:** Đọc thông tin hóa đơn, các món đã order, tổng tiền\n"
+                "- **Phân tích khác:** Mô tả bất kỳ nội dung nào liên quan đến ẩm thực, nhà hàng\n"
+                "\n"
+                "🎨 **PHONG CÁCH PHẢN HỒI:**\n"
+                "- Mô tả chi tiết, sinh động và hấp dẫn\n"
+                "- Sử dụng emoji phong phú để tạo sự sinh động\n"
+                "- Đưa ra nhận xét chuyên môn về ẩm thực\n"
+                "- Kết nối với menu và dịch vụ của Tian Long khi phù hợp\n"
+                "- Gợi ý món ăn tương tự tại Tian Long nếu có\n"
+                "\n"
+                "🔍 **CÁCH PHÂN TÍCH:**\n"
+                "1. **Mô tả tổng quan:** Nội dung chính của hình ảnh/tài liệu\n"
+                "2. **Chi tiết cụ thể:** Các yếu tố đáng chú ý, màu sắc, bố cục, văn bản\n"
+                "3. **Đánh giá chuyên môn:** Nhận xét về chất lượng, cách trình bày, độ hấp dẫn\n"
+                "4. **Kết nối dịch vụ:** Liên hệ với menu, dịch vụ của Tian Long\n"
+                "5. **Gợi ý hành động:** Đề xuất món ăn, dịch vụ phù hợp\n"
+                "\n"
+                "💬 **NGÔN NGỮ PHẢN HỒI:**\n"
+                "- Sử dụng ngôn ngữ của khách hàng (Vietnamese/English)\n"
+                "- Giọng điệu thân thiện, chuyên nghiệp\n"
+                "- Tránh mô tả quá kỹ thuật, tập trung vào trải nghiệm người dùng\n"
+                "- Luôn kết thúc bằng câu hỏi hoặc gợi ý tiếp theo\n"
+                "\n"
+                "📋 **VÍ DỤ PHẢN HỒI:**\n"
+                "- Hình ảnh món lẩu: 'Wao! 🤤 Nhìn nồi lẩu này thật hấp dẫn với nước dùng đỏ rực, có vẻ rất cay và đậm đà. Em thấy có [mô tả nguyên liệu]... Tại Tian Long, chúng mình cũng có món [tên món tương tự] với hương vị tương tự đó ạ!'\n"
+                "- Hình ảnh thực đơn: 'Em thấy thực đơn này có nhiều món hấp dẫn như [liệt kê món]. Đặc biệt là [món nổi bật]... Anh/chị có muốn tham khảo thực đơn của Tian Long để so sánh không ạ?'\n"
+                "\n"
+                "💬 **THÔNG TIN CUỘC TRÒ CHUYỆN:**\n"
+                "Tóm tắt trước đó: {conversation_summary}\n"
+                "Thông tin người dùng: {user_info}\n"
+                "Hồ sơ người dùng: {user_profile}\n"
+                "Ngày hiện tại: {current_date}\n"
+                "\n"
+                "Hãy phân tích nội dung một cách chi tiết và thú vị, tạo sự kết nối với khách hàng và dịch vụ của Tian Long!",
+            ),
+            MessagesPlaceholder(variable_name="messages"),
+        ]
+    ).partial(current_date=datetime.now, domain_context=domain_context)
+    document_processing_runnable = document_processing_prompt | llm_generate_direct
+    document_processing_assistant = Assistant(document_processing_runnable)
+
     def route_question(state: RagState, config: RunnableConfig):
         logging.info("---NODE: ROUTE QUESTION---")
         
@@ -1288,18 +1354,19 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
         }
 
     def process_document_node(state: RagState, config: RunnableConfig):
-        """Process documents/images using AI analysis and tools.
+        """Process documents/images using specialized document processing assistant.
         
         This node handles:
-        1. Image analysis and description (using image_processing_service)
-        2. Document processing  
-        3. Mixed content queries with visual elements
+        1. Image analysis and description (using image_processing_service directly)
+        2. Document processing and interpretation
+        3. Visual content analysis with restaurant context
         4. Follow-up questions about analyzed content
         
-        Integration approach:
-        - Reuses image_processing_service for consistency with FacebookService
-        - Leverages direct_answer_assistant with full tool capabilities
-        - Maintains same error handling pattern as other nodes
+        Uses dedicated document_processing_assistant with specialized prompts for:
+        - Food and restaurant image analysis
+        - Menu interpretation 
+        - Receipt/bill analysis
+        - Restaurant space evaluation
         """
         logging.info("---NODE: PROCESS DOCUMENT---")
         
@@ -1325,34 +1392,77 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
         logging.info(f"Processing document/image query: {current_question[:100]}...")
         
         try:
-            # Check if this is a re-entry from tools (consistent with generate_direct_node)
-            is_tool_reentry = len(messages) > 0 and isinstance(messages[-1], ToolMessage)
-            if is_tool_reentry:
-                logging.debug("process_document_node: Tool re-entry detected")
+            # Direct image processing if message contains image content
+            enhanced_question = current_question
             
-            # Get image processing service for potential additional processing
-            image_service = get_image_processing_service()
+            # Check for image content that needs additional processing
+            if "📸" in current_question:
+                logging.info("Image content detected, preparing for enhanced analysis")
+                
+                # Get the latest human message with potential image content
+                latest_human_message = None
+                for msg in reversed(messages):
+                    if hasattr(msg, 'type') and msg.type == 'human':
+                        latest_human_message = msg
+                        break
+                
+                # Check if message has image content that can be analyzed
+                if (latest_human_message and 
+                    hasattr(latest_human_message, 'content') and
+                    isinstance(latest_human_message.content, list)):
+                    
+                    # Look for image content in message
+                    image_content = None
+                    for content_part in latest_human_message.content:
+                        if (isinstance(content_part, dict) and 
+                            content_part.get('type') == 'image_url'):
+                            image_content = content_part
+                            break
+                    
+                    if image_content:
+                        logging.info("Direct image analysis requested")
+                        try:
+                            # Use image processing service directly
+                            image_service = get_image_processing_service()
+                            image_url = image_content.get('image_url', {}).get('url', '')
+                            
+                            if image_url:
+                                # Analyze image with restaurant context
+                                analysis_prompt = (
+                                    "Hãy phân tích chi tiết hình ảnh này trong bối cảnh nhà hàng ẩm thực. "
+                                    "Mô tả món ăn, không gian, thực đơn hoặc bất kỳ nội dung nào liên quan đến ăn uống. "
+                                    "Đưa ra nhận xét chuyên môn và gợi ý kết nối với dịch vụ nhà hàng."
+                                )
+                                
+                                image_analysis = image_service.analyze_image(
+                                    image_url, analysis_prompt
+                                )
+                                
+                                if image_analysis:
+                                    # Enhance question with detailed image analysis
+                                    enhanced_question = f"{current_question}\n\n🔍 **Phân tích hình ảnh chi tiết:**\n{image_analysis}"
+                                    logging.info("Image analysis completed and integrated")
+                                
+                        except Exception as img_error:
+                            logging.warning(f"Image analysis failed: {img_error}")
+                            # Continue with original question if image analysis fails
             
-            # Check if question contains image analysis content that needs further processing
-            # (This handles cases where FacebookService pre-processed but agent needs to do more)
-            needs_additional_analysis = (
-                "📸" in current_question and 
-                any(keyword in current_question.lower() for keyword in [
-                    "chi tiết hơn", "phân tích thêm", "giải thích", "mô tả rõ hơn"
-                ])
-            )
+            # Create enhanced state with potentially enriched question
+            enhanced_state = {**state}
+            enhanced_messages = list(messages)
             
-            if needs_additional_analysis:
-                logging.info("Additional image analysis requested by user")
+            # Replace the last user message with enhanced version if we have analysis
+            if enhanced_question != current_question and enhanced_messages:
+                for i in reversed(range(len(enhanced_messages))):
+                    if hasattr(enhanced_messages[i], 'type') and enhanced_messages[i].type == 'human':
+                        # Update the message content with enhanced analysis
+                        from langchain_core.messages import HumanMessage
+                        enhanced_messages[i] = HumanMessage(content=enhanced_question)
+                        break
+                enhanced_state["messages"] = enhanced_messages
             
-            # Use the direct answer assistant with full tool capabilities
-            # This assistant has access to:
-            # - Image analysis tools (analyze_image) 
-            # - Memory tools (save_user_preference, get_user_profile)
-            # - Domain-specific tools (reservation, etc.)
-            # - Can handle image content that was pre-processed by FacebookService
-            # - Can call additional tools if needed
-            response = direct_answer_assistant(state, config)
+            # Use specialized document processing assistant
+            response = document_processing_assistant(enhanced_state, config)
             
             logging.info("Document/image processing completed successfully")
             return {"messages": [response]}
@@ -1368,6 +1478,11 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
             
             # Fallback response with consistent messaging
             from langchain_core.messages import AIMessage
+            fallback_response = AIMessage(
+                content="Xin lỗi, em gặp lỗi khi xử lý hình ảnh hoặc tài liệu. "
+                        "Anh/chị vui lòng gửi lại hoặc mô tả chi tiết hơn về nội dung cần hỗ trợ."
+            )
+            return {"messages": [fallback_response]}
             fallback_response = AIMessage(
                 content="Xin lỗi, có lỗi xảy ra khi xử lý hình ảnh/tài liệu. "
                         "Anh/chị vui lòng thử lại hoặc gọi hotline 1900 636 886 để được hỗ trợ."
@@ -1443,10 +1558,16 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
         
         # Map router decisions to valid node names
         if datasource == "vectorstore":
+            logging.info(f"🔀 Router decision: vectorstore → retrieve")
             return "retrieve"
         elif datasource == "web_search":
+            logging.info(f"🔀 Router decision: web_search → web_search")
             return "web_search"
+        elif datasource == "process_document":
+            logging.info(f"🖼️ Router decision: process_document → process_document")
+            return "process_document"
         else:  # direct_answer or any other case
+            logging.info(f"🔀 Router decision: {datasource} → direct_answer")
             return "direct_answer"
 
     def decide_after_direct_generation(
