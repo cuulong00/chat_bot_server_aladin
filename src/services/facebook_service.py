@@ -3,10 +3,11 @@ import hashlib
 import json
 import logging
 import os
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, List
 
 import httpx
 import time
+from .message_history_service import get_message_history_service
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +55,9 @@ class FacebookMessengerService:
             self._last_reply_ttl = int(os.getenv("FB_REPLY_DEDUP_TTL", "8"))  # seconds
         except ValueError:
             self._last_reply_ttl = 8
+
+        # Message history service
+        self.message_history = get_message_history_service()
 
         missing = []
         if not self.page_access_token:
@@ -354,10 +358,38 @@ class FacebookMessengerService:
                         continue
 
                     message = msg_obj
-                    if message and message.get("text"):
-                        text = (message.get("text") or "").strip()
-                        if not text:
+                    if message:
+                        # Initialize message content
+                        text = ""
+                        attachment_info = []
+                        
+                        # Handle text message
+                        if message.get("text"):
+                            text = (message.get("text") or "").strip()
+                        
+                        # Handle attachments (images, videos, files, etc.)
+                        if message.get("attachments"):
+                            attachment_info = await self._process_attachments(message["attachments"])
+                        
+                        # Handle reply context
+                        reply_context = ""
+                        if message.get("reply_to"):
+                            reply_context = await self._get_reply_context(sender, message["reply_to"]["mid"])
+                        
+                        # Skip if no content at all
+                        if not text and not attachment_info:
                             continue
+                        
+                        # Store user message in history
+                        message_id = message.get("mid", f"temp_{int(time.time())}")
+                        self.message_history.store_message(
+                            user_id=sender,
+                            message_id=message_id,
+                            content=text or "[Attachment only]",
+                            is_from_user=True,
+                            attachments=attachment_info
+                        )
+                            
                         # Try enrich user name from Graph API on first contact (best effort)
                         try:
                             profile = await self.get_user_profile(sender)
@@ -375,8 +407,11 @@ class FacebookMessengerService:
                         # UX: show typing indicator while we process
                         await self.send_sender_action(sender, "typing_on")
                         
-                        logger.info(f"Processing message from {sender}: {text[:50]}...")
-                        reply = await self.call_agent(app_state, sender, text)
+                        # Prepare full message content for agent
+                        full_message = await self._prepare_message_for_agent(text, attachment_info, reply_context)
+                        
+                        logger.info(f"Processing message from {sender}: {full_message[:100]}...")
+                        reply = await self.call_agent(app_state, sender, full_message)
                         
                         if reply:
                             # Deduplicate identical reply within short TTL
@@ -388,12 +423,21 @@ class FacebookMessengerService:
                                 logger.info(f"Sending reply to {sender}: {reply[:50]}...")
                                 await self.send_message(sender, reply)
                                 self._last_reply[sender] = (now, reply)
+                                
+                                # Store bot reply in history
+                                bot_message_id = f"bot_{sender}_{int(time.time())}"
+                                self.message_history.store_message(
+                                    user_id=sender,
+                                    message_id=bot_message_id,
+                                    content=reply,
+                                    is_from_user=False
+                                )
                         else:
                             logger.warning(f"No reply generated for {sender}")
 
                     postback = messaging.get("postback")
-                    # Only handle postback if we did NOT already handle a text message above
-                    if (not (message and message.get("text"))) and postback and postback.get("payload"):
+                    # Only handle postback if we did NOT already handle a message above
+                    if (not message or (not message.get("text") and not message.get("attachments"))) and postback and postback.get("payload"):
                         payload = postback["payload"]
                         logger.info(f"Processing postback from {sender}: {payload}")
                         reply = await self.call_agent(app_state, sender, payload)
@@ -408,6 +452,89 @@ class FacebookMessengerService:
                             
         except Exception as e:  # noqa: BLE001
             logger.exception("Error handling Facebook webhook: %s", e)
+
+    # --- Message processing helpers ---
+    async def _process_attachments(self, attachments: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Process message attachments and extract relevant information."""
+        processed_attachments = []
+        
+        for attachment in attachments:
+            attachment_type = attachment.get("type", "unknown")
+            payload = attachment.get("payload", {})
+            
+            attachment_info = {
+                "type": attachment_type,
+                "url": payload.get("url"),
+                "title": payload.get("title"),
+                "coordinates": payload.get("coordinates")  # For location attachments
+            }
+            
+            # Handle specific attachment types
+            if attachment_type in ["image", "video", "audio", "file"]:
+                attachment_info["description"] = f"Người dùng đã gửi {self._get_attachment_type_vietnamese(attachment_type)}"
+                if payload.get("url"):
+                    # For images, try to download and analyze if needed
+                    if attachment_type == "image":
+                        attachment_info["description"] += f" (URL: {payload['url']})"
+                        # TODO: Add image analysis capability here
+            
+            elif attachment_type == "location":
+                lat = payload.get("coordinates", {}).get("lat")
+                lng = payload.get("coordinates", {}).get("long")
+                if lat and lng:
+                    attachment_info["description"] = f"Người dùng đã chia sẻ vị trí: {lat}, {lng}"
+            
+            elif attachment_type == "fallback":
+                title = payload.get("title", "")
+                url = payload.get("url", "")
+                attachment_info["description"] = f"Người dùng đã chia sẻ liên kết: {title} ({url})"
+                
+            processed_attachments.append(attachment_info)
+            
+        return processed_attachments
+    
+    def _get_attachment_type_vietnamese(self, attachment_type: str) -> str:
+        """Convert attachment type to Vietnamese description."""
+        type_map = {
+            "image": "hình ảnh",
+            "video": "video", 
+            "audio": "âm thanh",
+            "file": "tệp tin"
+        }
+        return type_map.get(attachment_type, attachment_type)
+    
+    async def _get_reply_context(self, sender_id: str, replied_mid: str) -> str:
+        """Get context of the message being replied to."""
+        try:
+            # Get conversation context from message history
+            context = self.message_history.get_conversation_context(sender_id, replied_mid)
+            logger.info(f"Retrieved reply context for message {replied_mid} from {sender_id}")
+            return context
+        except Exception as e:
+            logger.warning(f"Could not retrieve reply context: {e}")
+            return "[Đây là phản hồi cho một tin nhắn trước đó]"
+    
+    async def _prepare_message_for_agent(self, text: str, attachments: List[Dict[str, Any]], reply_context: str) -> str:
+        """Prepare the complete message content for the agent."""
+        message_parts = []
+        
+        # Add reply context if available
+        if reply_context:
+            message_parts.append(reply_context)
+        
+        # Add attachment descriptions
+        for attachment in attachments:
+            if attachment.get("description"):
+                message_parts.append(attachment["description"])
+        
+        # Add text content
+        if text:
+            message_parts.append(text)
+        
+        # Join all parts
+        full_message = "\n".join(message_parts) if message_parts else ""
+        
+        return full_message
 
     # --- Dedup helpers ---
     def _event_signature(self, messaging: Dict[str, Any]) -> str:
