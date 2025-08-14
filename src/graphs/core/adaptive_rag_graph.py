@@ -1079,86 +1079,22 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
     document_processing_runnable = document_processing_prompt | llm_generate_direct
     document_processing_assistant = Assistant(document_processing_runnable)
 
-    # --- Routing sanitization helpers ---
-    def _strip_reply_context_block(text: str) -> str:
-        if not isinstance(text, str):
-            return text
-        # Remove anything appended after the reply context marker (historical content)
-        return text.split("[REPLY_CONTEXT]", 1)[0].strip()
-
-    def _has_attachment_metadata(text: str) -> bool:
-        import re
-        if not text:
-            return False
-        t = _strip_reply_context_block(text)
-        patterns = [
-            r"\[HÌNH ẢNH\]\s*URL:\s*https?://",
-            r"\[VIDEO\]\s*URL:\s*https?://",
-            r"\[TỆP TIN\]\s*URL:\s*https?://",
-            r"📸\s*\*\*Phân tích hình ảnh:\*\*",  # pre‑analyzed marker
-        ]
-        return any(re.search(p, t) for p in patterns)
-
-    def _sanitize_for_router(text: str) -> str:
-        # Keep only the current-turn plain text; drop historical markers/lines
-        if not isinstance(text, str):
-            return text
-        t = _strip_reply_context_block(text)
-        import re
-        t = re.sub(r"(?m)^\[(HÌNH ẢNH|VIDEO|TỆP TIN)\]\s*URL:.*$", "", t).strip()
-        return t
-
-    def route_question(state: RagState, config: RunnableConfig):
-        logging.info("---NODE: ROUTE QUESTION---")
-        
-        # Get current user question for consistent context
-        current_question = get_current_user_question(state)
-        logging.debug(f"route_question->current_question -> {current_question}")
-
-        # Sanitize input passed to the router to avoid historical attachment leakage
-        prompt_data = router_assistant.binding_prompt(state)
-        prompt_data["messages"] = _sanitize_for_router(current_question)
-
-        result = router_assistant.runnable.invoke(prompt_data)
-        datasource = result.datasource
-        
-        # Log the routing decision with context
-        logging.info(f"🔀 ROUTER DECISION: '{datasource}' for message: {current_question[:100]}...")
-        
-        # Check if this looks like image analysis that should go to direct_answer
-        if datasource != "direct_answer" and ("📸" in current_question or "Phân tích hình ảnh" in current_question or "hình ảnh" in current_question.lower()):
-            logging.warning(f"⚠️ POTENTIAL ROUTING ISSUE: Image analysis message routed to '{datasource}' instead of 'direct_answer'")
-        
-        return {"datasource": datasource}
-
+    # === Node Implementations (restored) ===
     def retrieve(state: RagState, config: RunnableConfig):
         logging.info("---NODE: RETRIEVE---")
         question = get_current_user_question(state)
 
-        # Ensure question is valid
         if not question:
             logging.error("Invalid question for retrieval")
-            return {
-                "documents": [],
-                "search_attempts": state.get("search_attempts", 0) + 1,
-            }
+            return {"documents": [], "search_attempts": state.get("search_attempts", 0) + 1}
 
         try:
             logging.debug(f"retrieve->question -> {question}")
-            
-            # Use QueryClassifier for clean, maintainable query classification
             classifier = QueryClassifier(domain="restaurant")
             classification = classifier.classify_query(question)
-            
-            # Use dynamic retrieval limit based on classification
             limit = classification["retrieval_limit"]
-
-            # Determine namespace: default to domain namespace, switch to 'faq' for FAQ queries
             default_namespace = DOMAIN.get("namespace", "default")
             namespace = "faq" if classification.get("primary_category") == "faq" else default_namespace
-            logging.info(f"Vector search namespace selected: {namespace} (default={default_namespace}, primary={classification.get('primary_category')})")
-
-            # Detailed logging for retrieval parameters
             try:
                 collection_name = getattr(retriever, "collection_name", "<unknown>")
             except Exception:
@@ -1170,153 +1106,75 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
                 limit,
                 question,
             )
-
             documents = retriever.search(namespace=namespace, query=question, limit=limit)
             logging.info(f"Retrieved {len(documents)} documents.")
-            
-            return {
-                "documents": documents,
-                "search_attempts": state.get("search_attempts", 0) + 1,
-            }
+            return {"documents": documents, "search_attempts": state.get("search_attempts", 0) + 1}
         except Exception as e:
             user_id = state.get("user", {}).get("user_info", {}).get("user_id", "unknown")
-            log_exception_details(
-                exception=e,
-                context=f"Retrieve node failure for question: {question[:100]}",
-                user_id=user_id
-            )
-            
-            # Return empty results on error
-            return {
-                "documents": [],
-                "search_attempts": state.get("search_attempts", 0) + 1,
-            }
+            log_exception_details(exception=e, context=f"Retrieve node failure for question: {question[:100]}", user_id=user_id)
+            return {"documents": [], "search_attempts": state.get("search_attempts", 0) + 1}
 
     def grade_documents_node(state: RagState, config: RunnableConfig):
         logging.info("---NODE: GRADE DOCUMENTS---")
-
-        # Get the question from state using consistent method
         question = get_current_user_question(state)
-
-        # Ensure messages is valid
         if not question:
             logging.error("Invalid message for document grading")
             return {"documents": []}
-
         logging.debug(f"grade_documents_node->question -> {question}")
-
-        documents = state["documents"]
-        
+        documents = state.get("documents", [])
         if not documents:
-            logging.debug(f"Khong tim duoc tai lieu nao")
+            logging.debug("Khong tim duoc tai lieu nao")
             return {"documents": []}
-
-        filtered_docs = []
+        filtered = []
         for d in documents:
             if isinstance(d, tuple) and len(d) > 1 and isinstance(d[1], dict):
                 doc_content = d[1].get("content", "")
             else:
                 continue
-            query_grade_document = {
-                "document": doc_content,
-                "messages": question,
-                "user": state.get("user", {}),
-            }
-            logging.debug(f"query_grade_document:{query_grade_document}")
-            score = doc_grader_assistant(
-                query_grade_document,
-                config,
-            )
-            logging.debug(f"score:{score}")
+            query_grade_document = {"document": doc_content, "messages": question, "user": state.get("user", {})}
+            score = doc_grader_assistant(query_grade_document, config)
             if score.binary_score.lower() == "yes":
-                filtered_docs.append(d)
-
-        logging.info(
-            f"Finished grading. {len(filtered_docs)} of {len(documents)} documents are relevant."
-        )
-
-        return {"documents": filtered_docs}
+                filtered.append(d)
+        logging.info(f"Finished grading. {len(filtered)} of {len(documents)} documents are relevant.")
+        return {"documents": filtered}
 
     def rewrite(state: RagState, config: RunnableConfig):
         logging.info("---NODE: REWRITE---")
-        original_question = get_current_user_question(state)
-        logging.debug(f"rewrite->original_question -> {original_question}")
-        
-        # Kiểm tra state trước khi gọi assistant
-        if not original_question or original_question == "Câu hỏi không rõ ràng":
+        original = get_current_user_question(state)
+        logging.debug(f"rewrite->original_question -> {original}")
+        if not original or original == "Câu hỏi không rõ ràng":
             logging.warning("Rewrite node: No valid question found, using fallback")
-            return {
-                "question": "Cần thông tin về nhà hàng Tian Long",
-                "rewrite_count": state.get("rewrite_count", 0) + 1,
-                "documents": [],
-            }
-        
+            return {"question": "Cần thông tin về nhà hàng Tian Long", "rewrite_count": state.get("rewrite_count", 0) + 1, "documents": []}
         try:
-            rewritten_question_msg = rewrite_assistant(state, config)
-            new_question = rewritten_question_msg.content
-            logging.info(f"Rewritten question for retrieval: {new_question}")
-            
-            return {
-                "question": new_question,
-                "rewrite_count": state.get("rewrite_count", 0) + 1,
-                "documents": [],
-            }
+            rewritten_msg = rewrite_assistant(state, config)
+            new_q = rewritten_msg.content
+            logging.info(f"Rewritten question for retrieval: {new_q}")
+            return {"question": new_q, "rewrite_count": state.get("rewrite_count", 0) + 1, "documents": []}
         except Exception as e:
             user_id = state.get("user", {}).get("user_info", {}).get("user_id", "unknown")
-            log_exception_details(
-                exception=e,
-                context=f"Rewrite node failure for question: {original_question[:100]}",
-                user_id=user_id
-            )
-            
-            # Fallback rewrite
-            fallback_question = f"Thông tin về {original_question}"
-            logging.warning(f"Rewrite failed, using fallback: {fallback_question}")
-            return {
-                "question": fallback_question,
-                "rewrite_count": state.get("rewrite_count", 0) + 1,
-                "documents": [],
-            }
+            log_exception_details(exception=e, context=f"Rewrite node failure for question: {original[:100]}", user_id=user_id)
+            fallback = f"Thông tin về {original}"
+            logging.warning(f"Rewrite failed, using fallback: {fallback}")
+            return {"question": fallback, "rewrite_count": state.get("rewrite_count", 0) + 1, "documents": []}
 
     def web_search_node(state: RagState, config: RunnableConfig):
         logging.info("---NODE: WEB SEARCH---")
-
-        # Get the question from state using consistent method
         query_search = get_current_user_question(state)
-
-        # Ensure query_search is valid
         if not query_search:
             logging.error("Invalid query for web search")
             return {"documents": [], "web_search_attempted": True}
-
         logging.debug(f"web_search_node->query_search -> {query_search}")
-        
         search_results = web_search_tool.invoke({"query": query_search}, config)
-
-        if isinstance(search_results, dict) and "results" in search_results:
-            results = search_results["results"]
-        else:
-            results = []
-
+        results = search_results.get("results", []) if isinstance(search_results, dict) else []
         web_documents = []
         for i, res in enumerate(results):
-            # Lấy các trường cần thiết, ưu tiên content, title, url
             content = res.get("content", "")
             title = res.get("title", "")
             url = res.get("url", "")
-            # Gộp lại thành 1 đoạn ngắn gọn, có thể cắt ngắn nếu cần
-            doc_text = f"{title}\n{content}\n{url}".strip()
-            max_len = 1500
-            doc_text = doc_text[:max_len]
+            doc_text = f"{title}\n{content}\n{url}".strip()[:1500]
             web_documents.append((f"web_{i}", {"content": doc_text}, 1.0))
-
         logging.info(f"Found {len(web_documents)} results from web search.")
-
-        return {
-            "documents": web_documents,
-            "web_search_attempted": True,
-            "search_attempts": state.get("search_attempts", 0) + 1,
-        }
+        return {"documents": web_documents, "web_search_attempted": True, "search_attempts": state.get("search_attempts", 0) + 1}
 
     def generate(state: RagState, config: RunnableConfig):
         logging.info("---NODE: GENERATE---")
@@ -1324,301 +1182,146 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
         documents_count = len(state.get("documents", []))
         logging.debug(f"generate->current_question -> {current_question}")
         logging.debug(f"generate->documents_count -> {documents_count}")
-        
         try:
             generation = generation_assistant(state, config)
         except Exception as e:
             user_id = state.get("user", {}).get("user_info", {}).get("user_id", "unknown")
-            log_exception_details(
-                exception=e,
-                context=f"Generate node failure for question: {current_question[:100]}",
-                user_id=user_id
-            )
-            # Return error response
-            generation = {"messages": [{"role": "assistant", "content": "Xin lỗi, có lỗi xảy ra khi tạo câu trả lời. Vui lòng thử lại."}]}
-        
+            log_exception_details(exception=e, context=f"Generate node failure for question: {current_question[:100]}", user_id=user_id)
+            from langchain_core.messages import AIMessage
+            generation = AIMessage(content="Xin lỗi, có lỗi xảy ra khi tạo câu trả lời. Vui lòng thử lại.")
         return {"messages": [generation]}
 
     def hallucination_grader_node(state: RagState, config: RunnableConfig):
         logging.info("---NODE: HALLUCINATION GRADER---")
         current_question = get_current_user_question(state)
-        generation_message = state["messages"][-1]
-        
+        generation_message = state["messages"][ -1]
         if not state.get("documents") or hasattr(generation_message, "tool_calls"):
             return {"hallucination_score": "grounded"}
-            
         score = hallucination_grader_assistant(state, config)
         logging.info(f"---HALLUCINATION SCORE: {score.binary_score.upper()}---")
-        
         grading_result = "grounded" if score.binary_score.lower() == "yes" else "not_grounded"
-        
-        update = {
-            "hallucination_score": grading_result
-        }
-        if update["hallucination_score"] == "not_grounded" and state.get(
-            "web_search_attempted", False
-        ):
+        update = {"hallucination_score": grading_result}
+        if update["hallucination_score"] == "not_grounded" and state.get("web_search_attempted", False):
             update["force_suggest"] = True
-        
-        logging.debug(f"hallucination_grader_node->update:{update}")
         return update
 
     def generate_direct_node(state: RagState, config: RunnableConfig):
         logging.info("---NODE: GENERATE DIRECT---")
-        current_question = get_current_user_question(state)
-        
-        # Check if this is a re-entry from tools (to avoid duplicate reasoning steps)
-        messages = state.get("messages", [])
-        is_tool_reentry = len(messages) > 0 and isinstance(messages[-1], ToolMessage)
-        
         response = direct_answer_assistant(state, config)
-        
         return {"messages": [response]}
 
     def force_suggest_node(state: RagState, config: RunnableConfig):
         logging.info("---NODE: FORCE SUGGEST---")
-        current_question = get_current_user_question(state)
-        
         response = suggestive_assistant(state, config)
-
-        return {
-            "messages": [response],
-            "skip_hallucination": True,
-            "force_suggest": False,
-        }
+        return {"messages": [response], "skip_hallucination": True, "force_suggest": False}
 
     def process_document_node(state: RagState, config: RunnableConfig):
-        """Process documents/images using specialized document processing assistant.
-        
-        This node handles:
-        1. Extract image/document URLs from attachment metadata 
-        2. Analyze content using image_processing_service
-        3. Generate contextual response using document_processing_assistant
-        4. Handle follow-up questions about analyzed content
-        """
+        """Process documents/images using specialized document processing assistant."""
         logging.info("---NODE: PROCESS DOCUMENT---")
-        
-        # Use consistent question extraction method like other nodes
         current_question = get_current_user_question(state)
         user_id = state.get("user_id", "")
         messages = state.get("messages", [])
-        
         logging.debug(f"process_document_node->current_question -> {current_question}")
-        logging.debug(f"process_document_node->user_id -> {user_id}")
-        logging.debug(f"process_document_node->messages_count -> {len(messages)}")
-        
-        # Validate input like other nodes
         if not current_question or current_question == "Câu hỏi không rõ ràng":
-            logging.warning("process_document_node: Invalid or empty question")
             from langchain_core.messages import AIMessage
-            fallback_response = AIMessage(
-                content="Xin lỗi, em không nhận được câu hỏi rõ ràng. "
-                        "Anh/chị vui lòng gửi lại tin nhắn hoặc hình ảnh cần hỗ trợ."
-            )
-            return {"messages": [fallback_response]}
-        
-        logging.info(f"Processing document/image query: {current_question[:100]}...")
-        
-        try:
-            # Check if this is a re-entry from tools (consistent with other nodes)
-            is_tool_reentry = len(messages) > 0 and isinstance(messages[-1], ToolMessage)
-            if is_tool_reentry:
-                logging.debug("process_document_node: Tool re-entry detected")
-            
-            # Extract image URLs from message content
-            image_analysis_results = []
-            
-            # Look for attachment metadata patterns like [HÌNH ẢNH] URL: ...
-            import re
-            url_patterns = [
-                r'\[HÌNH ẢNH\] URL: (https?://[^\s]+)',
-                r'\[VIDEO\] URL: (https?://[^\s]+)', 
-                r'\[TỆP TIN\] URL: (https?://[^\s]+)',
-                r'📸.*?(https?://[^\s]+)'  # Legacy format support
-            ]
-            
-            image_urls = []
-            for pattern in url_patterns:
-                matches = re.findall(pattern, current_question)
-                image_urls.extend(matches)
-
-            # Short-circuit if no URLs found to avoid unnecessary processing
-            if not image_urls:
-                logging.info("No attachment URLs found in current message; skipping document analysis")
-                from langchain_core.messages import AIMessage
-                response = AIMessage(
-                    content="Em chưa thấy tệp/hình ảnh nào trong tin nhắn này. Anh/chị có thể gửi lại ảnh hoặc tệp cần phân tích không ạ?"
-                )
-                return {"messages": [response]}
-            
-            # Get image processing service
-            image_service = get_image_processing_service()
-            
-            # Analyze each image URL found
-            for url in image_urls:
-                logging.info(f"🖼️ Analyzing image URL: {url[:50]}...")
+            return {"messages": [AIMessage(content="Xin lỗi, em chưa nhận được nội dung rõ ràng. Anh/chị vui lòng gửi lại ảnh/tệp cần hỗ trợ.")]}
+        import re, asyncio, concurrent.futures
+        url_patterns = [
+            r"\[HÌNH ẢNH\] URL: (https?://[^\s]+)",
+            r"\[VIDEO\] URL: (https?://[^\s]+)",
+            r"\[TỆP TIN\] URL: (https?://[^\s]+)",
+            r"📸.*?(https?://[^\s]+)",
+        ]
+        image_urls = []
+        for p in url_patterns:
+            image_urls.extend(re.findall(p, current_question))
+        if not image_urls:
+            from langchain_core.messages import AIMessage
+            logging.info("No attachment URLs found in current message; skipping document analysis")
+            return {"messages": [AIMessage(content="Em chưa thấy tệp/hình ảnh nào trong tin nhắn này. Anh/chị có thể gửi lại ảnh hoặc tệp cần phân tích không ạ?")]} 
+        image_service = get_image_processing_service()
+        image_analysis_results: List[str] = []
+        for url in image_urls:
+            logging.info(f"🖼️ Analyzing image URL: {url[:50]}...")
+            def run_image_analysis():
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
                 try:
-                    # Run async image analysis safely in sync context
-                    import asyncio
-                    import concurrent.futures
-                    
-                    def run_image_analysis():
-                        """Run image analysis in a separate thread with its own event loop"""
-                        # Create new event loop for this thread
-                        new_loop = asyncio.new_event_loop()
-                        asyncio.set_event_loop(new_loop)
-                        try:
-                            return new_loop.run_until_complete(
-                                image_service.analyze_image_from_url(
-                                    url, 
-                                    "Hình ảnh được gửi bởi khách hàng của nhà hàng Tian Long"
-                                )
-                            )
-                        finally:
-                            new_loop.close()
-                    
-                    # Execute in thread pool to avoid blocking current thread
-                    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-                        future = executor.submit(run_image_analysis)
-                        analysis_result = future.result(timeout=30)  # 30s timeout
-                    
+                    return loop.run_until_complete(
+                        image_service.analyze_image_from_url(url, "Hình ảnh được gửi bởi khách hàng của nhà hàng Tian Long")
+                    )
+                finally:
+                    loop.close()
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(run_image_analysis)
+                try:
+                    analysis_result = future.result(timeout=30)
                     image_analysis_results.append(analysis_result)
-                    logging.info(f"✅ Image analysis completed: {analysis_result[:100]}...")
                 except Exception as e:
                     logging.error(f"❌ Image analysis failed for {url}: {e}")
                     image_analysis_results.append(f"Không thể phân tích hình ảnh từ URL: {url}")
-            
-            # Prepare enhanced question with image analysis
-            enhanced_question = current_question
-            if image_analysis_results:
-                analysis_text = "\n\n".join(image_analysis_results)
-                enhanced_question = f"{current_question}\n\n📸 **Phân tích hình ảnh:**\n{analysis_text}"
-                logging.info(f"📝 Enhanced question with image analysis: {enhanced_question[:200]}...")
-            
-            # Update state with enhanced question
-            enhanced_state = {**state, "question": enhanced_question}
-            
-            # Use document processing assistant to generate response
-            response = document_processing_assistant(enhanced_state, config)
-            
-            logging.info("✅ Document/image processing completed successfully")
-            return {"messages": [response]}
-            
-        except Exception as e:
-            # Consistent error handling pattern like other nodes
-            user_context = state.get("user", {}).get("user_info", {}).get("user_id", "unknown")
-            log_exception_details(
-                exception=e,
-                context=f"Process document node failure for question: {current_question[:100]}",
-                user_id=user_context
-            )
-            
-            # Fallback response with consistent messaging
-            from langchain_core.messages import AIMessage
-            fallback_response = AIMessage(
-                content="Xin lỗi, có lỗi xảy ra khi xử lý hình ảnh/tài liệu. "
-                        "Anh/chị vui lòng thử lại hoặc gọi hotline 1900 636 886 để được hỗ trợ."
-            )
-            return {"messages": [fallback_response]}
+        enhanced_question = current_question
+        if image_analysis_results:
+            analysis_text = "\n\n".join(image_analysis_results)
+            enhanced_question = f"{current_question}\n\n📸 **Phân tích hình ảnh:**\n{analysis_text}"
+        enhanced_state = {**state, "question": enhanced_question}
+        response = document_processing_assistant(enhanced_state, config)
+        return {"messages": [response]}
 
-    # --- Conditional Edges ---
-
-    def decide_after_grade(
-        state: RagState,
-    ) -> Literal["rewrite", "generate", "force_suggest"]:
-        if state["documents"]:
+    # --- Conditional Edges (restored) ---
+    def decide_after_grade(state: RagState,) -> Literal["rewrite", "generate", "force_suggest"]:
+        if state.get("documents"):
             return "generate"
-        if (
-            state.get("search_attempts", 0) >= 2
-            and len(state.get("documents", [])) == 0
-        ):
+        if state.get("search_attempts", 0) >= 2 and len(state.get("documents", [])) == 0:
             return "force_suggest"
         if state.get("rewrite_count", 0) < 1:
             return "rewrite"
         return "generate"
 
-    def decide_after_hallucination(
-        state: RagState,
-    ) -> Literal["rewrite", "tools", "end", "generate"]:
+    def decide_after_hallucination(state: RagState,) -> Literal["rewrite", "tools", "end", "generate"]:
         if state.get("force_suggest", False):
             return "generate"
         if state.get("hallucination_score") == "not_grounded":
             return "rewrite" if state.get("rewrite_count", 0) < 1 else "end"
         last_message = state["messages"][-1]
-        return (
-            "tools"
-            if hasattr(last_message, "tool_calls") and last_message.tool_calls
-            else "end"
-        )
+        return ("tools" if hasattr(last_message, "tool_calls") and last_message.tool_calls else "end")
 
-    # Restored: decide next step after generate_direct
-    def decide_after_direct_generation(
-        state: RagState,
-    ) -> Literal["direct_tools", "__end__"]:
+    def decide_after_direct_generation(state: RagState,) -> Literal["direct_tools", "__end__"]:
         last_message = state["messages"][-1]
-        return (
-            "direct_tools"
-            if hasattr(last_message, "tool_calls") and last_message.tool_calls
-            else "__end__"
-        )
+        return ("direct_tools" if hasattr(last_message, "tool_calls") and last_message.tool_calls else "__end__")
 
-    # Restored: decide next step after process_document
-    def decide_after_process_document(
-        state: RagState,
-    ) -> Literal["direct_tools", "__end__"]:
+    def decide_after_process_document(state: RagState,) -> Literal["direct_tools", "__end__"]:
         last_message = state["messages"][-1]
-        return (
-            "direct_tools"
-            if hasattr(last_message, "tool_calls") and last_message.tool_calls
-            else "__end__"
-        )
+        return ("direct_tools" if hasattr(last_message, "tool_calls") and last_message.tool_calls else "__end__")
 
-    # Restored: decide where to go after direct_tools
-    def decide_after_direct_tools(
-        state: RagState,  
-    ) -> Literal["generate_direct", "process_document"]:
-        # Heuristic based on question indicators
-        question = state.get("question", "").lower()
+    def decide_after_direct_tools(state: RagState,) -> Literal["generate_direct", "process_document"]:
+        question = get_current_user_question(state).lower()
         if any(ind in question for ind in ["📸", "document", "tài liệu", "file", "hình ảnh", "ảnh"]):
-            logging.info("Returning to process_document after tools")
             return "process_document"
-        logging.info("Returning to generate_direct after tools")
         return "generate_direct"
 
+    # Update decide_entry to use the normalized getter
     def decide_entry(
         state: RagState,
     ) -> Literal["retrieve", "web_search", "direct_answer", "process_document"]:
-        """Route questions to appropriate processing nodes based on content analysis.
-        
-        Priority routing logic tightened to avoid false positives:
-        - Only route to process_document when the current message contains explicit
-          attachment metadata (current-turn) or the pre‑analyzed marker.
-        - Otherwise, honor the router decision (vectorstore/web_search/direct_answer).
-        """
-        question_raw = state.get("question", "")
+        question_raw = get_current_user_question(state)
         question = question_raw.lower()
         datasource = state.get("datasource", "direct_answer")
-        
         logging.debug(f"decide_entry->question: {question[:100]}...")
         logging.debug(f"decide_entry->router_datasource: {datasource}")
-
-        # Guard against false 'process_document' when no current-turn attachments
+        if _has_attachment_metadata(question_raw):
+            logging.info("🖼️ Detected current-turn attachment metadata → route to process_document")
+            return "process_document"
         if datasource == "process_document" and not _has_attachment_metadata(question_raw):
             logging.info("🛑 Router chose process_document but no current-turn attachments detected -> override to direct_answer")
             return "direct_answer"
-        
-        # Map router decisions to valid node names
         if datasource == "vectorstore":
-            logging.info(f"🔀 Router decision: vectorstore → retrieve")
             return "retrieve"
         elif datasource == "web_search":
-            logging.info(f"🔀 Router decision: web_search → web_search")
             return "web_search"
         elif datasource == "process_document":
-            logging.info(f"🖼️ Router decision: process_document → process_document")
             return "process_document"
-        else:  # direct_answer or any other case
-            logging.info(f"🔀 Router decision: {datasource} → direct_answer")
+        else:
             return "direct_answer"
 
     # --- Build the Graph ---
@@ -1661,7 +1364,7 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
     # Add conditional edge from user_info to decide whether to summarize or go directly to router
     graph.add_conditional_edges(
         "user_info",
-        lambda state: "summarize" if should_summarize_conversation(state) else "continue",
+               lambda state: "summarize" if should_summarize_conversation(state) else "continue",
         {"summarize": "summarizer", "continue": "router"},
     )
     graph.add_edge("summarizer", "router")
