@@ -191,6 +191,8 @@ def user_info(state: State, config: RunnableConfig):
 
     # Allow bypassing DB lookup for user info (e.g., when only Facebook data is available)
     BYPASS_USER_DB = os.getenv("BYPASS_USER_DB", "0") == "1"
+    # Heuristic: Facebook PSID is typically a numeric string; prefer bypass for PSID contexts
+    is_psid = isinstance(user_id, str) and user_id.isdigit() and len(user_id) >= 10
     # Persist minimal Facebook user into user_facebook table on first contact
     try:
         fb_row = UserFacebookRepository.ensure_user(user_id=user_id)
@@ -198,7 +200,7 @@ def user_info(state: State, config: RunnableConfig):
     except Exception as _e:
         logging.warning(f"Could not ensure user_facebook row for {user_id}: {_e}")
     print(f"BYPASS_USER_DB:{BYPASS_USER_DB}")
-    if BYPASS_USER_DB:
+    if BYPASS_USER_DB or is_psid:
         # Minimal user info sourced from the Facebook PSID (and DB row if available)
         fb_info = UserFacebookRepository.get_by_id(user_id) or {}
         user_info_data = {
@@ -222,8 +224,18 @@ def user_info(state: State, config: RunnableConfig):
         user = User(user_info=user_info_data, user_profile=user_profile)
     else:
         user_info_data = get_user_info.invoke({"user_id": user_id})
-        if "error" in user_info_data:
-            raise ValueError(f"User info error: {user_info_data['error']}")
+        # Graceful fallback: if core users table has no record, fallback to Facebook minimal profile
+        if not user_info_data or (isinstance(user_info_data, dict) and "error" in user_info_data):
+            logging.warning(
+                f"Core users table missing user {user_id}. Falling back to user_facebook profile.")
+            fb_info = UserFacebookRepository.get_by_id(user_id) or {}
+            user_info_data = {
+                "user_id": user_id,
+                "name": fb_info.get("name"),
+                "email": fb_info.get("email"),
+                "phone": fb_info.get("phone"),
+                "address": None,
+            }
         thread_res = get_latest_thread_id_by_user.invoke({"user_id": user_id})
         thread_id = (thread_res or {}).get("thread_id") if isinstance(thread_res, dict) else None
         if not thread_id:
