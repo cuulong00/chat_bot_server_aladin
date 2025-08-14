@@ -376,7 +376,7 @@ class FacebookMessengerService:
                         
                         # Handle attachments (images, videos, files, etc.)
                         if message.get("attachments"):
-                            attachment_info = await self._process_attachments(message["attachments"])
+                            attachment_info = self._process_attachments(message["attachments"])
                         
                         # Handle reply context
                         reply_context = ""
@@ -415,7 +415,7 @@ class FacebookMessengerService:
                         await self.send_sender_action(sender, "typing_on")
                         
                         # Prepare full message content for agent
-                        full_message = await self._prepare_message_for_agent(text, attachment_info, reply_context)
+                        full_message = self._prepare_message_for_agent(text, attachment_info, reply_context)
                         
                         logger.info(f"🔄 Processing MESSAGE from {sender}: {full_message[:100]}...")
                         
@@ -467,7 +467,7 @@ class FacebookMessengerService:
             logger.exception("Error handling Facebook webhook: %s", e)
 
     # --- Message processing helpers ---
-    async def _process_attachments(self, attachments: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def _process_attachments(self, attachments: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Process message attachments and extract URL information only.
         
         NOTE: This function NO LONGER analyzes image content. 
@@ -528,7 +528,7 @@ class FacebookMessengerService:
             logger.warning(f"Could not retrieve reply context: {e}")
             return "[Đây là phản hồi cho một tin nhắn trước đó]"
     
-    async def _prepare_message_for_agent(self, text: str, attachments: List[Dict[str, Any]], reply_context: str) -> str:
+    def _prepare_message_for_agent(self, text: str, attachments: List[Dict[str, Any]], reply_context: str) -> str:
         """Prepare the complete message content for the agent.
         
         Format message to include attachment metadata that Graph can process.
