@@ -1615,7 +1615,7 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
         # Map router decisions to valid node names
         if datasource == "vectorstore":
             logging.info(f"🔀 Router decision: vectorstore → retrieve")
-            return "retrieve"
+            return "vectorstore"
         elif datasource == "web_search":
             logging.info(f"🔀 Router decision: web_search → web_search")
             return "web_search"
