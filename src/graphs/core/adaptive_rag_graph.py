@@ -24,16 +24,14 @@ from langgraph.prebuilt import  ToolNode
 from langgraph.graph import StateGraph
 
 from pydantic import BaseModel, Field
-
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.runnables import Runnable, RunnableConfig, RunnablePassthrough
 
-
-from src.database.qdrant_store import QdrantStore
 from src.utils.query_classifier import QueryClassifier
 
 from src.tools.memory_tools import save_user_preference, get_user_profile
 from src.graphs.state.state import RagState
+from src.database.qdrant_store import QdrantStore
 """Adaptive RAG graph with optional short-term memory (langmem).
 
 If langmem is not installed or incompatible with the installed langgraph version,
