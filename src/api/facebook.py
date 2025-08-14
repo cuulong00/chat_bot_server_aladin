@@ -13,6 +13,11 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/facebook", tags=["Facebook"])
 
 
+# Ensure a singleton service instance so in-memory caches (dedup, profiles) persist across requests
+from functools import lru_cache
+
+
+@lru_cache(maxsize=1)
 def get_fb_service() -> FacebookMessengerService:
     return FacebookMessengerService.from_env()
 
@@ -48,8 +53,18 @@ async def handle_webhook(
     except json.JSONDecodeError:
         raise HTTPException(status_code=400, detail="Invalid JSON payload")
 
-    await svc.handle_webhook_event(request.app.state, payload)
-    return {"status": "ok"}
+    # IMPORTANT: Do not await long-running processing. Schedule in background
+    # and return 200 immediately so Facebook does not redeliver the same event.
+    import asyncio
+
+    try:
+        asyncio.create_task(svc.handle_webhook_event(request.app.state, payload))
+    except RuntimeError:
+        # Fallback if event loop context not available (should not happen in FastAPI)
+        loop = asyncio.get_event_loop()
+        loop.create_task(svc.handle_webhook_event(request.app.state, payload))
+
+    return {"status": "accepted"}
 
 
 @router.get("/debug/user_profile")
