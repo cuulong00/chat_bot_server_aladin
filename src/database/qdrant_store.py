@@ -153,6 +153,9 @@ class QdrantStore:
                 query_vector=query_vec,
                 limit=limit,
                 with_payload=True,
+                query_filter=Filter(
+                    must=[FieldCondition(key="namespace", match=MatchValue(value=namespace))]
+                ),
             )
             results: List[Tuple[str, Dict[str, Any], float]] = []
             for sp in search_result:

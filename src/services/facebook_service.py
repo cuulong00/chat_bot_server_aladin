@@ -6,6 +6,7 @@ import os
 from typing import Any, Dict, Optional
 
 import httpx
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +36,12 @@ class FacebookMessengerService:
         self.api_version = api_version
         # Optional Page ID (used to ignore echo messages and self-sent events)
         self.page_id = page_id or os.getenv("PAGE_ID", "")
+        # Simple in-memory TTL cache for user profiles to reduce Graph API calls
+        self._profile_cache: dict[str, tuple[float, Dict[str, Any]]] = {}
+        try:
+            self._profile_ttl = int(os.getenv("FB_PROFILE_CACHE_TTL", "600"))
+        except ValueError:
+            self._profile_ttl = 600
 
         missing = []
         if not self.page_access_token:
@@ -104,10 +111,76 @@ class FacebookMessengerService:
                 backoff *= 2
         return {"ok": False, "error": "failed_to_send"}
 
+    async def send_sender_action(self, recipient_psid: str, action: str = "typing_on") -> None:
+        """Send a sender_action (e.g., typing_on) to Messenger; best-effort, no raise."""
+        if action not in {"typing_on", "typing_off", "mark_seen"}:
+            action = "typing_on"
+        url = f"{self.GRAPH_API_BASE}/{self.api_version}/me/messages"
+        params = {"access_token": self.page_access_token}
+        payload = {"recipient": {"id": recipient_psid}, "sender_action": action}
+        try:
+            async with httpx.AsyncClient(timeout=5) as client:
+                await client.post(url, params=params, json=payload)
+        except Exception:
+            # Silence errors; this is non-critical UX enhancement
+            return
+
     async def _sleep(self, seconds: float) -> None:
         import asyncio
 
         await asyncio.sleep(seconds)
+
+    # --- User Profile (Graph API) ---
+    async def get_user_profile(self, psid: str) -> Optional[Dict[str, Any]]:
+        """Fetch user's public profile fields using the Page Access Token.
+
+        Notes:
+        - Requires proper Messenger permissions (pages_messaging) and the user
+          must have interacted with the Page.
+        - Available fields: first_name, last_name, profile_pic, locale, timezone, gender, name
+        """
+        if not psid or not psid.isdigit():
+            logger.warning("Skip get_user_profile: invalid psid=%s", psid)
+            return None
+
+        # Cache lookup
+        now = time.time()
+        cached = self._profile_cache.get(psid)
+        if cached and (now - cached[0] < self._profile_ttl):
+            return cached[1]
+
+        url = f"{self.GRAPH_API_BASE}/{self.api_version}/{psid}"
+        params = {
+            "access_token": self.page_access_token,
+            "fields": "first_name,last_name,name,profile_pic,locale,timezone",
+        }
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                resp = await client.get(url, params=params)
+                if not resp.is_success:
+                    # Common cases: permissions missing, expired token, user not available
+                    logger.info("get_user_profile(%s) failed: %s", psid, resp.text)
+                    return None
+                data = resp.json()
+                # Normalize name
+                name = data.get("name") or (
+                    ((data.get("first_name") or "").strip() + " " + (data.get("last_name") or "").strip()).strip()
+                )
+                profile = {
+                    "user_id": psid,
+                    "name": name or None,
+                    "first_name": data.get("first_name"),
+                    "last_name": data.get("last_name"),
+                    "profile_pic": data.get("profile_pic"),
+                    "locale": data.get("locale"),
+                    "timezone": data.get("timezone"),
+                }
+                # Cache it
+                self._profile_cache[psid] = (now, profile)
+                return profile
+        except Exception as e:  # noqa: BLE001
+            logger.exception("get_user_profile exception: %s", e)
+            return None
 
     # --- Agent Integration ---
     async def call_agent(self, app_state, user_id: str, message: str) -> str:
@@ -269,6 +342,22 @@ class FacebookMessengerService:
                         text = (message.get("text") or "").strip()
                         if not text:
                             continue
+                        # Try enrich user name from Graph API on first contact (best effort)
+                        try:
+                            profile = await self.get_user_profile(sender)
+                            if profile and profile.get("name"):
+                                # Lazy import to avoid hard dependency at module import time
+                                from src.repositories.user_facebook import UserFacebookRepository
+
+                                UserFacebookRepository.ensure_user(
+                                    user_id=sender,
+                                    name=profile.get("name"),
+                                )
+                        except Exception as _pe:  # noqa: BLE001
+                            logger.debug("Profile enrichment skipped: %s", _pe)
+
+                        # UX: show typing indicator while we process
+                        await self.send_sender_action(sender, "typing_on")
                         
                         logger.info(f"Processing message from {sender}: {text[:50]}...")
                         reply = await self.call_agent(app_state, sender, text)

@@ -16,6 +16,16 @@ RESTAURANT_KEYWORDS = {
         "food", "dish", "price", "meal", "cuisine"
     ],
     
+    # FAQ/general Q&A triggers
+    "faq_keywords": [
+        # Vietnamese
+        "hỏi đáp", "faq", "câu hỏi", "giải đáp", "thắc mắc", "hướng dẫn", "tư vấn",
+        # Typical questions from FAQ
+        "có gì đặc biệt", "khác biệt", "điều chỉnh", "trẻ em", "định lượng",
+        # English
+        "faq", "q&a", "questions", "answers", "guide", "how to"
+    ],
+    
     "location_keywords": [
         # Vietnamese
         "địa chỉ", "ở đâu", "chi nhánh", "cơ sở", "hotline", "liên hệ",

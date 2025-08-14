@@ -13,7 +13,8 @@ load_dotenv()
 # Khởi tạo clients
 QDRANT_HOST = os.getenv("QDRANT_HOST", "69.197.187.234")
 QDRANT_PORT = int(os.getenv("QDRANT_PORT", "6333"))
-USER_MEMORY_COLLECTION = "user_memory"
+USER_MEMORY_COLLECTION = os.getenv("USER_MEMORY_COLLECTION", "aladin_maketing")
+USER_MEMORY_NAMESPACE = os.getenv("USER_MEMORY_NAMESPACE", "user_ref")
 
 qdrant_client = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT)
 # Configure the Google GenAI library directly
@@ -151,10 +152,12 @@ class UserMemoryStore:
         embedding = self._get_embedding(text_to_embed)
         preference_id = str(uuid.uuid4())
 
+        # Store in collection with a namespace tag to isolate user memory
         point = PointStruct(
             id=preference_id,
             vector=embedding,
             payload={
+                "namespace": USER_MEMORY_NAMESPACE,
                 "user_id": user_id,
                 "preference_type": preference_type,
                 "content": content,
@@ -192,12 +195,18 @@ class UserMemoryStore:
 
         query_embedding = self._get_embedding(search_query)
 
+        # Filter by namespace and user_id to read back only personalized memory
         search_results = self.qdrant_client.search(
             collection_name=self.collection_name,
             query_vector=query_embedding,
             limit=k,
             with_payload=True,
-            query_filter={"must": [{"key": "user_id", "match": {"value": user_id}}]},
+            query_filter={
+                "must": [
+                    {"key": "namespace", "match": {"value": USER_MEMORY_NAMESPACE}},
+                    {"key": "user_id", "match": {"value": user_id}},
+                ]
+            },
         )
 
         if not search_results:

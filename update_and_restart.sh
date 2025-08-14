@@ -1,8 +1,14 @@
 #!/bin/bash
 
+
 # Pull the latest code from the repository
 echo "🔄 Pulling the latest code..."
-git pull
+git fetch --all
+git reset --hard origin/main
+
+# Replace the entire client directory with the latest version from git to avoid conflicts
+echo "🧹 Replacing client directory with latest version from git..."
+git checkout origin/main -- client
 
 # Stop Docker containers
 echo "🛑 Stopping Docker containers..."

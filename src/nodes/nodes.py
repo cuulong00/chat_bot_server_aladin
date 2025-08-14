@@ -8,6 +8,7 @@ from src.tools import flight_tools
 from langchain_core.runnables import RunnableConfig
 from src.graphs.state.state  import State, User
 from src.tools.memory_tools import get_user_profile
+from src.repositories.user_facebook import UserFacebookRepository
 from langchain_core.runnables import RunnableConfig
 import uuid
 import logging
@@ -190,16 +191,34 @@ def user_info(state: State, config: RunnableConfig):
 
     # Allow bypassing DB lookup for user info (e.g., when only Facebook data is available)
     BYPASS_USER_DB = os.getenv("BYPASS_USER_DB", "0") == "1"
-    BYPASS_USER_DB=1
+    # Persist minimal Facebook user into user_facebook table on first contact
+    try:
+        fb_row = UserFacebookRepository.ensure_user(user_id=user_id)
+        logging.info(f"user_facebook ensured: {fb_row}")
+    except Exception as _e:
+        logging.warning(f"Could not ensure user_facebook row for {user_id}: {_e}")
     print(f"BYPASS_USER_DB:{BYPASS_USER_DB}")
     if BYPASS_USER_DB:
-        # Minimal user info sourced from the Facebook PSID
-        user_info_data = {"user_id": user_id, "name": None, "email": None, "phone": None, "address": None}
+        # Minimal user info sourced from the Facebook PSID (and DB row if available)
+        fb_info = UserFacebookRepository.get_by_id(user_id) or {}
+        user_info_data = {
+            "user_id": user_id,
+            "name": fb_info.get("name"),
+            "email": fb_info.get("email"),
+            "phone": fb_info.get("phone"),
+            "address": None,
+        }
         thread_res = get_latest_thread_id_by_user.invoke({"user_id": user_id})
         thread_id = (thread_res or {}).get("thread_id") if isinstance(thread_res, dict) else None
         if not thread_id:
             thread_id = str(uuid.uuid4())
-        user_profile = {}
+        # Fetch personalized profile summary from vector DB (namespace user_ref)
+        try:
+            profile_summary = get_user_profile.invoke({"user_id": user_id, "query_context": "restaurant"})
+        except Exception as _ie:
+            logging.warning(f"get_user_profile failed: {_ie}")
+            profile_summary = ""
+        user_profile = {"summary": profile_summary} if profile_summary else {}
         user = User(user_info=user_info_data, user_profile=user_profile)
     else:
         user_info_data = get_user_info.invoke({"user_id": user_id})
@@ -209,7 +228,12 @@ def user_info(state: State, config: RunnableConfig):
         thread_id = (thread_res or {}).get("thread_id") if isinstance(thread_res, dict) else None
         if not thread_id:
             thread_id = str(uuid.uuid4())
-        user_profile = {}
+        try:
+            profile_summary = get_user_profile.invoke({"user_id": user_id, "query_context": "restaurant"})
+        except Exception as _ie:
+            logging.warning(f"get_user_profile failed: {_ie}")
+            profile_summary = ""
+        user_profile = {"summary": profile_summary} if profile_summary else {}
         user = User(user_info=user_info_data, user_profile=user_profile)
     
     # RESET: Start with clean reasoning_steps and set current question

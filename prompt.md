@@ -111,7 +111,42 @@ Thông tin xác thực
 header
 key: X-Api-Key
 valule: 8b63f9534aee46f86bfb370b4681a20a
+---------------------------------
+
+Tôi có một luồng chatbot cho phép khách hàng booking bàn ăn. với các thông tin dùng để gọi api như sau
+
+    "restaurant_id": 11, #là id của nhà hàng, lấy được bằng cách tìm kiếm trong vector database theo tên, địa chỉ
+    "first_name": "Le", 
+    "last_name": "Yen",
+    "phone": "0981896440",
+    "email": "0981896441@example",
+    "dob": "1983-10-10", #tùy chọn
+    "reservation_date": "2024-05-09",
+    "start_time": "19:00",
+    "end_time": "22:00",
+    "guest": 6,
+    "note": "Test 1",
 
 
-
-
+trong đó restaurant_id agent sẽ phải tự động tìm kiếm trong danh sách nhà hàng có dạng như sau: 
+ {
+        "id": "667a27e9af01b69bf",
+        "name": "LW-BG01:L3-07 Vincom Bắc Giang - số 43 Ngô Gia Tự, Bắc Giang"
+    },
+    {
+        "id": "683d187026925c1a2",
+        "name": "LW-DN01:K33 Võ Thị Sáu - Biên Hòa - Đồng Nai"
+    },
+    {
+        "id": "6383b75c9ee5ebd3f",
+        "name": "LW-HN01:84 Ngọc khánh - Ba Đình - Hà Nội"
+    },
+    {
+        "id": "640b7159787af5b1f",
+        "name": "LW-HN02:409 Minh Khai (539 cũ) - Vĩnh Tuy, Hai Bà Trưng, Hà Nội"
+    },
+    {
+        "id": "646185080b04c743e",
+        "name": "LW-HN03:1A Tăng Bạt Hổ - Phạm Đình Hổ - Hai Bà Trưng"
+    },
+Ví dụ khi khách hàng yêu cầu đặt bàn ăn như sau: Tôi muốn đặt bàn ăn ở PHạm đình hồ thì lúc đó LLM phải tự biết được id của nhà hàng là 646185080b04c743e vậy, giải pháp nào là tối ưu nhất để lấy được thông tin nhà hàng trong trường hợp này
