@@ -3,6 +3,7 @@ import hashlib
 import json
 import logging
 import os
+import asyncio
 from typing import Any, Dict, Optional, List
 
 import httpx
@@ -386,85 +387,137 @@ class FacebookMessengerService:
                         # Skip if no content at all
                         if not text and not attachment_info:
                             continue
+
+                        # CRITICAL FIX: Handle Facebook's multi-part message delivery
+                        # Facebook may send text and attachments in separate webhook events
+                        # Need to merge them if they arrive within a short time window
+                        message_timestamp = messaging.get("timestamp", time.time() * 1000)
+                        merge_key = f"{sender}_{int(message_timestamp // 3000)}"  # 3-second window
                         
-                        # Store user message in history
-                        message_id = message.get("mid", f"temp_{int(time.time())}")
+                        # Initialize pending messages storage if not exists
+                        if not hasattr(self, '_pending_messages'):
+                            self._pending_messages = {}
+                        
+                        # Check if we have a pending message to merge with
+                        now = time.time()
+                        pending_messages = self._pending_messages
+                        
+                        # Clean up old pending messages (older than 10 seconds)
+                        for key in list(pending_messages.keys()):
+                            if now - pending_messages[key]['created_at'] > 10:
+                                del pending_messages[key]
+                        
+                        if merge_key in pending_messages:
+                            # Merge with existing pending message
+                            pending = pending_messages[merge_key]
+                            merged_text = (pending['text'] + ' ' + text).strip()
+                            merged_attachments = pending['attachments'] + attachment_info
+                            
+                            logger.info(f"🔗 MERGING message parts for {sender}: text='{merged_text[:50]}...', attachments={len(merged_attachments)}")
+                            
+                            # Remove from pending and process merged message
+                            del pending_messages[merge_key]
+                            await self._process_complete_message(app_state, sender, message, merged_text, merged_attachments, reply_context)
+                            
+                        else:
+                            # Store this message part and wait for potential merging
+                            pending_messages[merge_key] = {
+                                'text': text,
+                                'attachments': attachment_info,
+                                'message': message,
+                                'reply_context': reply_context,
+                                'created_at': now
+                            }
+                            
+                            # Set a delayed task to process if no merge happens
+                            asyncio.create_task(self._process_after_delay(app_state, sender, merge_key, 2.0))
+                            
+                            
+        except Exception as e:
+            logger.error(f"❌ Webhook processing error: {e}")
+            
+    async def _process_after_delay(self, app_state, sender: str, merge_key: str, delay: float):
+        """Process a pending message after delay if not merged"""
+        await asyncio.sleep(delay)
+        
+        pending_messages = getattr(self, '_pending_messages', {})
+        if merge_key in pending_messages:
+            pending = pending_messages[merge_key]
+            logger.info(f"⏰ TIMEOUT processing for {sender}: no merge received within {delay}s")
+            del pending_messages[merge_key]
+            await self._process_complete_message(
+                app_state, sender, pending['message'], 
+                pending['text'], pending['attachments'], pending['reply_context']
+            )
+            
+    async def _process_complete_message(self, app_state, sender: str, message: dict, text: str, attachment_info: list, reply_context: str = ""):
+        """Process a complete message (merged or standalone)"""
+        try:
+            # Store user message in history
+            message_id = message.get("mid", f"temp_{int(time.time())}")
+            self.message_history.store_message(
+                user_id=sender,
+                message_id=message_id,
+                content=text or "[Attachment only]",
+                is_from_user=True,
+                attachments=attachment_info
+            )
+                
+            # Try enrich user name from Graph API on first contact (best effort)
+            try:
+                profile = await self.get_user_profile(sender)
+                if profile and profile.get("name"):
+                    # Lazy import to avoid hard dependency at module import time
+                    from src.repositories.user_facebook import UserFacebookRepository
+
+                    UserFacebookRepository.ensure_user(
+                        user_id=sender,
+                        name=profile.get("name"),
+                    )
+            except Exception as _pe:  # noqa: BLE001
+                logger.debug("Profile enrichment skipped: %s", _pe)
+
+            # UX: show typing indicator while we process
+            await self.send_sender_action(sender, "typing_on")
+            
+            # Prepare full message content for agent
+            full_message = self._prepare_message_for_agent(text, attachment_info, reply_context)
+            
+            logger.info(f"🔄 Processing MESSAGE from {sender}: {full_message[:100]}...")
+            
+            try:
+                reply = await self.call_agent(app_state, sender, full_message)
+            except Exception as agent_error:
+                logger.error(f"❌ Agent processing failed for {sender}: {agent_error}")
+                reply = "Xin lỗi, em đang gặp sự cố kỹ thuật. Anh/chị vui lòng thử lại sau ít phút."
+            
+            if reply:
+                # Deduplicate identical reply within short TTL
+                now = time.time()
+                last = self._last_reply.get(sender)
+                if last and (now - last[0] < self._last_reply_ttl) and last[1] == reply:
+                    logger.info("Skip sending duplicate reply within TTL window")
+                else:
+                    logger.info(f"📤 Sending MESSAGE reply to {sender}: {reply[:50]}...")
+                    try:
+                        await self.send_message(sender, reply)
+                        self._last_reply[sender] = (now, reply)
+                        
+                        # Store bot reply in history
+                        bot_message_id = f"bot_{sender}_{int(time.time())}"
                         self.message_history.store_message(
                             user_id=sender,
-                            message_id=message_id,
-                            content=text or "[Attachment only]",
-                            is_from_user=True,
-                            attachments=attachment_info
+                            message_id=bot_message_id,
+                            content=reply,
+                            is_from_user=False
                         )
-                            
-                        # Try enrich user name from Graph API on first contact (best effort)
-                        try:
-                            profile = await self.get_user_profile(sender)
-                            if profile and profile.get("name"):
-                                # Lazy import to avoid hard dependency at module import time
-                                from src.repositories.user_facebook import UserFacebookRepository
-
-                                UserFacebookRepository.ensure_user(
-                                    user_id=sender,
-                                    name=profile.get("name"),
-                                )
-                        except Exception as _pe:  # noqa: BLE001
-                            logger.debug("Profile enrichment skipped: %s", _pe)
-
-                        # UX: show typing indicator while we process
-                        await self.send_sender_action(sender, "typing_on")
+                    except Exception as send_error:
+                        logger.error(f"❌ Failed to send message to {sender}: {send_error}")
+            else:
+                logger.warning(f"No reply generated for {sender}")
                         
-                        # Prepare full message content for agent
-                        full_message = self._prepare_message_for_agent(text, attachment_info, reply_context)
-                        
-                        logger.info(f"🔄 Processing MESSAGE from {sender}: {full_message[:100]}...")
-                        
-                        try:
-                            reply = await self.call_agent(app_state, sender, full_message)
-                        except Exception as agent_error:
-                            logger.error(f"❌ Agent processing failed for {sender}: {agent_error}")
-                            reply = "Xin lỗi, em đang gặp sự cố kỹ thuật. Anh/chị vui lòng thử lại sau ít phút."
-                        
-                        if reply:
-                            # Deduplicate identical reply within short TTL
-                            now = time.time()
-                            last = self._last_reply.get(sender)
-                            if last and (now - last[0] < self._last_reply_ttl) and last[1] == reply:
-                                logger.info("Skip sending duplicate reply within TTL window")
-                            else:
-                                logger.info(f"📤 Sending MESSAGE reply to {sender}: {reply[:50]}...")
-                                try:
-                                    await self.send_message(sender, reply)
-                                    self._last_reply[sender] = (now, reply)
-                                    
-                                    # Store bot reply in history
-                                    bot_message_id = f"bot_{sender}_{int(time.time())}"
-                                    self.message_history.store_message(
-                                        user_id=sender,
-                                        message_id=bot_message_id,
-                                        content=reply,
-                                        is_from_user=False
-                                    )
-                                except Exception as send_error:
-                                    logger.error(f"❌ Failed to send message to {sender}: {send_error}")
-                        else:
-                            logger.warning(f"No reply generated for {sender}")
-                        
-                        # Mark this event as processed
-                        processed_event = True
-
-                    # REMOVED: Postback processing that was causing duplicate responses
-                    # Facebook postbacks are typically for button interactions which 
-                    # we don't currently use. This was causing duplicate responses
-                    # when message processing failed.
-                    
-                    # Log postback events for debugging but don't process them
-                    postback = messaging.get("postback")
-                    if postback and postback.get("payload"):
-                        logger.info(f"� POSTBACK event logged (not processed): {postback.get('payload')}")
-                            
-        except Exception as e:  # noqa: BLE001
-            logger.exception("Error handling Facebook webhook: %s", e)
+        except Exception as e:
+            logger.error(f"❌ Error processing complete message: {e}")
 
     # --- Message processing helpers ---
     def _process_attachments(self, attachments: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
