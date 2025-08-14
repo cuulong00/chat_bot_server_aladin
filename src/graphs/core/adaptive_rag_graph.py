@@ -1354,7 +1354,7 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
             "force_suggest": False,
         }
 
-    def process_document_node(state: RagState, config: RunnableConfig):
+    async def process_document_node(state: RagState, config: RunnableConfig):
         """Process documents/images using specialized document processing assistant.
         
         This node handles:
@@ -1416,18 +1416,11 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
             for url in image_urls:
                 logging.info(f"🖼️ Analyzing image URL: {url[:50]}...")
                 try:
-                    analysis_result = image_service.analyze_image_from_url(
+                    # Properly await the async image analysis method
+                    analysis_result = await image_service.analyze_image_from_url(
                         url, 
                         "Hình ảnh được gửi bởi khách hàng của nhà hàng Tian Long"
                     )
-                    # Since this is a synchronous method, we need to handle it properly
-                    if hasattr(analysis_result, '__await__'):
-                        # If it's actually async, await it in a thread
-                        import asyncio
-                        analysis_result = asyncio.run_coroutine_threadsafe(
-                            analysis_result, 
-                            asyncio.get_event_loop()
-                        ).result()
                     
                     image_analysis_results.append(analysis_result)
                     logging.info(f"✅ Image analysis completed: {analysis_result[:100]}...")

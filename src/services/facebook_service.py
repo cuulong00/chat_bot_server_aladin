@@ -418,7 +418,12 @@ class FacebookMessengerService:
                         full_message = await self._prepare_message_for_agent(text, attachment_info, reply_context)
                         
                         logger.info(f"🔄 Processing MESSAGE from {sender}: {full_message[:100]}...")
-                        reply = await self.call_agent(app_state, sender, full_message)
+                        
+                        try:
+                            reply = await self.call_agent(app_state, sender, full_message)
+                        except Exception as agent_error:
+                            logger.error(f"❌ Agent processing failed for {sender}: {agent_error}")
+                            reply = "Xin lỗi, em đang gặp sự cố kỹ thuật. Anh/chị vui lòng thử lại sau ít phút."
                         
                         if reply:
                             # Deduplicate identical reply within short TTL
@@ -428,41 +433,35 @@ class FacebookMessengerService:
                                 logger.info("Skip sending duplicate reply within TTL window")
                             else:
                                 logger.info(f"📤 Sending MESSAGE reply to {sender}: {reply[:50]}...")
-                                await self.send_message(sender, reply)
-                                self._last_reply[sender] = (now, reply)
-                                
-                                # Store bot reply in history
-                                bot_message_id = f"bot_{sender}_{int(time.time())}"
-                                self.message_history.store_message(
-                                    user_id=sender,
-                                    message_id=bot_message_id,
-                                    content=reply,
-                                    is_from_user=False
-                                )
+                                try:
+                                    await self.send_message(sender, reply)
+                                    self._last_reply[sender] = (now, reply)
+                                    
+                                    # Store bot reply in history
+                                    bot_message_id = f"bot_{sender}_{int(time.time())}"
+                                    self.message_history.store_message(
+                                        user_id=sender,
+                                        message_id=bot_message_id,
+                                        content=reply,
+                                        is_from_user=False
+                                    )
+                                except Exception as send_error:
+                                    logger.error(f"❌ Failed to send message to {sender}: {send_error}")
                         else:
                             logger.warning(f"No reply generated for {sender}")
                         
                         # Mark this event as processed
                         processed_event = True
 
-                    # Only handle postback if we haven't processed a message for this event
-                    # postback = messaging.get("postback")
-                    # if not processed_event and postback and postback.get("payload"):
-                    #     payload = postback["payload"]
-                    #     logger.info(f"🔄 Processing POSTBACK from {sender}: {payload}")
-                    #     reply = await self.call_agent(app_state, sender, payload)
-                    #     if reply:
-                    #         now = time.time()
-                    #         last = self._last_reply.get(sender)
-                    #         if last and (now - last[0] < self._last_reply_ttl) and last[1] == reply:
-                    #             logger.info("Skip sending duplicate reply within TTL window (postback)")
-                    #         else:
-                    #             logger.info(f"📤 Sending POSTBACK reply to {sender}: {reply[:50]}...")
-                    #             await self.send_message(sender, reply)
-                    #             self._last_reply[sender] = (now, reply)
-                        
-                    #     # Mark this event as processed
-                    #     processed_event = True
+                    # REMOVED: Postback processing that was causing duplicate responses
+                    # Facebook postbacks are typically for button interactions which 
+                    # we don't currently use. This was causing duplicate responses
+                    # when message processing failed.
+                    
+                    # Log postback events for debugging but don't process them
+                    postback = messaging.get("postback")
+                    if postback and postback.get("payload"):
+                        logger.info(f"� POSTBACK event logged (not processed): {postback.get('payload')}")
                             
         except Exception as e:  # noqa: BLE001
             logger.exception("Error handling Facebook webhook: %s", e)
