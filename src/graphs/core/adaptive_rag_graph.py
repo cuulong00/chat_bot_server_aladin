@@ -507,20 +507,16 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
                 "system",
                 "Current date for context is: {current_date}\n"
                 "You are a highly efficient routing agent about {domain_context}. Your ONLY job: return exactly one token from this set: vectorstore | web_search | direct_answer.\n\n"
-                "PRIORITY MANDATE (VERY IMPORTANT): ALWAYS attempt to satisfy the query via 'vectorstore' FIRST whenever it is even loosely related to {domain_context} or prior conversation context. Only skip vectorstore when it is CLEAR the user needs fresh, real‑time info outside the domain or the query is purely small talk / meta.\n\n"
                 "DECISION ALGORITHM (execute in order, stop at first match):\n"
-                "1. VECTORSTORE -> Choose 'vectorstore' if:\n"
-                "   - The question references {domain_context} concepts, products, services, policies, data, FAQs, internal knowledge, previous retrieved content, OR\n"
-                "   - It is a follow‑up that depends on earlier domain answers, OR\n"
-                "   - Ambiguous but could plausibly be answered from internal knowledge (default bias).\n"
-                "2. WEB_SEARCH -> Only if NOT routed to vectorstore AND the user explicitly seeks:\n"
-                "   - Real‑time / current events / latest stats / news / market updates / weather / trending topics, OR\n"
-                "   - External public facts that obviously aren't in internal knowledge.\n"
-                "3. DIRECT_ANSWER -> Only if neither (1) nor (2) apply AND the query is:\n"
-                "   - A greeting / farewell / thanks / chit‑chat / meta question about the assistant, OR\n"
-                "   - A purely personal preference inquiry about the user profile, OR\n"
-                "   - A conversational follow‑up that requires no retrieval.\n\n"
-                "NEVER choose web_search or direct_answer if vectorstore is even moderately applicable. Err on the side of 'vectorstore'.\n\n"
+                "1. DIRECT_ANSWER (ACTION/CONFIRMATION/SMALL TALK) -> Choose 'direct_answer' if the user is:\n"
+                "   - Giving confirmation/negation or supplying details in an ongoing flow (e.g., 'không có ai sinh nhật', '7h tối nay', '3 người lớn 2 trẻ em'), OR\n"
+                "   - Expressing intent to perform an action like booking ('đặt bàn', 'đặt chỗ', 'book', 'booking', 'giữ bàn'), OR\n"
+                "   - Greeting/thanks/chit‑chat/meta about the assistant, OR\n"
+                "   - Asking about or updating personal preferences.\n"
+                "   Rationale: these do not require knowledge retrieval; they should be handled by tools or conversational logic.\n"
+                "2. VECTORSTORE -> Choose 'vectorstore' only if the user asks for information that should come from internal knowledge (menu, địa chỉ, chi nhánh, hotline, chính sách, ưu đãi, FAQ…) and is NOT merely confirming/continuing an action.\n"
+                "3. WEB_SEARCH -> Only if neither (1) nor (2) apply AND the user clearly needs real‑time external info.\n\n"
+                "IMPORTANT: If both (1) and (2) could apply, prefer 'direct_answer' when the user is clearly in a booking or confirmation step.\n\n"
                 "CONVERSATION CONTEXT SUMMARY (may strengthen decision toward vectorstore):\n{conversation_summary}\n\n"
                 "User info:\n<UserInfo>\n{user_info}\n</UserInfo>\n"
                 "User profile:\n<UserProfile>\n{user_profile}\n</UserProfile>\n\n"
@@ -921,7 +917,9 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
             MessagesPlaceholder(variable_name="messages"),
         ]
     ).partial(current_date=datetime.now, domain_context=domain_context)
-    llm_generate_direct_with_tools = llm_generate_direct.bind_tools(memory_tools)
+    # Bind direct assistant with memory tools + domain action tools (e.g., reservation tools)
+    # Avoid binding web search here to keep responses crisp for action/confirmation flows.
+    llm_generate_direct_with_tools = llm_generate_direct.bind_tools(memory_tools + tools)
     direct_answer_runnable = direct_answer_prompt | llm_generate_direct_with_tools
     direct_answer_assistant = Assistant(direct_answer_runnable)
 
