@@ -8,6 +8,7 @@ from typing import Any, Dict, Optional, List
 import httpx
 import time
 from .message_history_service import get_message_history_service
+from .image_processing_service import get_image_processing_service
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +59,9 @@ class FacebookMessengerService:
 
         # Message history service
         self.message_history = get_message_history_service()
+        
+        # Image processing service
+        self.image_service = get_image_processing_service()
 
         missing = []
         if not self.page_access_token:
@@ -473,10 +477,19 @@ class FacebookMessengerService:
             if attachment_type in ["image", "video", "audio", "file"]:
                 attachment_info["description"] = f"Người dùng đã gửi {self._get_attachment_type_vietnamese(attachment_type)}"
                 if payload.get("url"):
-                    # For images, try to download and analyze if needed
+                    # For images, analyze content using AI
                     if attachment_type == "image":
+                        try:
+                            image_analysis = await self.image_service.analyze_image_from_url(
+                                payload["url"], 
+                                "Hình ảnh được gửi bởi khách hàng trong cuộc trò chuyện với nhà hàng Aladdin"
+                            )
+                            attachment_info["description"] = image_analysis
+                        except Exception as e:
+                            logger.warning(f"Image analysis failed: {e}")
+                            attachment_info["description"] += f" (URL: {payload['url']})"
+                    else:
                         attachment_info["description"] += f" (URL: {payload['url']})"
-                        # TODO: Add image analysis capability here
             
             elif attachment_type == "location":
                 lat = payload.get("coordinates", {}).get("lat")

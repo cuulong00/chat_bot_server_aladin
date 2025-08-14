@@ -6,6 +6,7 @@ from . import excursion_tools
 from . import flight_tools
 from . import hotel_tools
 from . import primary_assistant_tools
+from . import image_analysis_tool
 
 # Import memory tools if they exist
 try:
@@ -19,7 +20,8 @@ try:
         "primary_assistant_tools",
         "memory_tools",
         "save_user_preference", 
-        "get_user_profile"
+        "get_user_profile",
+        "image_analysis_tool"
     ]
 except ImportError:
     __all__ = [
@@ -27,5 +29,6 @@ except ImportError:
         "excursion_tools", 
         "flight_tools", 
         "hotel_tools", 
-        "primary_assistant_tools"
+        "primary_assistant_tools",
+        "image_analysis_tool"
     ]

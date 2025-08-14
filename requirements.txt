@@ -69,3 +69,4 @@ typing-extensions>=4.10.0
 langchain_tavily
 langmem
 google-generativeai
+Pillow

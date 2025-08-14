@@ -13,7 +13,7 @@ import hashlib
 load_dotenv()
 
 # Test configuration
-BASE_URL = os.getenv("BASE_URL", "http://localhost:2024")
+BASE_URL = "http://69.197.187.234:2024"
 APP_SECRET = os.getenv("FB_APP_SECRET")
 
 def generate_signature(payload: str, secret: str) -> str:

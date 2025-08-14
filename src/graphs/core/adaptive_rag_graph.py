@@ -30,6 +30,7 @@ from langchain_core.runnables import Runnable, RunnableConfig, RunnablePassthrou
 from src.utils.query_classifier import QueryClassifier
 
 from src.tools.memory_tools import save_user_preference, get_user_profile
+from src.tools.image_analysis_tool import analyze_image
 from src.graphs.state.state import RagState
 from src.database.qdrant_store import QdrantStore
 """Adaptive RAG graph with optional short-term memory (langmem).
@@ -469,7 +470,8 @@ def create_adaptive_rag_graph(
 
     web_search_tool = TavilySearch(max_results=5)
     memory_tools = [get_user_profile, save_user_preference]
-    all_tools = tools + [web_search_tool] + memory_tools
+    image_tools = [analyze_image]
+    all_tools = tools + [web_search_tool] + memory_tools + image_tools
 
     # === Chains for Summarization and Contextualization ===
 
@@ -910,6 +912,47 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
                 "- Cố gắng kết nối với nhà hàng nếu phù hợp\n"
                 "- Hướng dẫn về các dịch vụ của Tian Long nếu có thể\n"
                 "\n"
+                "**5️⃣ QUY TRÌNH ĐẶT BÀN (CỰC KỲ QUAN TRỌNG):**\n"
+                "- **LOGIC 3 BƯỚC ĐẶT BÀN:**\n"
+                "  🔍 **BƯỚC 1 - Thu thập thông tin:**\n"
+                "  • Hỏi thông tin còn thiếu (chi nhánh, ngày giờ, số khách, ghi chú đặc biệt)\n"
+                "  • Chỉ hỏi những thông tin THỰC SỰ CẦN THIẾT, không hỏi lan man\n"
+                "  \n"
+                "  📋 **BƯỚC 2 - Hiển thị chi tiết và xác nhận (BẮT BUỘC):**\n"
+                "  • **LUÔN LUÔN** hiển thị đầy đủ thông tin đặt bàn theo format chuyên nghiệp:\n"
+                "  \n"
+                "  ```\n"
+                "  📝 **CHI TIẾT ĐẶT BÀN**\n"
+                "  \n"
+                "  👤 **Tên khách hàng:** [Tên]\n"
+                "  📞 **Số điện thoại:** [SĐT]\n"
+                "  🏢 **Chi nhánh:** [Tên chi nhánh]\n"
+                "  📅 **Ngày đặt bàn:** [Ngày]\n"
+                "  🕐 **Giờ đặt bàn:** [Giờ]\n"
+                "  👥 **Số lượng khách:** [Số người]\n"
+                "  🎂 **Có sinh nhật không?** [Có/Không]\n"
+                "  📝 **Ghi chú đặc biệt:** [Ghi chú hoặc 'Không có']\n"
+                "  \n"
+                "  Anh/chị có xác nhận thông tin trên chính xác không ạ? 🤔\n"
+                "  ```\n"
+                "  \n"
+                "  🎯 **BƯỚC 3 - Thực hiện đặt bàn:**\n"
+                "  • Chỉ khi khách hàng XÁC NHẬN rõ ràng thì mới gọi tool `book_table_reservation`\n"
+                "  • Thông báo kết quả đặt bàn và cung cấp mã booking (nếu có)\n"
+                "  \n"
+                "- **CÁC TÌNH HUỐNG ĐẶC BIỆT:**\n"
+                "  • **Thông tin chưa đủ:** Hỏi thêm thông tin thiếu, KHÔNG đặt bàn\n"
+                "  • **Khách hàng chưa xác nhận:** Hiển thị lại chi tiết, hỏi xác nhận\n"
+                "  • **Khách hàng muốn sửa đổi:** Cập nhật thông tin, hiển thị lại chi tiết\n"
+                "  • **Đặt bàn test:** Sử dụng `book_table_reservation_test` thay vì `book_table_reservation`\n"
+                "\n"
+                "**6️⃣ XỬ LÝ HÌNH ẢNH:**\n"
+                "- **Lời chào:** Nếu là tin nhắn đầu tiên → chào hỏi đầy đủ; nếu không → chỉ 'Dạ anh/chị'\n"
+                "- **QUAN TRỌNG:** Sử dụng tool `analyze_image` khi khách gửi hình ảnh\n"
+                "- Phân tích nội dung hình ảnh và đưa ra phản hồi phù hợp\n"
+                "- Kết nối với ngữ cảnh nhà hàng (menu, món ăn, không gian, v.v.)\n"
+                "- Gợi ý dựa trên nội dung hình ảnh nếu phù hợp\n"
+                "\n"
                 "🔍 **YÊU CẦU CHẤT LƯỢNG:**\n"
                 "- **QUAN TRỌNG:** Kiểm tra lịch sử cuộc hội thoại để xác định loại lời chào phù hợp:\n"
                 "  • Nếu đây là tin nhắn đầu tiên (ít tin nhắn trong lịch sử) → chào hỏi đầy đủ\n"
@@ -940,9 +983,9 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
             MessagesPlaceholder(variable_name="messages"),
         ]
     ).partial(current_date=datetime.now, domain_context=domain_context)
-    # Bind direct assistant with memory tools + domain action tools (e.g., reservation tools)
+    # Bind direct assistant with memory tools + domain action tools (e.g., reservation tools) + image tools
     # Avoid binding web search here to keep responses crisp for action/confirmation flows.
-    llm_generate_direct_with_tools = llm_generate_direct.bind_tools(memory_tools + tools)
+    llm_generate_direct_with_tools = llm_generate_direct.bind_tools(memory_tools + tools + image_tools)
     direct_answer_runnable = direct_answer_prompt | llm_generate_direct_with_tools
     direct_answer_assistant = Assistant(direct_answer_runnable)
 
@@ -1289,7 +1332,7 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
     graph.add_node("force_suggest", force_suggest_node)
     graph.add_node("generate_direct", generate_direct_node)
     graph.add_node("tools", ToolNode(tools=all_tools))
-    graph.add_node("direct_tools", ToolNode(tools=memory_tools))
+    graph.add_node("direct_tools", ToolNode(tools=memory_tools + image_tools))
 
     # --- Define Graph Flow ---
     graph.set_entry_point("user_info")
