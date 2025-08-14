@@ -190,6 +190,8 @@ def user_info(state: State, config: RunnableConfig):
 
     # Allow bypassing DB lookup for user info (e.g., when only Facebook data is available)
     BYPASS_USER_DB = os.getenv("BYPASS_USER_DB", "0") == "1"
+    BYPASS_USER_DB=1
+    print(f"BYPASS_USER_DB:{BYPASS_USER_DB}")
     if BYPASS_USER_DB:
         # Minimal user info sourced from the Facebook PSID
         user_info_data = {"user_id": user_id, "name": None, "email": None, "phone": None, "address": None}
