@@ -27,11 +27,14 @@ class FacebookMessengerService:
         app_secret: str,
         verify_token: str,
         api_version: str = "v18.0",
+        page_id: Optional[str] | None = None,
     ) -> None:
         self.page_access_token = page_access_token
         self.app_secret = app_secret
         self.verify_token = verify_token
         self.api_version = api_version
+        # Optional Page ID (used to ignore echo messages and self-sent events)
+        self.page_id = page_id or os.getenv("PAGE_ID", "")
 
         missing = []
         if not self.page_access_token:
@@ -50,6 +53,7 @@ class FacebookMessengerService:
             app_secret=os.getenv("FB_APP_SECRET", ""),
             verify_token=os.getenv("FB_VERIFY_TOKEN", ""),
             api_version=os.getenv("FB_API_VERSION", "v18.0"),
+            page_id=os.getenv("PAGE_ID", ""),
         )
 
     # --- Verification ---
@@ -169,6 +173,61 @@ class FacebookMessengerService:
             logger.exception(f"❌ Error calling agent: {e}")
             return "Xin lỗi, có lỗi xảy ra khi xử lý tin nhắn. Vui lòng thử lại sau."
 
+    async def call_agent_stream(self, app_state, inputs: Dict[str, Any]) -> str:
+        """Stream responses from LangGraph and return the final assistant text.
+
+        This wraps the synchronous LangGraph .stream(...) in a thread to avoid
+        blocking the event loop.
+        """
+        import asyncio
+
+        question = (inputs.get("question") or "").strip()
+        user_id = str(inputs.get("user_id") or "").strip()
+        session_id = str(inputs.get("session_id") or f"facebook_session_{user_id}")
+
+        if not question:
+            return ""
+
+        def _extract_text(content: Any) -> str:
+            if isinstance(content, str):
+                return content.strip()
+            if isinstance(content, list):
+                parts: list[str] = []
+                for item in content:
+                    if isinstance(item, dict) and "text" in item:
+                        parts.append(str(item.get("text", "")))
+                return " ".join(p for p in parts if p).strip()
+            return str(content).strip() if content is not None else ""
+
+        def _run_stream() -> str:
+            try:
+                config = {"configurable": {"thread_id": session_id, "user_id": user_id}}
+                final_text = ""
+                # Stream values to capture the latest assistant message
+                for chunk in app_state.graph.stream(
+                    {"messages": [{"role": "user", "content": question}]},
+                    config,
+                    stream_mode="values",
+                ):
+                    try:
+                        messages = chunk.get("messages") if isinstance(chunk, dict) else None
+                        if not messages:
+                            continue
+                        last = messages[-1]
+                        content = getattr(last, "content", None)
+                        text = _extract_text(content)
+                        if text:
+                            final_text = text
+                    except Exception as ie:  # noqa: BLE001
+                        logger.debug("Stream chunk parse error: %s", ie)
+                        continue
+                return final_text or "Tôi đã nhận được tin nhắn của bạn. Cảm ơn bạn!"
+            except Exception as e:  # noqa: BLE001
+                logger.exception("Error streaming agent result: %s", e)
+                return "Xin lỗi, có lỗi xảy ra khi xử lý tin nhắn. Vui lòng thử lại sau."
+
+        return await asyncio.to_thread(_run_stream)
+
     # --- Entry processing ---
     async def handle_webhook_event(self, app_state, body: Dict[str, Any]) -> None:
         try:
@@ -178,6 +237,18 @@ class FacebookMessengerService:
 
             for entry in body.get("entry", []):
                 for messaging in entry.get("messaging", []):
+                    # Skip delivery/read/standby control events
+                    if any(k in messaging for k in ("delivery", "read", "optin", "account_linking")):
+                        logger.debug("Skipping non-message event keys present: %s",
+                                     ",".join([k for k in ("delivery", "read", "optin", "account_linking") if k in messaging]))
+                        continue
+
+                    # Skip echo messages (messages sent by the Page itself)
+                    msg_obj = messaging.get("message") or {}
+                    if isinstance(msg_obj, dict) and msg_obj.get("is_echo"):
+                        logger.info("Skipping echo message from page (is_echo=true)")
+                        continue
+
                     sender = messaging.get("sender", {}).get("id")
                     if not sender:
                         logger.warning("No sender ID found in messaging event")
@@ -188,7 +259,12 @@ class FacebookMessengerService:
                         logger.info(f"Skipping test sender ID: {sender}")
                         continue
 
-                    message = messaging.get("message")
+                    # Extra guard: skip if sender is the Page ID itself (self-sent/echo safety)
+                    if self.page_id and sender == self.page_id:
+                        logger.info("Skipping event where sender equals PAGE_ID (self-echo)")
+                        continue
+
+                    message = msg_obj
                     if message and message.get("text"):
                         text = (message.get("text") or "").strip()
                         if not text:
