@@ -508,12 +508,14 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
                 "Current date for context is: {current_date}\n"
                 "You are a highly efficient routing agent about {domain_context}. Your ONLY job: return exactly one token from this set: vectorstore | web_search | direct_answer.\n\n"
                 "DECISION ALGORITHM (execute in order, stop at first match):\n"
-                "1. DIRECT_ANSWER (ACTION/CONFIRMATION/SMALL TALK) -> Choose 'direct_answer' if the user is:\n"
+                "1. DIRECT_ANSWER (ACTION/CONFIRMATION/SMALL TALK/IMAGE ANALYSIS) -> Choose 'direct_answer' if the user is:\n"
                 "   - Giving confirmation/negation or supplying details in an ongoing flow (e.g., 'không có ai sinh nhật', '7h tối nay', '3 người lớn 2 trẻ em'), OR\n"
                 "   - Expressing intent to perform an action like booking ('đặt bàn', 'đặt chỗ', 'book', 'booking', 'giữ bàn'), OR\n"
                 "   - Greeting/thanks/chit‑chat/meta about the assistant, OR\n"
-                "   - Asking about or updating personal preferences.\n"
-                "   Rationale: these do not require knowledge retrieval; they should be handled by tools or conversational logic.\n"
+                "   - Asking about or updating personal preferences, OR\n"
+                "   - Asking about content in images, photos, documents they have sent (e.g., '📸 **Phân tích hình ảnh**', mentions of 'hình ảnh', 'ảnh', 'photo', 'image', 'xem được', 'trong hình', 'giao diện', analysis of visual content), OR\n"
+                "   - Questions that reference visual or document content that requires analysis tools rather than knowledge retrieval.\n"
+                "   Rationale: these do not require knowledge retrieval; they should be handled by tools, conversational logic, or image analysis.\n"
                 "2. VECTORSTORE -> Choose 'vectorstore' only if the user asks for information that should come from internal knowledge (menu, địa chỉ, chi nhánh, hotline, chính sách, ưu đãi, FAQ…) and is NOT merely confirming/continuing an action.\n"
                 "3. WEB_SEARCH -> Only if neither (1) nor (2) apply AND the user clearly needs real‑time external info.\n\n"
                 "IMPORTANT: If both (1) and (2) could apply, prefer 'direct_answer' when the user is clearly in a booking or confirmation step.\n\n"
@@ -950,14 +952,14 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
                 "  ```\n"
                 "  \n"
                 "  🎯 **BƯỚC 3 - Thực hiện đặt bàn:**\n"
-                "  • Chỉ khi khách hàng XÁC NHẬN rõ ràng thì mới gọi tool `book_table_reservation`\n"
+                "  • Chỉ khi khách hàng XÁC NHẬN rõ ràng thì mới gọi tool `book_table_reservation_test`\n"
                 "  • Thông báo kết quả đặt bàn và cung cấp mã booking (nếu có)\n"
                 "  \n"
                 "- **CÁC TÌNH HUỐNG ĐẶC BIỆT:**\n"
                 "  • **Thông tin chưa đủ:** Hỏi thêm thông tin thiếu, KHÔNG đặt bàn\n"
                 "  • **Khách hàng chưa xác nhận:** Hiển thị lại chi tiết, hỏi xác nhận\n"
                 "  • **Khách hàng muốn sửa đổi:** Cập nhật thông tin, hiển thị lại chi tiết\n"
-                "  • **Đặt bàn test:** Sử dụng `book_table_reservation_test` thay vì `book_table_reservation`\n"
+                "  • **Đặt bàn test:** Sử dụng `book_table_reservation_test` \n"
                 "\n"
                 "**6️⃣ XỬ LÝ HÌNH ẢNH:**\n"
                 "- **Lời chào:** Nếu là tin nhắn đầu tiên → chào hỏi đầy đủ; nếu không → chỉ 'Dạ anh/chị'\n"
@@ -1345,7 +1347,7 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
     graph.add_node("force_suggest", force_suggest_node)
     graph.add_node("generate_direct", generate_direct_node)
     graph.add_node("tools", ToolNode(tools=all_tools))
-    graph.add_node("direct_tools", ToolNode(tools=memory_tools + image_tools))
+    graph.add_node("direct_tools", ToolNode(tools=memory_tools + tools + image_tools))
 
     # --- Define Graph Flow ---
     graph.set_entry_point("user_info")
