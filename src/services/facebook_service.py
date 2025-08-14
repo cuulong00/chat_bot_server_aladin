@@ -459,7 +459,11 @@ class FacebookMessengerService:
 
     # --- Message processing helpers ---
     async def _process_attachments(self, attachments: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """Process message attachments and extract relevant information."""
+        """Process message attachments and extract URL information only.
+        
+        NOTE: This function NO LONGER analyzes image content. 
+        All analysis will be done inside the Graph nodes.
+        """
         processed_attachments = []
         
         for attachment in attachments:
@@ -473,34 +477,22 @@ class FacebookMessengerService:
                 "coordinates": payload.get("coordinates")  # For location attachments
             }
             
-            # Handle specific attachment types
+            # Handle specific attachment types - NO ANALYSIS, just metadata
             if attachment_type in ["image", "video", "audio", "file"]:
-                attachment_info["description"] = f"Người dùng đã gửi {self._get_attachment_type_vietnamese(attachment_type)}"
+                attachment_info["description"] = f"[{self._get_attachment_type_vietnamese(attachment_type).upper()}]"
                 if payload.get("url"):
-                    # For images, analyze content using AI
-                    if attachment_type == "image":
-                        try:
-                            image_analysis = await self.image_service.analyze_image_from_url(
-                                payload["url"], 
-                                "Hình ảnh được gửi bởi khách hàng trong cuộc trò chuyện với nhà hàng Aladdin"
-                            )
-                            attachment_info["description"] = image_analysis
-                        except Exception as e:
-                            logger.warning(f"Image analysis failed: {e}")
-                            attachment_info["description"] += f" (URL: {payload['url']})"
-                    else:
-                        attachment_info["description"] += f" (URL: {payload['url']})"
+                    attachment_info["description"] += f" URL: {payload['url']}"
             
             elif attachment_type == "location":
                 lat = payload.get("coordinates", {}).get("lat")
                 lng = payload.get("coordinates", {}).get("long")
                 if lat and lng:
-                    attachment_info["description"] = f"Người dùng đã chia sẻ vị trí: {lat}, {lng}"
+                    attachment_info["description"] = f"[VỊ TRÍ] Tọa độ: {lat}, {lng}"
             
             elif attachment_type == "fallback":
                 title = payload.get("title", "")
                 url = payload.get("url", "")
-                attachment_info["description"] = f"Người dùng đã chia sẻ liên kết: {title} ({url})"
+                attachment_info["description"] = f"[LIÊN KẾT] {title} - {url}"
                 
             processed_attachments.append(attachment_info)
             
@@ -528,14 +520,17 @@ class FacebookMessengerService:
             return "[Đây là phản hồi cho một tin nhắn trước đó]"
     
     async def _prepare_message_for_agent(self, text: str, attachments: List[Dict[str, Any]], reply_context: str) -> str:
-        """Prepare the complete message content for the agent."""
+        """Prepare the complete message content for the agent.
+        
+        Format message to include attachment metadata that Graph can process.
+        """
         message_parts = []
         
         # Add reply context if available
         if reply_context:
-            message_parts.append(reply_context)
+            message_parts.append(f"[REPLY_CONTEXT] {reply_context}")
         
-        # Add attachment descriptions
+        # Add attachment information for Graph to process
         for attachment in attachments:
             if attachment.get("description"):
                 message_parts.append(attachment["description"])

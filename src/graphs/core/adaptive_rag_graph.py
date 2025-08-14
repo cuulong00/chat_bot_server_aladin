@@ -510,7 +510,8 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
                 "You are a highly efficient routing agent about {domain_context}. Your ONLY job: return exactly one token from this set: vectorstore | web_search | direct_answer | process_document.\n\n"
                 "DECISION ALGORITHM (execute in order, stop at first match):\n"
                 "1. PROCESS_DOCUMENT (DOCUMENT/IMAGE ANALYSIS) -> Choose 'process_document' if the user:\n"
-                "   - **PRIORITY: Message starts with '📸 **Phân tích hình ảnh:**' or contains pre-analyzed image content - ALWAYS route to process_document**, OR\n"
+                "   - **PRIORITY: Message contains attachment metadata like '[HÌNH ẢNH] URL:', '[VIDEO] URL:', '[TỆP TIN] URL:' - ALWAYS route to process_document**, OR\n"
+                "   - Message starts with '📸 **Phân tích hình ảnh:**' (pre-analyzed content from legacy code), OR\n"
                 "   - Sends or mentions documents, files, attachments, images that need analysis, OR\n"
                 "   - Asks about content in images, photos, documents they have sent (mentions of 'hình ảnh', 'ảnh', 'photo', 'image', 'xem được', 'trong hình', 'giao diện', 'tài liệu', 'file', 'đính kèm'), OR\n"
                 "   - Questions that reference visual or document content that requires analysis tools rather than knowledge retrieval, OR\n"
@@ -1356,14 +1357,11 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
     def process_document_node(state: RagState, config: RunnableConfig):
         """Process documents/images using specialized document processing assistant.
         
-        This node handles pre-analyzed content from Facebook Service or direct image uploads:
-        1. Process image analysis results that already contain 📸 prefix
-        2. Document processing and interpretation
-        3. Visual content analysis with restaurant context
-        4. Follow-up questions about analyzed content
-        
-        Note: For Facebook messages, images are already analyzed by image_processing_service
-        and the results are included in the message content with 📸 prefix.
+        This node handles:
+        1. Extract image/document URLs from attachment metadata 
+        2. Analyze content using image_processing_service
+        3. Generate contextual response using document_processing_assistant
+        4. Handle follow-up questions about analyzed content
         """
         logging.info("---NODE: PROCESS DOCUMENT---")
         
@@ -1375,11 +1373,6 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
         logging.debug(f"process_document_node->current_question -> {current_question}")
         logging.debug(f"process_document_node->user_id -> {user_id}")
         logging.debug(f"process_document_node->messages_count -> {len(messages)}")
-        
-        # Log the actual content to debug
-        if "📸" in current_question:
-            logging.info("📸 Image analysis content detected in message")
-            logging.debug(f"Full message content with image analysis: {current_question[:500]}...")
         
         # Validate input like other nodes
         if not current_question or current_question == "Câu hỏi không rõ ràng":
@@ -1394,13 +1387,68 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
         logging.info(f"Processing document/image query: {current_question[:100]}...")
         
         try:
-            # For Facebook messages, the image analysis is already included in current_question
-            # No need to re-analyze, just process with document_processing_assistant
+            # Check if this is a re-entry from tools (consistent with other nodes)
+            is_tool_reentry = len(messages) > 0 and isinstance(messages[-1], ToolMessage)
+            if is_tool_reentry:
+                logging.debug("process_document_node: Tool re-entry detected")
             
-            logging.info("Using document_processing_assistant to process content")
-            response = document_processing_assistant(state, config)
+            # Extract image URLs from message content
+            image_analysis_results = []
             
-            logging.info("Document/image processing completed successfully")
+            # Look for attachment metadata patterns like [HÌNH ẢNH] URL: ...
+            import re
+            url_patterns = [
+                r'\[HÌNH ẢNH\] URL: (https?://[^\s]+)',
+                r'\[VIDEO\] URL: (https?://[^\s]+)', 
+                r'\[TỆP TIN\] URL: (https?://[^\s]+)',
+                r'📸.*?(https?://[^\s]+)'  # Legacy format support
+            ]
+            
+            image_urls = []
+            for pattern in url_patterns:
+                matches = re.findall(pattern, current_question)
+                image_urls.extend(matches)
+            
+            # Get image processing service
+            image_service = get_image_processing_service()
+            
+            # Analyze each image URL found
+            for url in image_urls:
+                logging.info(f"🖼️ Analyzing image URL: {url[:50]}...")
+                try:
+                    analysis_result = image_service.analyze_image_from_url(
+                        url, 
+                        "Hình ảnh được gửi bởi khách hàng của nhà hàng Tian Long"
+                    )
+                    # Since this is a synchronous method, we need to handle it properly
+                    if hasattr(analysis_result, '__await__'):
+                        # If it's actually async, await it in a thread
+                        import asyncio
+                        analysis_result = asyncio.run_coroutine_threadsafe(
+                            analysis_result, 
+                            asyncio.get_event_loop()
+                        ).result()
+                    
+                    image_analysis_results.append(analysis_result)
+                    logging.info(f"✅ Image analysis completed: {analysis_result[:100]}...")
+                except Exception as e:
+                    logging.error(f"❌ Image analysis failed for {url}: {e}")
+                    image_analysis_results.append(f"Không thể phân tích hình ảnh từ URL: {url}")
+            
+            # Prepare enhanced question with image analysis
+            enhanced_question = current_question
+            if image_analysis_results:
+                analysis_text = "\n\n".join(image_analysis_results)
+                enhanced_question = f"{current_question}\n\n📸 **Phân tích hình ảnh:**\n{analysis_text}"
+                logging.info(f"📝 Enhanced question with image analysis: {enhanced_question[:200]}...")
+            
+            # Update state with enhanced question
+            enhanced_state = {**state, "question": enhanced_question}
+            
+            # Use document processing assistant to generate response
+            response = document_processing_assistant(enhanced_state, config)
+            
+            logging.info("✅ Document/image processing completed successfully")
             return {"messages": [response]}
             
         except Exception as e:
@@ -1415,8 +1463,8 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
             # Fallback response with consistent messaging
             from langchain_core.messages import AIMessage
             fallback_response = AIMessage(
-                content="Xin lỗi, em gặp lỗi khi xử lý hình ảnh hoặc tài liệu. "
-                        "Anh/chị vui lòng gửi lại hoặc mô tả chi tiết hơn về nội dung cần hỗ trợ."
+                content="Xin lỗi, có lỗi xảy ra khi xử lý hình ảnh/tài liệu. "
+                        "Anh/chị vui lòng thử lại hoặc gọi hotline 1900 636 886 để được hỗ trợ."
             )
             return {"messages": [fallback_response]}
 
