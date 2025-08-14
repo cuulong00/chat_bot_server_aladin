@@ -1356,17 +1356,14 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
     def process_document_node(state: RagState, config: RunnableConfig):
         """Process documents/images using specialized document processing assistant.
         
-        This node handles:
-        1. Image analysis and description (using image_processing_service directly)
+        This node handles pre-analyzed content from Facebook Service or direct image uploads:
+        1. Process image analysis results that already contain 📸 prefix
         2. Document processing and interpretation
         3. Visual content analysis with restaurant context
         4. Follow-up questions about analyzed content
         
-        Uses dedicated document_processing_assistant with specialized prompts for:
-        - Food and restaurant image analysis
-        - Menu interpretation 
-        - Receipt/bill analysis
-        - Restaurant space evaluation
+        Note: For Facebook messages, images are already analyzed by image_processing_service
+        and the results are included in the message content with 📸 prefix.
         """
         logging.info("---NODE: PROCESS DOCUMENT---")
         
@@ -1378,6 +1375,11 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
         logging.debug(f"process_document_node->current_question -> {current_question}")
         logging.debug(f"process_document_node->user_id -> {user_id}")
         logging.debug(f"process_document_node->messages_count -> {len(messages)}")
+        
+        # Log the actual content to debug
+        if "📸" in current_question:
+            logging.info("📸 Image analysis content detected in message")
+            logging.debug(f"Full message content with image analysis: {current_question[:500]}...")
         
         # Validate input like other nodes
         if not current_question or current_question == "Câu hỏi không rõ ràng":
@@ -1392,77 +1394,11 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
         logging.info(f"Processing document/image query: {current_question[:100]}...")
         
         try:
-            # Direct image processing if message contains image content
-            enhanced_question = current_question
+            # For Facebook messages, the image analysis is already included in current_question
+            # No need to re-analyze, just process with document_processing_assistant
             
-            # Check for image content that needs additional processing
-            if "📸" in current_question:
-                logging.info("Image content detected, preparing for enhanced analysis")
-                
-                # Get the latest human message with potential image content
-                latest_human_message = None
-                for msg in reversed(messages):
-                    if hasattr(msg, 'type') and msg.type == 'human':
-                        latest_human_message = msg
-                        break
-                
-                # Check if message has image content that can be analyzed
-                if (latest_human_message and 
-                    hasattr(latest_human_message, 'content') and
-                    isinstance(latest_human_message.content, list)):
-                    
-                    # Look for image content in message
-                    image_content = None
-                    for content_part in latest_human_message.content:
-                        if (isinstance(content_part, dict) and 
-                            content_part.get('type') == 'image_url'):
-                            image_content = content_part
-                            break
-                    
-                    if image_content:
-                        logging.info("Direct image analysis requested")
-                        try:
-                            # Use image processing service directly
-                            image_service = get_image_processing_service()
-                            image_url = image_content.get('image_url', {}).get('url', '')
-                            
-                            if image_url:
-                                # Analyze image with restaurant context
-                                analysis_prompt = (
-                                    "Hãy phân tích chi tiết hình ảnh này trong bối cảnh nhà hàng ẩm thực. "
-                                    "Mô tả món ăn, không gian, thực đơn hoặc bất kỳ nội dung nào liên quan đến ăn uống. "
-                                    "Đưa ra nhận xét chuyên môn và gợi ý kết nối với dịch vụ nhà hàng."
-                                )
-                                
-                                image_analysis = image_service.analyze_image(
-                                    image_url, analysis_prompt
-                                )
-                                
-                                if image_analysis:
-                                    # Enhance question with detailed image analysis
-                                    enhanced_question = f"{current_question}\n\n🔍 **Phân tích hình ảnh chi tiết:**\n{image_analysis}"
-                                    logging.info("Image analysis completed and integrated")
-                                
-                        except Exception as img_error:
-                            logging.warning(f"Image analysis failed: {img_error}")
-                            # Continue with original question if image analysis fails
-            
-            # Create enhanced state with potentially enriched question
-            enhanced_state = {**state}
-            enhanced_messages = list(messages)
-            
-            # Replace the last user message with enhanced version if we have analysis
-            if enhanced_question != current_question and enhanced_messages:
-                for i in reversed(range(len(enhanced_messages))):
-                    if hasattr(enhanced_messages[i], 'type') and enhanced_messages[i].type == 'human':
-                        # Update the message content with enhanced analysis
-                        from langchain_core.messages import HumanMessage
-                        enhanced_messages[i] = HumanMessage(content=enhanced_question)
-                        break
-                enhanced_state["messages"] = enhanced_messages
-            
-            # Use specialized document processing assistant
-            response = document_processing_assistant(enhanced_state, config)
+            logging.info("Using document_processing_assistant to process content")
+            response = document_processing_assistant(state, config)
             
             logging.info("Document/image processing completed successfully")
             return {"messages": [response]}
@@ -1481,11 +1417,6 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
             fallback_response = AIMessage(
                 content="Xin lỗi, em gặp lỗi khi xử lý hình ảnh hoặc tài liệu. "
                         "Anh/chị vui lòng gửi lại hoặc mô tả chi tiết hơn về nội dung cần hỗ trợ."
-            )
-            return {"messages": [fallback_response]}
-            fallback_response = AIMessage(
-                content="Xin lỗi, có lỗi xảy ra khi xử lý hình ảnh/tài liệu. "
-                        "Anh/chị vui lòng thử lại hoặc gọi hotline 1900 636 886 để được hỗ trợ."
             )
             return {"messages": [fallback_response]}
 
