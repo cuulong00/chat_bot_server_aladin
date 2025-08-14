@@ -48,6 +48,12 @@ class FacebookMessengerService:
             self._event_ttl = int(os.getenv("FB_EVENT_TTL", "600"))
         except ValueError:
             self._event_ttl = 600
+        # Per-sender last reply memory to avoid duplicate message sends
+        self._last_reply: dict[str, tuple[float, str]] = {}
+        try:
+            self._last_reply_ttl = int(os.getenv("FB_REPLY_DEDUP_TTL", "8"))  # seconds
+        except ValueError:
+            self._last_reply_ttl = 8
 
         missing = []
         if not self.page_access_token:
@@ -373,8 +379,15 @@ class FacebookMessengerService:
                         reply = await self.call_agent(app_state, sender, text)
                         
                         if reply:
-                            logger.info(f"Sending reply to {sender}: {reply[:50]}...")
-                            await self.send_message(sender, reply)
+                            # Deduplicate identical reply within short TTL
+                            now = time.time()
+                            last = self._last_reply.get(sender)
+                            if last and (now - last[0] < self._last_reply_ttl) and last[1] == reply:
+                                logger.info("Skip sending duplicate reply within TTL window")
+                            else:
+                                logger.info(f"Sending reply to {sender}: {reply[:50]}...")
+                                await self.send_message(sender, reply)
+                                self._last_reply[sender] = (now, reply)
                         else:
                             logger.warning(f"No reply generated for {sender}")
 
@@ -384,9 +397,14 @@ class FacebookMessengerService:
                         payload = postback["payload"]
                         logger.info(f"Processing postback from {sender}: {payload}")
                         reply = await self.call_agent(app_state, sender, payload)
-                        
                         if reply:
-                            await self.send_message(sender, reply)
+                            now = time.time()
+                            last = self._last_reply.get(sender)
+                            if last and (now - last[0] < self._last_reply_ttl) and last[1] == reply:
+                                logger.info("Skip sending duplicate reply within TTL window (postback)")
+                            else:
+                                await self.send_message(sender, reply)
+                                self._last_reply[sender] = (now, reply)
                             
         except Exception as e:  # noqa: BLE001
             logger.exception("Error handling Facebook webhook: %s", e)
