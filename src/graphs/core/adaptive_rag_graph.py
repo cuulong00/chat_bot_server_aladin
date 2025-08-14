@@ -735,7 +735,7 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
                 "🔧 **HƯỚNG DẪN SỬ DỤNG TOOLS:**\n"
                 "- **get_user_profile:** Dùng để lấy thông tin cá nhân hóa đã lưu của khách (sở thích, thói quen) trước khi tư vấn.\n"
                 "- **save_user_preference:** Khi khách chia sẻ sở thích/kiêng kỵ/thói quen mới (ví dụ: thích cay, ăn chay, dị ứng hải sản), hãy lưu lại để cá nhân hóa về sau.\n"
-                "- **book_table_reservation:** Sử dụng khi đã có đủ thông tin đặt bàn\n"
+                "- **book_table_reservation_test:** Sử dụng khi đã có đủ thông tin đặt bàn\n"
                 "  • Tham số bắt buộc: restaurant_location, first_name, last_name, phone, reservation_date, start_time, amount_adult\n"
                 "  • Tham số tùy chọn: email, dob, end_time, amount_children, note, has_birthday\n"
                 "  • **QUAN TRỌNG:** Luôn kiểm tra field 'success' trong kết quả trả về:\n"
