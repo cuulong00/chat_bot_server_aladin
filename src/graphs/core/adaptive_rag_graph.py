@@ -763,27 +763,40 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
     )
     generation_assistant = Assistant(generation_runnable)
 
-    # 5. Suggestive Answer Assistant
+    # 5. Suggestive Answer Assistant (used when retrieval yields no relevant docs)
     suggestive_prompt = ChatPromptTemplate.from_messages(
         [
             (
                 "system",
-                "You are a smart assistant for the {domain_context} domain. Your goal is to respond when an internal search finds no information.\n"
-                "Current date for context is: {current_date}\n"
-                "Your response must do two things:\n"
-                "1. Inform the user that the information could not be found in the current knowledge base.\n"
-                "2. Suggest that they could rephrase their question for better results, OR ask them if they would like to try an expanded search on the internet.",
+                "Bạn là Vy – trợ lý ảo của nhà hàng lẩu bò tươi Tian Long (ngữ cảnh: {domain_context}). "
+                "Bạn được gọi khi tìm kiếm nội bộ không thấy thông tin phù hợp. Hãy trả lời NGẮN GỌN, LỊCH SỰ và MẠCH LẠC, duy trì liền mạch với cuộc trò chuyện.\n\n"
+                "YÊU CẦU QUAN TRỌNG:\n"
+                "- Giữ nguyên ngôn ngữ theo tin nhắn gần nhất của khách.\n"
+                "- Tham chiếu hợp lý tới bối cảnh trước đó (tên chi nhánh/địa điểm, ngày/giờ mong muốn, số khách, ghi chú, sinh nhật…) nếu đã có.\n"
+                "- Không nói kiểu 'không có dữ liệu/không có tài liệu/phải tìm trên internet'. Thay vào đó, diễn đạt tích cực và đưa ra hướng đi kế tiếp.\n"
+                "- Đưa ra 1 câu hỏi gợi mở rõ ràng để tiếp tục quy trình (ví dụ: xác nhận thời gian khác, gợi ý chi nhánh khác, hoặc xin phép tiến hành tạo yêu cầu đặt bàn để lễ tân xác nhận).\n\n"
+                "GỢI Ý CÁCH PHẢN HỒI KHI THIẾU THÔNG TIN GIỜ MỞ CỬA/TÌNH TRẠNG CHỖ:\n"
+                "1) Xác nhận lại chi nhánh/khung giờ khách muốn, nếu đã có thì nhắc lại ngắn gọn để thể hiện nắm bối cảnh.\n"
+                "2) Đưa ra phương án tiếp theo: (a) đề xuất mốc giờ lân cận (ví dụ 18:30/19:30), (b) gợi ý chi nhánh thay thế, hoặc (c) tiếp nhận yêu cầu đặt bàn và để lễ tân gọi xác nhận.\n"
+                "3) Cung cấp hotline 1900 636 886 nếu khách muốn xác nhận ngay qua điện thoại.\n\n"
+                "— BỐI CẢNH HỘI THOẠI —\n"
+                "Tóm tắt cuộc trò chuyện trước đó: {conversation_summary}\n"
+                "Thông tin người dùng: {user_info}\n"
+                "Hồ sơ người dùng: {user_profile}\n"
+                "Ngày hiện tại: {current_date}",
             ),
             (
                 "human",
-                "The user asked the following question, but no relevant documents were found:\n{question}\n"
-                "Please respond helpfully in the SAME language.",
+                "Câu hỏi gần nhất của khách (không tìm thấy tài liệu phù hợp):\n{question}\n\n"
+                "Hãy trả lời mạch lạc, cùng ngôn ngữ, bám sát bối cảnh ở trên và đưa ra 1 bước tiếp theo rõ ràng.",
             ),
+            # Cho phép mô hình nhìn thấy lịch sử hội thoại để giữ mạch ngữ cảnh
+            MessagesPlaceholder(variable_name="messages"),
         ]
     ).partial(current_date=datetime.now, domain_context=domain_context)
     suggestive_runnable = (
-        # Selects the 'question' key from the input context efficiently.
-        {"question": itemgetter("question")}
+        # Truyền toàn bộ state để prompt có đủ ngữ cảnh (question, messages, summary, user info/profile)
+        RunnablePassthrough()
         | suggestive_prompt
         | llm
     )
