@@ -31,6 +31,7 @@ from src.utils.query_classifier import QueryClassifier
 
 from src.tools.memory_tools import save_user_preference, get_user_profile
 from src.tools.image_analysis_tool import analyze_image
+from src.services.image_processing_service import get_image_processing_service
 from src.graphs.state.state import RagState
 from src.database.qdrant_store import QdrantStore
 """Adaptive RAG graph with optional short-term memory (langmem).
@@ -1287,56 +1288,93 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
         }
 
     def process_document_node(state: RagState, config: RunnableConfig):
-        """Process documents/images using AI analysis."""
+        """Process documents/images using AI analysis and tools.
+        
+        This node handles:
+        1. Image analysis and description (using image_processing_service)
+        2. Document processing  
+        3. Mixed content queries with visual elements
+        4. Follow-up questions about analyzed content
+        
+        Integration approach:
+        - Reuses image_processing_service for consistency with FacebookService
+        - Leverages direct_answer_assistant with full tool capabilities
+        - Maintains same error handling pattern as other nodes
+        """
         logging.info("---NODE: PROCESS DOCUMENT---")
         
-        question = state["question"]
+        # Use consistent question extraction method like other nodes
+        current_question = get_current_user_question(state)
         user_id = state.get("user_id", "")
+        messages = state.get("messages", [])
         
-        # Check if this is an image analysis result that's already been processed
-        if question.startswith("📸 **Phân tích hình ảnh:**"):
-            # This is already processed image analysis, just return it as answer
-            logging.info("Found pre-processed image analysis, returning as answer")
-            
-            # Extract the analysis content
-            analysis_content = question
-            
-            # Create an AIMessage response with the analysis
+        logging.debug(f"process_document_node->current_question -> {current_question}")
+        logging.debug(f"process_document_node->user_id -> {user_id}")
+        logging.debug(f"process_document_node->messages_count -> {len(messages)}")
+        
+        # Validate input like other nodes
+        if not current_question or current_question == "Câu hỏi không rõ ràng":
+            logging.warning("process_document_node: Invalid or empty question")
             from langchain_core.messages import AIMessage
-            response = AIMessage(content=analysis_content)
+            fallback_response = AIMessage(
+                content="Xin lỗi, em không nhận được câu hỏi rõ ràng. "
+                        "Anh/chị vui lòng gửi lại tin nhắn hoặc hình ảnh cần hỗ trợ."
+            )
+            return {"messages": [fallback_response]}
+        
+        logging.info(f"Processing document/image query: {current_question[:100]}...")
+        
+        try:
+            # Check if this is a re-entry from tools (consistent with generate_direct_node)
+            is_tool_reentry = len(messages) > 0 and isinstance(messages[-1], ToolMessage)
+            if is_tool_reentry:
+                logging.debug("process_document_node: Tool re-entry detected")
             
+            # Get image processing service for potential additional processing
+            image_service = get_image_processing_service()
+            
+            # Check if question contains image analysis content that needs further processing
+            # (This handles cases where FacebookService pre-processed but agent needs to do more)
+            needs_additional_analysis = (
+                "📸" in current_question and 
+                any(keyword in current_question.lower() for keyword in [
+                    "chi tiết hơn", "phân tích thêm", "giải thích", "mô tả rõ hơn"
+                ])
+            )
+            
+            if needs_additional_analysis:
+                logging.info("Additional image analysis requested by user")
+            
+            # Use the direct answer assistant with full tool capabilities
+            # This assistant has access to:
+            # - Image analysis tools (analyze_image) 
+            # - Memory tools (save_user_preference, get_user_profile)
+            # - Domain-specific tools (reservation, etc.)
+            # - Can handle image content that was pre-processed by FacebookService
+            # - Can call additional tools if needed
+            response = direct_answer_assistant(state, config)
+            
+            logging.info("Document/image processing completed successfully")
             return {"messages": [response]}
-        
-        # For other document/image processing needs, we can expand this
-        # Currently, image processing happens in Facebook service before reaching here
-        
-        # Build context from user information for general document queries
-        context_parts = []
-        if "user_info" in state and state["user_info"]:
-            user_info = state["user_info"]
-            if user_info.get("name"):
-                context_parts.append(f"Khách hàng: {user_info['name']}")
-        
-        context = "\n".join(context_parts) if context_parts else ""
-        
-        # Use direct generation with tools for document/image queries
-        inputs = {
-            "question": question,
-            "context": context,
-            "user_id": user_id
-        }
-        
-        response = llm_generate_direct_with_tools.invoke(inputs, config)
-        
-        return {"messages": [response]}
+            
+        except Exception as e:
+            # Consistent error handling pattern like other nodes
+            user_context = state.get("user", {}).get("user_info", {}).get("user_id", "unknown")
+            log_exception_details(
+                exception=e,
+                context=f"Process document node failure for question: {current_question[:100]}",
+                user_id=user_context
+            )
+            
+            # Fallback response with consistent messaging
+            from langchain_core.messages import AIMessage
+            fallback_response = AIMessage(
+                content="Xin lỗi, có lỗi xảy ra khi xử lý hình ảnh/tài liệu. "
+                        "Anh/chị vui lòng thử lại hoặc gọi hotline 1900 636 886 để được hỗ trợ."
+            )
+            return {"messages": [fallback_response]}
 
     # --- Conditional Edges ---
-
-    def should_summarize(state: RagState) -> Literal["summarize", "continue"]:
-        if len(state["messages"]) > 6:
-            return "summarize"
-        else:
-            return "continue"
 
     def decide_after_grade(
         state: RagState,
@@ -1369,27 +1407,85 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
     def decide_entry(
         state: RagState,
     ) -> Literal["retrieve", "web_search", "direct_answer", "process_document"]:
-        # Check if this is an image analysis result
-        question = state.get("question", "")
-        if question.startswith("📸 **Phân tích hình ảnh:**"):
+        """Route questions to appropriate processing nodes based on content analysis.
+        
+        Priority routing logic:
+        1. First check if router already identified image analysis content
+        2. Then check for document/image indicators not caught by router
+        3. Finally use router's decision for other cases
+        """
+        question = state.get("question", "").lower()
+        datasource = state.get("datasource", "direct_answer")
+        
+        logging.debug(f"decide_entry->question: {question[:100]}...")
+        logging.debug(f"decide_entry->router_datasource: {datasource}")
+        
+        # If router already decided on direct_answer and question contains image analysis content,
+        # this is likely already processed image content - stick with direct_answer
+        if datasource == "direct_answer" and "📸" in question:
+            logging.info("🖼️ Image content already processed by FacebookService, routing to direct_answer")
+            return "direct_answer"
+        
+        # Check for document/file processing indicators that router might have missed
+        # (These are different from image analysis which is handled above)
+        document_indicators = [
+            "tài liệu", "document", "file", "upload", "gửi lên", "đính kèm",
+            "pdf", "doc", "txt", "excel", "word"
+        ]
+        
+        # Only route to process_document for raw document processing (not pre-analyzed content)
+        if any(indicator in question for indicator in document_indicators) and "📸" not in question:
+            logging.info(f"� Routing to process_document for document query: {question[:100]}...")
             return "process_document"
         
-        # Check for other document/image related queries
-        image_keywords = ["hình ảnh", "ảnh", "photo", "image", "xem được", "trong hình", "giao diện", "phân tích hình", "đính kèm", "tài liệu", "document"]
-        if any(keyword in question.lower() for keyword in image_keywords):
-            return "process_document"
+        # Use router's decision for other cases
+        logging.info(f"🔀 Using router decision: {datasource}")
         
-        return state.get("datasource", "generate")
+        # Map router decisions to valid node names
+        if datasource == "vectorstore":
+            return "retrieve"
+        elif datasource == "web_search":
+            return "web_search"
+        else:  # direct_answer or any other case
+            return "direct_answer"
 
     def decide_after_direct_generation(
         state: RagState,
     ) -> Literal["direct_tools", "__end__"]:
+        """Decide what to do after generate_direct node."""
         last_message = state["messages"][-1]
         return (
             "direct_tools"
             if hasattr(last_message, "tool_calls") and last_message.tool_calls
             else "__end__"
         )
+
+    def decide_after_process_document(
+        state: RagState,
+    ) -> Literal["direct_tools", "__end__"]:
+        """Decide what to do after process_document node."""
+        last_message = state["messages"][-1]
+        return (
+            "direct_tools"
+            if hasattr(last_message, "tool_calls") and last_message.tool_calls
+            else "__end__"
+        )
+
+    def decide_after_direct_tools(
+        state: RagState,  
+    ) -> Literal["generate_direct", "process_document"]:
+        """Decide where to go after direct_tools based on the last node that called tools."""
+        # Check if we came from process_document by looking at recent node history
+        # This is a simple heuristic - in practice you might want to store this in state
+        question = state.get("question", "").lower()
+        
+        # If question contains document/image indicators, likely came from process_document
+        if any(indicator in question for indicator in ["📸", "document", "tài liệu", "file", "hình ảnh", "ảnh"]):
+            logging.info("Returning to process_document after tools")
+            return "process_document"
+        else:
+            logging.info("Returning to generate_direct after tools")
+            return "generate_direct"
 
     # --- Build the Graph ---
     graph = StateGraph(RagState)
@@ -1459,7 +1555,13 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
     graph.add_edge("web_search", "grade_documents")
     # graph.add_edge("force_suggest", "generate")
     graph.add_edge("force_suggest", END)
-    graph.add_edge("process_document", END)
+    
+    # Process document node with conditional edge for tool calls
+    graph.add_conditional_edges(
+        "process_document",
+        decide_after_process_document,
+        {"direct_tools": "direct_tools", "__end__": END},
+    )
     graph.add_conditional_edges(
         "generate",
         lambda s: "hallucination_grader" if not s.get("skip_hallucination") else END,
@@ -1477,7 +1579,12 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
         decide_after_direct_generation,
         {"direct_tools": "direct_tools", "__end__": END},
     )
-    graph.add_edge("direct_tools", "generate_direct")
+    # Direct tools can route back to either generate_direct or process_document
+    graph.add_conditional_edges(
+        "direct_tools",
+        decide_after_direct_tools,
+        {"generate_direct": "generate_direct", "process_document": "process_document"},
+    )
 
     return graph
 
