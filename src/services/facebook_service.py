@@ -446,23 +446,23 @@ class FacebookMessengerService:
                         processed_event = True
 
                     # Only handle postback if we haven't processed a message for this event
-                    postback = messaging.get("postback")
-                    if not processed_event and postback and postback.get("payload"):
-                        payload = postback["payload"]
-                        logger.info(f"🔄 Processing POSTBACK from {sender}: {payload}")
-                        reply = await self.call_agent(app_state, sender, payload)
-                        if reply:
-                            now = time.time()
-                            last = self._last_reply.get(sender)
-                            if last and (now - last[0] < self._last_reply_ttl) and last[1] == reply:
-                                logger.info("Skip sending duplicate reply within TTL window (postback)")
-                            else:
-                                logger.info(f"📤 Sending POSTBACK reply to {sender}: {reply[:50]}...")
-                                await self.send_message(sender, reply)
-                                self._last_reply[sender] = (now, reply)
+                    # postback = messaging.get("postback")
+                    # if not processed_event and postback and postback.get("payload"):
+                    #     payload = postback["payload"]
+                    #     logger.info(f"🔄 Processing POSTBACK from {sender}: {payload}")
+                    #     reply = await self.call_agent(app_state, sender, payload)
+                    #     if reply:
+                    #         now = time.time()
+                    #         last = self._last_reply.get(sender)
+                    #         if last and (now - last[0] < self._last_reply_ttl) and last[1] == reply:
+                    #             logger.info("Skip sending duplicate reply within TTL window (postback)")
+                    #         else:
+                    #             logger.info(f"📤 Sending POSTBACK reply to {sender}: {reply[:50]}...")
+                    #             await self.send_message(sender, reply)
+                    #             self._last_reply[sender] = (now, reply)
                         
-                        # Mark this event as processed
-                        processed_event = True
+                    #     # Mark this event as processed
+                    #     processed_event = True
                             
         except Exception as e:  # noqa: BLE001
             logger.exception("Error handling Facebook webhook: %s", e)
