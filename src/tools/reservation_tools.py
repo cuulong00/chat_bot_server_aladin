@@ -6,6 +6,8 @@ import requests
 import os
 import logging
 from datetime import datetime, date
+from pathlib import Path
+import uuid
 import json
 
 # Import vector database for restaurant search
@@ -350,5 +352,175 @@ def book_table_reservation(
             "message": "An unexpected error occurred. Please contact hotline 1900 636 886 for reservation assistance."
         }
 
+def _resolve_repo_root() -> Path:
+    """Resolve the repository root by walking up until a known marker is found."""
+    current = Path(__file__).resolve()
+    for parent in [current, *current.parents]:
+        if (parent / "pyproject.toml").exists() or (parent / ".git").exists() or (parent / "README.md").exists():
+            return parent
+    # Fallback: assume two levels up from src/tools
+    return Path(__file__).resolve().parent.parent
+
+@tool("book_table_reservation_test", args_schema=ReservationInput)
+def book_table_reservation_test(
+    restaurant_location: str,
+    first_name: str,
+    last_name: str,
+    phone: str,
+    reservation_date: str,
+    start_time: str,
+    amount_adult: int,
+    email: Optional[str] = None,
+    dob: Optional[str] = None,
+    end_time: Optional[str] = None,
+    amount_children: int = 0,
+    note: Optional[str] = None,
+    has_birthday: bool = False
+) -> Dict[str, Any]:
+    """
+    Test-only variant of table reservation.
+
+    Performs the same validation and data preparation as the real tool but,
+    instead of calling the reservation API, appends the booking to a JSON file
+    named 'booking.json' at the repository root. The file stores a list of bookings.
+    """
+    try:
+        # Validate input
+        reservation_data = ReservationInput(
+            restaurant_location=restaurant_location,
+            first_name=first_name,
+            last_name=last_name,
+            phone=phone,
+            email=email,
+            dob=dob,
+            reservation_date=reservation_date,
+            start_time=start_time,
+            end_time=end_time,
+            amount_adult=amount_adult,
+            amount_children=amount_children,
+            note=note,
+            has_birthday=has_birthday
+        )
+
+        # Find restaurant ID as in production flow
+        restaurant_id = _find_restaurant_id(restaurant_location)
+        if restaurant_id is None:
+            return {
+                "success": False,
+                "error": "Restaurant not found",
+                "message": f"Cannot find restaurant for location '{restaurant_location}'. Please check the location name and try again, or contact hotline 1900 636 886 for assistance.",
+            }
+
+        # Calculate total guests
+        total_guests = amount_adult + amount_children
+
+        # Default end time if not provided (3 hours later)
+        if not end_time:
+            try:
+                start_dt = datetime.strptime(start_time, "%H:%M")
+                end_hour = (start_dt.hour + 3) % 24
+                end_dt = start_dt.replace(hour=end_hour)
+                end_time = end_dt.strftime("%H:%M")
+            except Exception:
+                end_time = "22:00"
+
+        # Generate email if not provided
+        if not email:
+            email = f"{phone}@tianlong.placeholder"
+
+        # Prepare payload (mirrors real API payload)
+        payload: Dict[str, Any] = {
+            "restaurant_id": restaurant_id,
+            "first_name": reservation_data.first_name,
+            "last_name": reservation_data.last_name,
+            "phone": reservation_data.phone,
+            "email": email,
+            "dob": reservation_data.dob or "1990-01-01",
+            "reservation_date": reservation_data.reservation_date,
+            "start_time": reservation_data.start_time,
+            "end_time": end_time,
+            "guest": total_guests,
+            "note": reservation_data.note or "",
+            "table_id": [],
+            "amount_children": reservation_data.amount_children,
+            "amount_adult": reservation_data.amount_adult,
+            "has_birthday": reservation_data.has_birthday,
+            "status": 1,
+            "from_sale": False,
+            "info_order": "",
+            "table": "",
+            "is_online": False,
+            "nguon_khach": 1,
+        }
+
+        # Persist to booking.json at repo root
+        repo_root = _resolve_repo_root()
+        bookings_file = repo_root / "booking.json"
+
+        # Read existing bookings (ensure list)
+        existing: List[Dict[str, Any]] = []
+        if bookings_file.exists():
+            try:
+                existing_obj = json.loads(bookings_file.read_text(encoding="utf-8"))
+                if isinstance(existing_obj, list):
+                    existing = existing_obj
+                else:
+                    logger.warning("booking.json is not a list; resetting to an empty list for testing")
+            except Exception as e:
+                logger.warning(f"Failed to parse existing booking.json: {e}; resetting to an empty list")
+
+        reservation_id = str(uuid.uuid4())
+        record = {
+            "id": reservation_id,
+            "created_at": datetime.utcnow().isoformat() + "Z",
+            "restaurant_location": restaurant_location,
+            "payload": payload,
+            "source": "test_file",
+        }
+
+        existing.append(record)
+        bookings_file.write_text(json.dumps(existing, ensure_ascii=False, indent=2), encoding="utf-8")
+
+        logger.info(
+            f"[TEST] Saved reservation for {first_name} {last_name} at restaurant_id {restaurant_id} to '{bookings_file}'"
+        )
+
+        # Build response similar to production path
+        result: Dict[str, Any] = {
+            "success": True,
+            "data": {"id": reservation_id, **payload},
+            "message": "Table reservation saved to booking.json (test mode)",
+        }
+
+        # Attach formatted message for UX parity
+        result["formatted_message"] = (
+            f"✅ **TABLE RESERVATION SAVED (TEST MODE)!**\n\n"
+            f"🎉 **Reservation Details:**\n"
+            f"📋 **Reservation ID:** {reservation_id}\n"
+            f"👤 **Customer:** {first_name} {last_name}\n"
+            f"📞 **Phone:** {phone}\n"
+            f"🏪 **Branch:** {restaurant_location}\n"
+            f"📅 **Date:** {reservation_date}\n"
+            f"⏰ **Time:** {start_time} - {end_time}\n"
+            f"👥 **Guests:** {amount_adult} adults"
+            + (f", {amount_children} children" if amount_children > 0 else "")
+            + f" (total: {total_guests} guests)\n"
+            + ("🎂 **Birthday celebration**\n" if has_birthday else "")
+            + (f"📝 **Note:** {note}\n\n" if note else "\n")
+            + f"📞 **Support Hotline:** 1900 636 886\n"
+            + f"🌐 **Website:** https://tianlong.vn/\n\n"
+            + f"⚠️ **Note:** This is a test booking saved locally and not sent to the live system."
+        )
+
+        return result
+
+    except Exception as e:
+        logger.error(f"Unexpected error in book_table_reservation_test: {e}")
+        return {
+            "success": False,
+            "error": str(e),
+            "message": "An unexpected error occurred while saving test booking.",
+        }
+
 # Export tools list for easy import
-reservation_tools = [lookup_restaurant_by_location, book_table_reservation]
+reservation_tools = [lookup_restaurant_by_location, book_table_reservation, book_table_reservation_test]

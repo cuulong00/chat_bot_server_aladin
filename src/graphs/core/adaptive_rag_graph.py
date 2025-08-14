@@ -770,11 +770,14 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
                 "system",
                 "You are a smart assistant for the {domain_context} domain. Your goal is to respond when an internal search finds no information.\n"
                 "Current date for context is: {current_date}\n"
-                "The user asked the following question, but no relevant documents were found in our database:\n"
-                "<UserQuestion>\n{question}\n</UserQuestion>\n\n"
                 "Your response must do two things:\n"
                 "1. Inform the user that the information could not be found in the current knowledge base.\n"
                 "2. Suggest that they could rephrase their question for better results, OR ask them if they would like to try an expanded search on the internet.",
+            ),
+            (
+                "human",
+                "The user asked the following question, but no relevant documents were found:\n{question}\n"
+                "Please respond helpfully in the SAME language.",
             ),
         ]
     ).partial(current_date=datetime.now, domain_context=domain_context)
@@ -948,9 +951,20 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
             namespace = "faq" if classification.get("primary_category") == "faq" else default_namespace
             logging.info(f"Vector search namespace selected: {namespace} (default={default_namespace}, primary={classification.get('primary_category')})")
 
-            documents = retriever.search(
-                namespace=namespace, query=question, limit=limit
+            # Detailed logging for retrieval parameters
+            try:
+                collection_name = getattr(retriever, "collection_name", "<unknown>")
+            except Exception:
+                collection_name = "<unknown>"
+            logging.info(
+                "Vector search params: collection=%s, namespace=%s, limit=%s, query=%.120s",
+                collection_name,
+                namespace,
+                limit,
+                question,
             )
+
+            documents = retriever.search(namespace=namespace, query=question, limit=limit)
             logging.info(f"Retrieved {len(documents)} documents.")
             
             return {

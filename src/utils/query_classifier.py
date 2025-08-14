@@ -47,6 +47,9 @@ class QueryClassifier:
         is_location_query = any(keyword in query_lower for keyword in self.location_keywords)
         is_promotion_query = any(keyword in query_lower for keyword in self.promotion_keywords)
         is_faq_query = any(keyword in query_lower for keyword in self.faq_keywords)
+        # Heuristic: VAT/tax questions are typical FAQ policy
+        if not is_faq_query and any(k in query_lower for k in ["vat", "hóa đơn", "hoa don", "thuế", "thue", "invoice"]):
+            is_faq_query = True
 
         # Determine primary category
         primary_category = self._get_primary_category(

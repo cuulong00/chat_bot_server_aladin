@@ -26,22 +26,25 @@ logging.basicConfig(
 model_deep_seek = ChatGroq(model="deepseek-r1-distill-llama-70b",  temperature=0)
 qwen = ChatGroq(model="qwen-qwq-32b", temperature=0)
 
-accounting_llm = ChatOpenAI(model="gpt-4.1-mini",streaming=False, temperature=0)
+accounting_llm = ChatOpenAI(model="gpt-4.1-mini",streaming=False, temperature=0, max_retries=0)
 llm_grade_documents = ChatGoogleGenerativeAI(
     model="gemini-1.5-flash",
     disable_streaming=False,
     temperature=0,
+    max_retries=0,
 )
 llm_router = ChatGoogleGenerativeAI(
     model="gemini-1.5-flash",
     temperature=0,
+    max_retries=0,
 )
-llm_rewrite = ChatOpenAI(model="gpt-4.1-mini", streaming=False, temperature=0)
-llm_generate_direct = ChatOpenAI(model="gpt-4.1-mini", streaming=False, temperature=0)
+llm_rewrite = ChatOpenAI(model="gpt-4.1-mini", streaming=False, temperature=0, max_retries=0)
+llm_generate_direct = ChatOpenAI(model="gpt-4.1-mini", streaming=False, temperature=0, max_retries=0)
 llm_hallucination_grader = ChatGoogleGenerativeAI(
     model="gemini-1.5-flash",
     temperature=0,
     disable_streaming=False,
+    max_retries=0,
 )
 
 # Initialize the Qdrant retriever

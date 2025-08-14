@@ -15,15 +15,15 @@ from src.domain_configs.domain_configs import MARKETING_DOMAIN
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
 # Initialize LLMs (can adjust per availability)
-#primary_llm = ChatOpenAI(model="gpt-4o-mini", streaming=True, temperature=1)
-primary_llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", streaming=True, temperature=0)
-llm_grade_documents = ChatGoogleGenerativeAI(model="gemini-1.5-flash", disable_streaming=True, temperature=0)
-llm_router = ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=0, disable_streaming=True)
-#llm_rewrite = ChatOpenAI(model="gpt-4o-mini", disable_streaming=True, temperature=1)
-llm_rewrite = ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=0, disable_streaming=True)
-#llm_generate_direct = ChatOpenAI(model="gpt-4o-mini", streaming=True, temperature=1)
-llm_generate_direct = ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=0, streaming=True)
-llm_hallucination_grader = ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=0, disable_streaming=True)
+#primary_llm = ChatOpenAI(model="gpt-4o-mini", streaming=True, temperature=1, max_retries=0)
+primary_llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", streaming=True, temperature=0, max_retries=0)
+llm_grade_documents = ChatGoogleGenerativeAI(model="gemini-1.5-flash", disable_streaming=True, temperature=0, max_retries=0)
+llm_router = ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=0, disable_streaming=True, max_retries=0)
+#llm_rewrite = ChatOpenAI(model="gpt-4o-mini", disable_streaming=True, temperature=1, max_retries=0)
+llm_rewrite = ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=0, disable_streaming=True, max_retries=0)
+#llm_generate_direct = ChatOpenAI(model="gpt-4o-mini", streaming=True, temperature=1, max_retries=0)
+llm_generate_direct = ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=0, streaming=True, max_retries=0)
+llm_hallucination_grader = ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=0, disable_streaming=True, max_retries=0)
 llm_summarizer = primary_llm
 llm_contextualize = primary_llm
 
