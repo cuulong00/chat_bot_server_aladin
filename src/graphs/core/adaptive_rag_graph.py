@@ -913,7 +913,7 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
                 "\n"
                 "� **KHÔNG TIẾT LỘ QUY TRÌNH/TOOLS:**\n"
                 "- Tuyệt đối KHÔNG mô tả quy trình nội bộ hay việc 'đang tiến hành', 'sẽ sử dụng công cụ', 'đợi em một chút…'\n"
-                "- KHÔNG nói mình đang gọi API/công cụ. Hãy tập trung vào KẾT QUẢ và bước cần thiết kế tiếp.\n"
+                "- KHÔNG nói mình đang gọi API/công cụ. Hãy tập trung vào KẾT QUẢ và bước cần thiết thiết kế tiếp.\n"
                 "- Nếu chưa có kết quả cuối, diễn đạt ngắn gọn theo hướng: 'Em đã tiếp nhận yêu cầu, sẽ xác nhận và phản hồi ngay khi có kết quả' (không nêu công cụ/quy trình).\n"
                 "\n"
                 "�📋 **XỬ LÝ CÁC LOẠI CÂU HỎI DIRECT:**\n"
@@ -978,7 +978,7 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
                 "  • **Đặt bàn test:** Sử dụng `book_table_reservation_test` \n"
                 "\n"
                 "**6️⃣ XỬ LÝ HÌNH ẢNH:**\n"
-                "- **Lời chào:** Nếu là tin nhắn đầu tiên → chào hỏi đầy đủ; nếu không → chỉ 'Dạ anh/chị'\n"
+                "- **Lời chào:** Nếu là tin nhắn đầu tiên trong cuộc hội thoại → chào hỏi đầy đủ; nếu không → chỉ 'Dạ anh/chị'\n"
                 "- **QUAN TRỌNG:** Sử dụng tool `analyze_image` khi khách gửi hình ảnh\n"
                 "- Phân tích nội dung hình ảnh và đưa ra phản hồi phù hợp\n"
                 "- Kết nối với ngữ cảnh nhà hàng (menu, món ăn, không gian, v.v.)\n"
@@ -1006,7 +1006,7 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
                 "- Kiểm tra số lượng tin nhắn trong cuộc hội thoại:\n"
                 "  • Nếu có ít tin nhắn (≤ 2 tin nhắn) → Đây là lần đầu tiên → Chào hỏi đầy đủ\n"
                 "  • Nếu có nhiều tin nhắn (> 2 tin nhắn) → Đã có cuộc hội thoại → Chỉ cần 'Dạ anh/chị'\n"
-                "- Ví dụ chào hỏi đầy đủ: 'Chào anh/chị! Em là Vy - nhân viên của nhà hàng lẩu bò tươi Tian Long...'\n"
+                "- Ví dụ chào hỏi đầy đủ: 'Chào anh Tuấn Dương! Nhà hàng lẩu bò tươi Tian Long...'\n"
                 "- Ví dụ chào hỏi ngắn gọn: 'Dạ anh/chị', 'Vâng ạ', 'Dạ ạ'\n"
                 "\n"
                 "Hãy nhớ: Bạn là đại diện chuyên nghiệp của Tian Long, luôn lịch sự, nhiệt tình và sáng tạo trong cách trình bày thông tin!",
@@ -1079,6 +1079,35 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
     document_processing_runnable = document_processing_prompt | llm_generate_direct
     document_processing_assistant = Assistant(document_processing_runnable)
 
+    # --- Routing sanitization helpers ---
+    def _strip_reply_context_block(text: str) -> str:
+        if not isinstance(text, str):
+            return text
+        # Remove anything appended after the reply context marker (historical content)
+        return text.split("[REPLY_CONTEXT]", 1)[0].strip()
+
+    def _has_attachment_metadata(text: str) -> bool:
+        import re
+        if not text:
+            return False
+        t = _strip_reply_context_block(text)
+        patterns = [
+            r"\[HÌNH ẢNH\]\s*URL:\s*https?://",
+            r"\[VIDEO\]\s*URL:\s*https?://",
+            r"\[TỆP TIN\]\s*URL:\s*https?://",
+            r"📸\s*\*\*Phân tích hình ảnh:\*\*",  # pre‑analyzed marker
+        ]
+        return any(re.search(p, t) for p in patterns)
+
+    def _sanitize_for_router(text: str) -> str:
+        # Keep only the current-turn plain text; drop historical markers/lines
+        if not isinstance(text, str):
+            return text
+        t = _strip_reply_context_block(text)
+        import re
+        t = re.sub(r"(?m)^\[(HÌNH ẢNH|VIDEO|TỆP TIN)\]\s*URL:.*$", "", t).strip()
+        return t
+
     def route_question(state: RagState, config: RunnableConfig):
         logging.info("---NODE: ROUTE QUESTION---")
         
@@ -1086,7 +1115,11 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
         current_question = get_current_user_question(state)
         logging.debug(f"route_question->current_question -> {current_question}")
 
-        result = router_assistant.runnable.invoke(router_assistant.binding_prompt(state))
+        # Sanitize input passed to the router to avoid historical attachment leakage
+        prompt_data = router_assistant.binding_prompt(state)
+        prompt_data["messages"] = _sanitize_for_router(current_question)
+
+        result = router_assistant.runnable.invoke(prompt_data)
         datasource = result.datasource
         
         # Log the routing decision with context
@@ -1408,6 +1441,15 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
             for pattern in url_patterns:
                 matches = re.findall(pattern, current_question)
                 image_urls.extend(matches)
+
+            # Short-circuit if no URLs found to avoid unnecessary processing
+            if not image_urls:
+                logging.info("No attachment URLs found in current message; skipping document analysis")
+                from langchain_core.messages import AIMessage
+                response = AIMessage(
+                    content="Em chưa thấy tệp/hình ảnh nào trong tin nhắn này. Anh/chị có thể gửi lại ảnh hoặc tệp cần phân tích không ạ?"
+                )
+                return {"messages": [response]}
             
             # Get image processing service
             image_service = get_image_processing_service()
@@ -1509,42 +1551,61 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
             else "end"
         )
 
+    # Restored: decide next step after generate_direct
+    def decide_after_direct_generation(
+        state: RagState,
+    ) -> Literal["direct_tools", "__end__"]:
+        last_message = state["messages"][-1]
+        return (
+            "direct_tools"
+            if hasattr(last_message, "tool_calls") and last_message.tool_calls
+            else "__end__"
+        )
+
+    # Restored: decide next step after process_document
+    def decide_after_process_document(
+        state: RagState,
+    ) -> Literal["direct_tools", "__end__"]:
+        last_message = state["messages"][-1]
+        return (
+            "direct_tools"
+            if hasattr(last_message, "tool_calls") and last_message.tool_calls
+            else "__end__"
+        )
+
+    # Restored: decide where to go after direct_tools
+    def decide_after_direct_tools(
+        state: RagState,  
+    ) -> Literal["generate_direct", "process_document"]:
+        # Heuristic based on question indicators
+        question = state.get("question", "").lower()
+        if any(ind in question for ind in ["📸", "document", "tài liệu", "file", "hình ảnh", "ảnh"]):
+            logging.info("Returning to process_document after tools")
+            return "process_document"
+        logging.info("Returning to generate_direct after tools")
+        return "generate_direct"
+
     def decide_entry(
         state: RagState,
     ) -> Literal["retrieve", "web_search", "direct_answer", "process_document"]:
         """Route questions to appropriate processing nodes based on content analysis.
         
-        Priority routing logic:
-        1. First check if router already identified image analysis content
-        2. Then check for document/image indicators not caught by router
-        3. Finally use router's decision for other cases
+        Priority routing logic tightened to avoid false positives:
+        - Only route to process_document when the current message contains explicit
+          attachment metadata (current-turn) or the pre‑analyzed marker.
+        - Otherwise, honor the router decision (vectorstore/web_search/direct_answer).
         """
-        question = state.get("question", "").lower()
+        question_raw = state.get("question", "")
+        question = question_raw.lower()
         datasource = state.get("datasource", "direct_answer")
         
         logging.debug(f"decide_entry->question: {question[:100]}...")
         logging.debug(f"decide_entry->router_datasource: {datasource}")
-        
-        # If router already decided on direct_answer and question contains image analysis content,
-        # this is likely already processed image content - stick with direct_answer
-        if datasource == "direct_answer" and "📸" in question:
-            logging.info("🖼️ Image content already processed by FacebookService, routing to direct_answer")
+
+        # Guard against false 'process_document' when no current-turn attachments
+        if datasource == "process_document" and not _has_attachment_metadata(question_raw):
+            logging.info("🛑 Router chose process_document but no current-turn attachments detected -> override to direct_answer")
             return "direct_answer"
-        
-        # Check for document/file processing indicators that router might have missed
-        # (These are different from image analysis which is handled above)
-        document_indicators = [
-            "tài liệu", "document", "file", "upload", "gửi lên", "đính kèm",
-            "pdf", "doc", "txt", "excel", "word"
-        ]
-        
-        # Only route to process_document for raw document processing (not pre-analyzed content)
-        if any(indicator in question for indicator in document_indicators) and "📸" not in question:
-            logging.info(f"� Routing to process_document for document query: {question[:100]}...")
-            return "process_document"
-        
-        # Use router's decision for other cases
-        logging.info(f"🔀 Using router decision: {datasource}")
         
         # Map router decisions to valid node names
         if datasource == "vectorstore":
@@ -1559,44 +1620,6 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
         else:  # direct_answer or any other case
             logging.info(f"🔀 Router decision: {datasource} → direct_answer")
             return "direct_answer"
-
-    def decide_after_direct_generation(
-        state: RagState,
-    ) -> Literal["direct_tools", "__end__"]:
-        """Decide what to do after generate_direct node."""
-        last_message = state["messages"][-1]
-        return (
-            "direct_tools"
-            if hasattr(last_message, "tool_calls") and last_message.tool_calls
-            else "__end__"
-        )
-
-    def decide_after_process_document(
-        state: RagState,
-    ) -> Literal["direct_tools", "__end__"]:
-        """Decide what to do after process_document node."""
-        last_message = state["messages"][-1]
-        return (
-            "direct_tools"
-            if hasattr(last_message, "tool_calls") and last_message.tool_calls
-            else "__end__"
-        )
-
-    def decide_after_direct_tools(
-        state: RagState,  
-    ) -> Literal["generate_direct", "process_document"]:
-        """Decide where to go after direct_tools based on the last node that called tools."""
-        # Check if we came from process_document by looking at recent node history
-        # This is a simple heuristic - in practice you might want to store this in state
-        question = state.get("question", "").lower()
-        
-        # If question contains document/image indicators, likely came from process_document
-        if any(indicator in question for indicator in ["📸", "document", "tài liệu", "file", "hình ảnh", "ảnh"]):
-            logging.info("Returning to process_document after tools")
-            return "process_document"
-        else:
-            logging.info("Returning to generate_direct after tools")
-            return "generate_direct"
 
     # --- Build the Graph ---
     graph = StateGraph(RagState)
