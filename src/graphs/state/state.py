@@ -29,7 +29,7 @@ from dataclasses import dataclass
 from typing import TypedDict, Annotated, List
 
 
-def update_dialog_stack(left: list[str], right: Optional[str]) -> list[str]:
+def update_dialog_stack(left: list[str], right: Optional[object]) -> list[str]:
     """
     Push or pop the state, with improved logic to prevent excessive nesting.
     """
@@ -44,6 +44,21 @@ def update_dialog_stack(left: list[str], right: Optional[str]) -> list[str]:
     
     if right is None:
         return left
+
+    # Support absolute set updates via list input; ignore empty list updates
+    if isinstance(right, list):
+        if len(right) == 0:
+            logging.warning("⚠️ DIALOG_STACK: received empty list for right; ignoring update")
+            return left
+        # Validate all entries are strings
+        if not all(isinstance(x, str) for x in right):
+            logging.error(f"🚨 DIALOG_STACK: list update contains non-string items: {right}")
+            return left
+        MAX_DIALOG_DEPTH = 5
+        result = right[-MAX_DIALOG_DEPTH:]
+        logging.info(f"🔄 DIALOG_STACK SET: result={result}")
+        return result
+
     if right == "pop":
         # Pop the last item, but never let it go completely empty
         result = left[:-1] if len(left) > 1 else []

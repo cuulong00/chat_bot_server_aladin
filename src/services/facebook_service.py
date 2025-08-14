@@ -42,6 +42,12 @@ class FacebookMessengerService:
             self._profile_ttl = int(os.getenv("FB_PROFILE_CACHE_TTL", "600"))
         except ValueError:
             self._profile_ttl = 600
+        # In-memory TTL cache to deduplicate webhook events (mid/postback)
+        self._seen_events: dict[str, float] = {}
+        try:
+            self._event_ttl = int(os.getenv("FB_EVENT_TTL", "600"))
+        except ValueError:
+            self._event_ttl = 600
 
         missing = []
         if not self.page_access_token:
@@ -310,6 +316,10 @@ class FacebookMessengerService:
 
             for entry in body.get("entry", []):
                 for messaging in entry.get("messaging", []):
+                    # Deduplicate events by message.mid or postback signature
+                    if self._is_duplicate_event(messaging):
+                        logger.info("Skipping duplicate webhook event")
+                        continue
                     # Skip delivery/read/standby control events
                     if any(k in messaging for k in ("delivery", "read", "optin", "account_linking")):
                         logger.debug("Skipping non-message event keys present: %s",
@@ -369,7 +379,8 @@ class FacebookMessengerService:
                             logger.warning(f"No reply generated for {sender}")
 
                     postback = messaging.get("postback")
-                    if postback and postback.get("payload"):
+                    # Only handle postback if we did NOT already handle a text message above
+                    if (not (message and message.get("text"))) and postback and postback.get("payload"):
                         payload = postback["payload"]
                         logger.info(f"Processing postback from {sender}: {payload}")
                         reply = await self.call_agent(app_state, sender, payload)
@@ -379,3 +390,32 @@ class FacebookMessengerService:
                             
         except Exception as e:  # noqa: BLE001
             logger.exception("Error handling Facebook webhook: %s", e)
+
+    # --- Dedup helpers ---
+    def _event_signature(self, messaging: Dict[str, Any]) -> str:
+        sender = (messaging.get("sender", {}) or {}).get("id", "")
+        timestamp = str(messaging.get("timestamp", ""))
+        msg = messaging.get("message") or {}
+        if isinstance(msg, dict) and msg.get("mid"):
+            return f"mid:{msg.get('mid')}"
+        postback = messaging.get("postback") or {}
+        if isinstance(postback, dict):
+            if postback.get("mid"):
+                return f"pbmid:{postback.get('mid')}"
+            return f"postback:{sender}:{postback.get('payload','')}:{timestamp}"
+        return f"generic:{sender}:{timestamp}"
+
+    def _cleanup_seen(self, now: float) -> None:
+        ttl = self._event_ttl
+        to_del = [k for k, t in self._seen_events.items() if now - t > ttl]
+        for k in to_del:
+            self._seen_events.pop(k, None)
+
+    def _is_duplicate_event(self, messaging: Dict[str, Any]) -> bool:
+        sig = self._event_signature(messaging)
+        now = time.time()
+        self._cleanup_seen(now)
+        if sig in self._seen_events:
+            return True
+        self._seen_events[sig] = now
+        return False
