@@ -361,8 +361,11 @@ class FacebookMessengerService:
                         logger.info("Skipping event where sender equals PAGE_ID (self-echo)")
                         continue
 
+                    # Flag to track if we've processed any content for this messaging event
+                    processed_event = False
+                    
                     message = msg_obj
-                    if message:
+                    if message and not processed_event:
                         # Initialize message content
                         text = ""
                         attachment_info = []
@@ -414,7 +417,7 @@ class FacebookMessengerService:
                         # Prepare full message content for agent
                         full_message = await self._prepare_message_for_agent(text, attachment_info, reply_context)
                         
-                        logger.info(f"Processing message from {sender}: {full_message[:100]}...")
+                        logger.info(f"🔄 Processing MESSAGE from {sender}: {full_message[:100]}...")
                         reply = await self.call_agent(app_state, sender, full_message)
                         
                         if reply:
@@ -424,7 +427,7 @@ class FacebookMessengerService:
                             if last and (now - last[0] < self._last_reply_ttl) and last[1] == reply:
                                 logger.info("Skip sending duplicate reply within TTL window")
                             else:
-                                logger.info(f"Sending reply to {sender}: {reply[:50]}...")
+                                logger.info(f"📤 Sending MESSAGE reply to {sender}: {reply[:50]}...")
                                 await self.send_message(sender, reply)
                                 self._last_reply[sender] = (now, reply)
                                 
@@ -438,12 +441,15 @@ class FacebookMessengerService:
                                 )
                         else:
                             logger.warning(f"No reply generated for {sender}")
+                        
+                        # Mark this event as processed
+                        processed_event = True
 
+                    # Only handle postback if we haven't processed a message for this event
                     postback = messaging.get("postback")
-                    # Only handle postback if we did NOT already handle a message above
-                    if (not message or (not message.get("text") and not message.get("attachments"))) and postback and postback.get("payload"):
+                    if not processed_event and postback and postback.get("payload"):
                         payload = postback["payload"]
-                        logger.info(f"Processing postback from {sender}: {payload}")
+                        logger.info(f"🔄 Processing POSTBACK from {sender}: {payload}")
                         reply = await self.call_agent(app_state, sender, payload)
                         if reply:
                             now = time.time()
@@ -451,8 +457,12 @@ class FacebookMessengerService:
                             if last and (now - last[0] < self._last_reply_ttl) and last[1] == reply:
                                 logger.info("Skip sending duplicate reply within TTL window (postback)")
                             else:
+                                logger.info(f"📤 Sending POSTBACK reply to {sender}: {reply[:50]}...")
                                 await self.send_message(sender, reply)
                                 self._last_reply[sender] = (now, reply)
+                        
+                        # Mark this event as processed
+                        processed_event = True
                             
         except Exception as e:  # noqa: BLE001
             logger.exception("Error handling Facebook webhook: %s", e)
