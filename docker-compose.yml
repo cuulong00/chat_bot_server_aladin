@@ -59,6 +59,10 @@ services:
       - FB_VERIFY_TOKEN=${FB_VERIFY_TOKEN}
       - FB_API_VERSION=${FB_API_VERSION}
       - APP_ID=${APP_ID}
+      - PAGE_ID=${PAGE_ID}
+      # Bypass configuration
+      - SKIP_SUPABASE_AUTH=${SKIP_SUPABASE_AUTH}
+      - BYPASS_USER_DB=${BYPASS_USER_DB}
     volumes:
       - ./text-to-speech.json:/app/text-to-speech.json:ro
     restart: unless-stopped
