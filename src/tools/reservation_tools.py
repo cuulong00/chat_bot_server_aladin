@@ -354,6 +354,12 @@ def book_table_reservation(
 
 def _resolve_repo_root() -> Path:
     """Resolve the repository root by walking up until a known marker is found."""
+    # Check if running on production server (Linux path)
+    production_path = Path("/home/administrator/project/chatbot_aladdin/chat_bot_server_aladin")
+    if production_path.exists():
+        return production_path
+    
+    # For local development
     current = Path(__file__).resolve()
     for parent in [current, *current.parents]:
         if (parent / "pyproject.toml").exists() or (parent / ".git").exists() or (parent / "README.md").exists():
