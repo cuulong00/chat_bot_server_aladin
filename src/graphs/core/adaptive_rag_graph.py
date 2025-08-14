@@ -509,11 +509,12 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
                 "You are a highly efficient routing agent about {domain_context}. Your ONLY job: return exactly one token from this set: vectorstore | web_search | direct_answer.\n\n"
                 "DECISION ALGORITHM (execute in order, stop at first match):\n"
                 "1. DIRECT_ANSWER (ACTION/CONFIRMATION/SMALL TALK/IMAGE ANALYSIS) -> Choose 'direct_answer' if the user is:\n"
+                "   - **PRIORITY: Message starts with '📸 **Phân tích hình ảnh:**' or contains image analysis content - ALWAYS route to direct_answer**, OR\n"
                 "   - Giving confirmation/negation or supplying details in an ongoing flow (e.g., 'không có ai sinh nhật', '7h tối nay', '3 người lớn 2 trẻ em'), OR\n"
                 "   - Expressing intent to perform an action like booking ('đặt bàn', 'đặt chỗ', 'book', 'booking', 'giữ bàn'), OR\n"
                 "   - Greeting/thanks/chit‑chat/meta about the assistant, OR\n"
                 "   - Asking about or updating personal preferences, OR\n"
-                "   - Asking about content in images, photos, documents they have sent (e.g., '📸 **Phân tích hình ảnh**', mentions of 'hình ảnh', 'ảnh', 'photo', 'image', 'xem được', 'trong hình', 'giao diện', analysis of visual content), OR\n"
+                "   - Asking about content in images, photos, documents they have sent (mentions of 'hình ảnh', 'ảnh', 'photo', 'image', 'xem được', 'trong hình', 'giao diện', analysis of visual content), OR\n"
                 "   - Questions that reference visual or document content that requires analysis tools rather than knowledge retrieval.\n"
                 "   Rationale: these do not require knowledge retrieval; they should be handled by tools, conversational logic, or image analysis.\n"
                 "2. VECTORSTORE -> Choose 'vectorstore' only if the user asks for information that should come from internal knowledge (menu, địa chỉ, chi nhánh, hotline, chính sách, ưu đãi, FAQ…) and is NOT merely confirming/continuing an action.\n"
@@ -801,6 +802,12 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
                 "system",
                 "Bạn là Vy – trợ lý ảo của nhà hàng lẩu bò tươi Tian Long (ngữ cảnh: {domain_context}). "
                 "Bạn được gọi khi tìm kiếm nội bộ không thấy thông tin phù hợp. Hãy trả lời NGẮN GỌN, LỊCH SỰ và MẠCH LẠC, duy trì liền mạch với cuộc trò chuyện.\n\n"
+                "**ĐẶC BIỆT QUAN TRỌNG - XỬ LÝ PHÂN TÍCH HÌNH ẢNH:**\n"
+                "Nếu tin nhắn bắt đầu bằng '📸 **Phân tích hình ảnh:**' hoặc chứa nội dung phân tích hình ảnh:\n"
+                "- KHÔNG được nói 'em chưa thể xem được hình ảnh' vì hình ảnh ĐÃ được phân tích thành công\n"
+                "- Sử dụng nội dung phân tích để trả lời câu hỏi của khách hàng\n"
+                "- Dựa vào những gì đã phân tích được để đưa ra câu trả lời phù hợp\n"
+                "- Nếu hình ảnh về thực đơn/menu, hãy gợi ý khách hàng xem thực đơn chi tiết tại nhà hàng hoặc liên hệ hotline\n\n"
                 "YÊU CẦU QUAN TRỌNG:\n"
                 "- Giữ nguyên ngôn ngữ theo tin nhắn gần nhất của khách.\n"
                 "- Tham chiếu hợp lý tới bối cảnh trước đó (tên chi nhánh/địa điểm, ngày/giờ mong muốn, số khách, ghi chú, sinh nhật…) nếu đã có.\n"
@@ -1011,8 +1018,15 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
         current_question = get_current_user_question(state)
         logging.debug(f"route_question->current_question -> {current_question}")
 
-        result = router_assistant(state, config)
+        result = router_assistant.runnable.invoke(router_assistant.binding_prompt(state))
         datasource = result.datasource
+        
+        # Log the routing decision with context
+        logging.info(f"🔀 ROUTER DECISION: '{datasource}' for message: {current_question[:100]}...")
+        
+        # Check if this looks like image analysis that should go to direct_answer
+        if datasource != "direct_answer" and ("📸" in current_question or "Phân tích hình ảnh" in current_question or "hình ảnh" in current_question.lower()):
+            logging.warning(f"⚠️ POTENTIAL ROUTING ISSUE: Image analysis message routed to '{datasource}' instead of 'direct_answer'")
         
         return {"datasource": datasource}
 
@@ -1272,6 +1286,50 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
             "force_suggest": False,
         }
 
+    def process_document_node(state: RagState, config: RunnableConfig):
+        """Process documents/images using AI analysis."""
+        logging.info("---NODE: PROCESS DOCUMENT---")
+        
+        question = state["question"]
+        user_id = state.get("user_id", "")
+        
+        # Check if this is an image analysis result that's already been processed
+        if question.startswith("📸 **Phân tích hình ảnh:**"):
+            # This is already processed image analysis, just return it as answer
+            logging.info("Found pre-processed image analysis, returning as answer")
+            
+            # Extract the analysis content
+            analysis_content = question
+            
+            # Create an AIMessage response with the analysis
+            from langchain_core.messages import AIMessage
+            response = AIMessage(content=analysis_content)
+            
+            return {"messages": [response]}
+        
+        # For other document/image processing needs, we can expand this
+        # Currently, image processing happens in Facebook service before reaching here
+        
+        # Build context from user information for general document queries
+        context_parts = []
+        if "user_info" in state and state["user_info"]:
+            user_info = state["user_info"]
+            if user_info.get("name"):
+                context_parts.append(f"Khách hàng: {user_info['name']}")
+        
+        context = "\n".join(context_parts) if context_parts else ""
+        
+        # Use direct generation with tools for document/image queries
+        inputs = {
+            "question": question,
+            "context": context,
+            "user_id": user_id
+        }
+        
+        response = llm_generate_direct_with_tools.invoke(inputs, config)
+        
+        return {"messages": [response]}
+
     # --- Conditional Edges ---
 
     def should_summarize(state: RagState) -> Literal["summarize", "continue"]:
@@ -1310,7 +1368,17 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
 
     def decide_entry(
         state: RagState,
-    ) -> Literal["retrieve", "web_search", "direct_answer"]:
+    ) -> Literal["retrieve", "web_search", "direct_answer", "process_document"]:
+        # Check if this is an image analysis result
+        question = state.get("question", "")
+        if question.startswith("📸 **Phân tích hình ảnh:**"):
+            return "process_document"
+        
+        # Check for other document/image related queries
+        image_keywords = ["hình ảnh", "ảnh", "photo", "image", "xem được", "trong hình", "giao diện", "phân tích hình", "đính kèm", "tài liệu", "document"]
+        if any(keyword in question.lower() for keyword in image_keywords):
+            return "process_document"
+        
         return state.get("datasource", "generate")
 
     def decide_after_direct_generation(
@@ -1346,6 +1414,7 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
     graph.add_node("hallucination_grader", hallucination_grader_node)
     graph.add_node("force_suggest", force_suggest_node)
     graph.add_node("generate_direct", generate_direct_node)
+    graph.add_node("process_document", process_document_node)
     graph.add_node("tools", ToolNode(tools=all_tools))
     graph.add_node("direct_tools", ToolNode(tools=memory_tools + tools + image_tools))
 
@@ -1373,6 +1442,7 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
             "vectorstore": "retrieve",
             "web_search": "web_search",
             "direct_answer": "generate_direct",
+            "process_document": "process_document",
         },
     )
     graph.add_edge("retrieve", "grade_documents")
@@ -1389,6 +1459,7 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
     graph.add_edge("web_search", "grade_documents")
     # graph.add_edge("force_suggest", "generate")
     graph.add_edge("force_suggest", END)
+    graph.add_edge("process_document", END)
     graph.add_conditional_edges(
         "generate",
         lambda s: "hallucination_grader" if not s.get("skip_hallucination") else END,
