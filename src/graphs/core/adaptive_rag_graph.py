@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import List, TypedDict, Annotated, Literal
 
 from datetime import datetime
-from langchain_community.tools.tavily_search import TavilySearchResults
+from langchain_tavily import TavilySearch
 
 # Import centralized logging configuration
 from src.core.logging_config import (
@@ -318,7 +318,7 @@ def create_adaptive_rag_graph(
     domain_instructions = DOMAIN["domain_instructions"]
     domain_examples = "\n".join(DOMAIN["domain_examples"])
 
-    web_search_tool = TavilySearchResults(max_results=5)
+    web_search_tool = TavilySearch(max_results=5)
     memory_tools = [get_user_profile, save_user_preference]
     image_context_tools = [save_image_context, clear_image_context]
     
