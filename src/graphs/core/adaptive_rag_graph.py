@@ -904,6 +904,13 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
                 "- Thể hiện sự quan tâm chân thành đến nhu cầu của khách hàng\n"
                 "- Chỉ hỏi tiếp khi thực sự cần THÔNG TIN CÒN THIẾU để hoàn tất yêu cầu; tránh hỏi lan man\n"
                 "\n"
+                "🧠 **BẮT BUỘC SỬ DỤNG MEMORY TOOLS (cá nhân hóa):**\n"
+                "- Trước khi trả lời về sở thích/khẩu vị/thói quen, nếu `user_profile` hiện trống hoặc quá ngắn, bạn PHẢI gọi tool `get_user_profile` với `user_id` hiện tại và `query_context` rút ra từ câu hỏi.\n"
+                "- Khi khách HÉ LỘ sở thích mới (ví dụ: 'em thích ăn cay', 'dị ứng hải sản', 'ăn chay', 'không ăn ngọt', 'thích không gian yên tĩnh'…), bạn PHẢI gọi tool `save_user_preference` để lưu lại.\n"
+                "- Chỉ trả lời/gợi ý cá nhân hóa SAU KHI đã gọi `get_user_profile` (nếu cần) và nhận kết quả. Không phỏng đoán từ trí nhớ ngắn hạn.\n"
+                "- Từ khóa gợi ý nên gọi `get_user_profile`: 'sở thích', 'thích/không thích', 'dị ứng', 'ăn chay', 'khẩu vị', 'allergy', 'diet', 'prefer', 'preference'.\n"
+                "- Lưu ý: KHÔNG tiết lộ rằng bạn đang dùng tool; chỉ phản hồi kết quả một cách tự nhiên.\n"
+                "\n"
                 "🎨 **QUYỀN TỰ DO SÁNG TẠO ĐỊNH DẠNG:**\n"
                 "- Bạn có TOÀN QUYỀN sử dụng bất kỳ định dạng nào: markdown, HTML, emoji, bảng, danh sách, in đậm, in nghiêng\n"
                 "- Hãy SÁNG TẠO và làm cho nội dung ĐẸP MẮT, SINH ĐỘNG và DỄ ĐỌC\n"
@@ -926,8 +933,8 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
                 "\n"
                 "**2️⃣ CÂU HỎI VỀ SỞ THÍCH CÁ NHÂN:**\n"
                 "- **Lời chào:** Nếu là tin nhắn đầu tiên → chào hỏi đầy đủ; nếu không → chỉ 'Dạ anh/chị'\n"
-                "- **QUAN TRỌNG:** Sử dụng `save_user_preference` tool khi học được thông tin mới về sở thích\n"
-                "- **QUAN TRỌNG:** Sử dụng `get_user_profile` tool khi khách hỏi về sở thích đã lưu\n"
+                "- **QUAN TRỌNG:** TRƯỚC KHI trả lời: nếu `user_profile` rỗng/thiếu → GỌI `get_user_profile` với `user_id` hiện tại và `query_context` liên quan (ví dụ: 'restaurant', 'food', nội dung câu hỏi).\n"
+                "- **QUAN TRỌNG:** Khi học được thông tin mới → GỌI `save_user_preference` để lưu lại (không nói đang gọi tool).\n"
                 "- Xác nhận việc lưu thông tin sau khi gọi tool\n"
                 "- Gợi ý món ăn phù hợp với sở thích (nếu phù hợp)\n"
                 "\n"
@@ -1377,6 +1384,32 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
         # Check if this is a re-entry from tools (to avoid duplicate reasoning steps)
         messages = state.get("messages", [])
         is_tool_reentry = len(messages) > 0 and isinstance(messages[-1], ToolMessage)
+        
+        # Heuristic: if user_profile missing/short and query mentions preferences, proactively request get_user_profile via tool call
+        try:
+            user_info_ctx = state.get("user", {}).get("user_info", {})
+            user_id = user_info_ctx.get("user_id") or state.get("user_id")
+            profile_summary = state.get("user", {}).get("user_profile", {}).get("summary", "")
+            q_low = (current_question or "").lower()
+            pref_triggers = [
+                "sở thích", "khẩu vị", "dị ứng", "ăn chay", "thích ", "không thích",
+                "allergy", "diet", "prefer", "preference"
+            ]
+            needs_profile = (not profile_summary) or len(profile_summary) < 10
+            mentions_pref = any(t in q_low for t in pref_triggers)
+            if user_id and needs_profile and mentions_pref and not is_tool_reentry:
+                from langchain_core.messages import AIMessage
+                # Craft an assistant message with a tool_call to get_user_profile
+                tool_call = {
+                    "id": "auto_get_user_profile",
+                    "name": "get_user_profile",
+                    "args": {"user_id": user_id, "query_context": current_question or "restaurant"},
+                }
+                ai_msg = AIMessage(content="", tool_calls=[tool_call])
+                logging.info("🔧 Injected get_user_profile tool call (heuristic) before direct answer")
+                return {"messages": [ai_msg]}
+        except Exception as _e:
+            logging.debug(f"Heuristic tool-call injection skipped: {_e}")
         
         response = direct_answer_assistant(state, config)
         
