@@ -683,7 +683,7 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
                 "  • **Họ và tên:** Cần tách rõ họ và tên (first_name, last_name)\n"
                 "  • **Số điện thoại:** Bắt buộc để xác nhận đặt bàn\n"
                 "  • **Chi nhánh/địa chỉ:** Cần xác định chính xác chi nhánh muốn đặt\n"
-                "  • **Ngày đặt bàn:** Định dạng YYYY-MM-DD\n"
+                "  • **Ngày đặt bàn:** Định dạng dd/mm/yyyy (ví dụ: 15/8/2025)\n"
                 "  • **Giờ bắt đầu:** Định dạng HH:MM (ví dụ: 19:00)\n"
                 "  • **Số người lớn:** Bắt buộc, ít nhất 1 người\n"
                 "  • **Số trẻ em:** Tùy chọn, mặc định 0\n"

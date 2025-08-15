@@ -37,8 +37,8 @@ class ReservationInput(BaseModel):
     last_name: str = Field(..., description="Customer last name")
     phone: str = Field(..., description="Customer phone number")
     email: Optional[str] = Field(None, description="Customer email (optional)")
-    dob: Optional[str] = Field(None, description="Date of birth (YYYY-MM-DD)")
-    reservation_date: str = Field(..., description="Reservation date (YYYY-MM-DD)")
+    dob: Optional[str] = Field(None, description="Date of birth (dd/mm/yyyy or YYYY-MM-DD)")
+    reservation_date: str = Field(..., description="Reservation date (dd/mm/yyyy or YYYY-MM-DD)")
     start_time: str = Field(..., description="Start time (HH:MM)")
     end_time: Optional[str] = Field(None, description="End time (HH:MM, optional)")
     amount_adult: int = Field(..., ge=1, description="Number of adults")
@@ -59,13 +59,28 @@ class ReservationInput(BaseModel):
 
     @validator('reservation_date')
     def validate_date(cls, v):
+        """Accept dd/mm/yyyy or YYYY-MM-DD and normalize to YYYY-MM-DD internally."""
+        val = v.strip()
+        parsed_date: date | None = None
+        # Try dd/mm/yyyy first
         try:
-            parsed_date = datetime.strptime(v, '%Y-%m-%d').date()
-            if parsed_date < date.today():
-                raise ValueError("Reservation date cannot be in the past")
-            return v
-        except ValueError as e:
-            raise ValueError(f"Invalid date format (YYYY-MM-DD): {e}")
+            if '/' in val:
+                d = datetime.strptime(val, '%d/%m/%Y').date()
+                parsed_date = d
+            else:
+                d = datetime.strptime(val, '%Y-%m-%d').date()
+                parsed_date = d
+        except ValueError:
+            # Secondary attempt: support d/m/yyyy without leading zeros
+            try:
+                d = datetime.strptime(val, '%d/%m/%Y').date()
+                parsed_date = d
+            except ValueError as e:
+                raise ValueError(f"Invalid date format (dd/mm/yyyy or YYYY-MM-DD): {e}")
+        if parsed_date < date.today():
+            raise ValueError("Reservation date cannot be in the past")
+        # Normalize to ISO for downstream API
+        return parsed_date.strftime('%Y-%m-%d')
 
     @validator('start_time')
     def validate_time(cls, v):
@@ -329,7 +344,7 @@ def book_table_reservation(
                 f"👤 **Customer:** {first_name} {last_name}\n"
                 f"📞 **Phone:** {phone}\n"
                 f"🏪 **Branch:** {restaurant_location}\n"
-                f"📅 **Date:** {reservation_date}\n"
+                f"📅 **Date:** {datetime.strptime(reservation_date, '%Y-%m-%d').strftime('%d/%m/%Y')}\n"
                 f"⏰ **Time:** {start_time} - {end_time}\n"
                 f"👥 **Guests:** {amount_adult} adults"
                 + (f", {amount_children} children" if amount_children > 0 else "") + f" (total: {total_guests} guests)\n"
@@ -506,7 +521,7 @@ def book_table_reservation_test(
             f"👤 **Customer:** {first_name} {last_name}\n"
             f"📞 **Phone:** {phone}\n"
             f"🏪 **Branch:** {restaurant_location}\n"
-            f"📅 **Date:** {reservation_date}\n"
+            f"📅 **Date:** {datetime.strptime(reservation_date, '%Y-%m-%d').strftime('%d/%m/%Y')}\n"
             f"⏰ **Time:** {start_time} - {end_time}\n"
             f"👥 **Guests:** {amount_adult} adults"
             + (f", {amount_children} children" if amount_children > 0 else "")
