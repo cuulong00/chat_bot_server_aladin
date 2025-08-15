@@ -4,6 +4,7 @@ import json
 import logging
 import os
 import asyncio
+import concurrent.futures
 from typing import Any, Dict, Optional, List
 
 import httpx
@@ -12,6 +13,15 @@ from .message_history_service import get_message_history_service
 from .image_processing_service import get_image_processing_service
 
 logger = logging.getLogger(__name__)
+
+# Import Redis components - sẽ fallback nếu Redis không available
+try:
+    from .redis_message_queue import RedisMessageQueue, SmartMessageAggregator, RedisConfig, MessageProcessingConfig
+    REDIS_AVAILABLE = True
+    logger.info("✅ Redis components loaded successfully")
+except ImportError:
+    logger.warning("⚠️ Redis not available, using legacy message handling")
+    REDIS_AVAILABLE = False
 
 
 class FacebookMessengerService:
@@ -63,6 +73,19 @@ class FacebookMessengerService:
         
         # Image processing service
         self.image_service = get_image_processing_service()
+        
+        # Initialize Redis components if available
+        if REDIS_AVAILABLE:
+            self.redis_queue = RedisMessageQueue()
+            self.message_aggregator = SmartMessageAggregator(self.redis_queue)
+            self._redis_processor_started = False
+            logger.info("✅ Redis Smart Message Aggregator initialized")
+        else:
+            self.redis_queue = None
+            self.message_aggregator = None
+            # Fallback to legacy message merging
+            self._pending_messages = {}
+            logger.info("📝 Using legacy message merging system")
 
         missing = []
         if not self.page_access_token:
@@ -322,6 +345,106 @@ class FacebookMessengerService:
 
         return await asyncio.to_thread(_run_stream)
 
+    # --- Redis Background Processing ---
+    async def start_redis_processor(self, app_state):
+        """Khởi động background processor cho Redis events"""
+        if not REDIS_AVAILABLE or not self.redis_queue:
+            logger.warning("⚠️ Redis not available, skipping background processor")
+            return
+            
+        if self._redis_processor_started:
+            logger.info("📋 Redis processor already started")
+            return
+            
+        try:
+            await self.redis_queue.setup()
+            self._redis_processor_started = True
+            
+            # Store app_state for processing
+            self._app_state = app_state
+            
+            logger.info("🚀 Starting Redis message processor...")
+            asyncio.create_task(self._background_message_processor())
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to start Redis processor: {e}")
+    
+    async def _background_message_processor(self):
+        """Background processor cho Redis events"""
+        try:
+            async for msg_id, fields in self.redis_queue.consume_events():
+                try:
+                    event_type = fields.get("event_type")
+                    user_id = fields.get("user_id")
+                    data = json.loads(fields.get("data", "{}"))
+                    
+                    if event_type == "process_complete_message":
+                        await self._process_aggregated_context_from_queue(user_id, data)
+                        
+                    # Acknowledge message
+                    await self.redis_queue.acknowledge_message(msg_id)
+                    
+                except Exception as e:
+                    logger.error(f"❌ Error processing Redis message {msg_id}: {e}")
+                    # Still acknowledge to avoid reprocessing
+                    await self.redis_queue.acknowledge_message(msg_id)
+                    
+        except Exception as e:
+            logger.error(f"❌ Background processor error: {e}")
+            # Restart processor after delay
+            await asyncio.sleep(5)
+            asyncio.create_task(self._background_message_processor())
+    
+    async def _process_aggregated_context_from_queue(self, user_id: str, context_data: dict):
+        """Xử lý aggregated context từ Redis queue"""
+        try:
+            text = context_data.get('text', '').strip()
+            attachments = context_data.get('attachments', [])
+            
+            logger.info(f"🎯 Processing AGGREGATED message - User: {user_id}, Text: '{text[:50]}...', Attachments: {len(attachments)}")
+            
+            # Show typing indicator
+            await self.send_sender_action(user_id, "typing_on")
+            
+            # Prepare message for agent
+            full_message = self._prepare_message_for_agent(text, attachments, "")
+            
+            # Store in history
+            self.message_history.store_message(
+                user_id=user_id,
+                message_id=f"aggregated_{int(time.time())}",
+                content=full_message,
+                is_from_user=True,
+                attachments=attachments
+            )
+            
+            # Process with agent
+            try:
+                app_state = getattr(self, '_app_state', None)
+                if not app_state:
+                    logger.error("❌ No app_state available for agent processing")
+                    return
+                    
+                reply = await self.call_agent(app_state, user_id, full_message)
+                
+                if reply:
+                    await self.send_message(user_id, reply)
+                    
+                    # Store bot reply
+                    self.message_history.store_message(
+                        user_id=user_id,
+                        message_id=f"bot_{user_id}_{int(time.time())}",
+                        content=reply,
+                        is_from_user=False
+                    )
+                    
+            except Exception as e:
+                logger.error(f"❌ Agent error for {user_id}: {e}")
+                await self.send_message(user_id, "Xin lỗi, có lỗi xảy ra. Vui lòng thử lại sau.")
+                
+        except Exception as e:
+            logger.error(f"❌ Context processing error for {user_id}: {e}")
+
     # --- Entry processing ---
     async def handle_webhook_event(self, app_state, body: Dict[str, Any]) -> None:
         try:
@@ -388,85 +511,150 @@ class FacebookMessengerService:
                         if not text and not attachment_info:
                             continue
 
-                        # CRITICAL FIX: Handle Facebook's multi-part message delivery
-                        # Facebook may send text and attachments in separate webhook events
-                        # Need to merge them if they arrive within a short time window
-                        message_timestamp = messaging.get("timestamp", time.time() * 1000)
-                        merge_key = f"{sender}_{int(message_timestamp // 10000)}"  # 10-second window
-                        
-                        # Initialize pending messages storage if not exists
-                        if not hasattr(self, '_pending_messages'):
-                            self._pending_messages = {}
-                        
-                        # Check if we have a pending message to merge with
-                        now = time.time()
-                        pending_messages = self._pending_messages
-                        
-                        # Clean up old pending messages (older than 12 seconds to accommodate smart delay)
-                        for key in list(pending_messages.keys()):
-                            if now - pending_messages[key]['created_at'] > 12:
-                                del pending_messages[key]
-                        
-                        if merge_key in pending_messages:
-                            # Merge with existing pending message
-                            pending = pending_messages[merge_key]
-                            merged_text = (pending['text'] + ' ' + text).strip()
-                            merged_attachments = pending['attachments'] + attachment_info
-                            
-                            logger.info(f"🔗 MERGING message parts for {sender}: text='{merged_text[:50]}...', attachments={len(merged_attachments)}")
-                            
-                            # Remove from pending and process merged message
-                            del pending_messages[merge_key]
-                            await self._process_complete_message(app_state, sender, message, merged_text, merged_attachments, reply_context)
-                            
+                        # Start Redis processor if not started yet
+                        if REDIS_AVAILABLE and not self._redis_processor_started:
+                            await self.start_redis_processor(app_state)
+
+                        # SMART MESSAGE AGGREGATION
+                        if REDIS_AVAILABLE and self.message_aggregator:
+                            await self._handle_message_with_smart_aggregation(
+                                app_state, sender, text, attachment_info, message, reply_context, messaging
+                            )
                         else:
-                            # Store this message part and wait for potential merging
-                            pending_messages[merge_key] = {
-                                'text': text,
-                                'attachments': attachment_info,
-                                'message': message,
-                                'reply_context': reply_context,
-                                'created_at': now
-                            }
-                            
-                            # SMART DELAY: Only delay messages that might be waiting for attachments
-                            # Check if message contains image-related keywords that suggest attachment coming
-                            should_wait_for_merge = any(keyword in text.lower() for keyword in [
-                                'mô tả ảnh', 'xem ảnh', 'ảnh này', 'hình này', 'hình ảnh này',
-                                'phân tích ảnh', 'ảnh trên', 'hình trên', 'xem hình',
-                                'describe image', 'analyze image', 'this image', 'this picture'
-                            ]) and not attachment_info  # Only if no attachments yet
-                            
-                            if should_wait_for_merge:
-                                # Wait longer for potential image attachment
-                                delay_time = 8.0
-                                logger.info(f"🕐 SMART DELAY: Waiting {delay_time}s for potential image attachment (text: '{text[:50]}...')")
-                            else:
-                                # Process immediately for normal messages
-                                delay_time = 0.1
-                                logger.info(f"⚡ FAST PROCESS: Normal message, processing in {delay_time}s (text: '{text[:50]}...')")
-                            
-                            # Set a delayed task to process if no merge happens
-                            asyncio.create_task(self._process_after_delay(app_state, sender, merge_key, delay_time))
+                            # Fallback to legacy processing
+                            await self._handle_message_legacy(
+                                app_state, sender, text, attachment_info, message, reply_context, messaging
+                            )
                             
                             
         except Exception as e:
             logger.error(f"❌ Webhook processing error: {e}")
+    
+    # --- Smart Message Aggregation ---
+    async def _handle_message_with_smart_aggregation(self, app_state, sender: str, text: str, 
+                                                    attachment_info: list, message: dict, 
+                                                    reply_context: str, messaging: dict):
+        """Xử lý tin nhắn bằng Smart Aggregation system"""
+        try:
+            # Determine event type
+            if text and attachment_info:
+                # Combined message - process immediately
+                logger.info(f"📝+📎 COMBINED message from {sender}: text + {len(attachment_info)} attachments")
+                await self._process_complete_message(app_state, sender, message, text, attachment_info, reply_context)
+                return
             
+            # Single-type message - use aggregation
+            if text:
+                event_type = "text"
+                data = {"text": text, "message": message, "reply_context": reply_context, "timestamp": messaging.get("timestamp")}
+            else:
+                event_type = "attachment" 
+                data = {"attachments": attachment_info, "message": message, "reply_context": reply_context, "timestamp": messaging.get("timestamp")}
+            
+            # Enqueue to Redis
+            await self.redis_queue.enqueue_event(sender, event_type, data)
+            
+            # Smart aggregation
+            context, ready = await self.message_aggregator.aggregate_message(sender, event_type, data)
+            
+            if ready:
+                # Context merged and ready - process immediately
+                logger.info(f"🔗 SMART MERGE completed for {sender}: processing aggregated context")
+                await self._process_smart_aggregated_context(app_state, sender, context)
+                
+        except Exception as e:
+            logger.error(f"❌ Smart aggregation error for {sender}: {e}")
+            # Fallback to direct processing
+            await self._process_complete_message(app_state, sender, message, text, attachment_info, reply_context)
+    
+    async def _handle_message_legacy(self, app_state, sender: str, text: str, 
+                                   attachment_info: list, message: dict, 
+                                   reply_context: str, messaging: dict):
+        """Fallback legacy processing khi Redis không available"""
+        try:
+            # Legacy message merging logic (simplified version of old code)
+            message_timestamp = messaging.get("timestamp", time.time() * 1000)
+            merge_key = f"{sender}_{int(message_timestamp // 10000)}"  # 10-second window
+            
+            # Initialize pending messages storage if not exists
+            if not hasattr(self, '_pending_messages'):
+                self._pending_messages = {}
+            
+            now = time.time()
+            pending_messages = self._pending_messages
+            
+            # Clean up old pending messages  
+            for key in list(pending_messages.keys()):
+                if now - pending_messages[key]['created_at'] > 12:
+                    del pending_messages[key]
+            
+            if merge_key in pending_messages:
+                # Merge with existing pending message
+                pending = pending_messages[merge_key]
+                merged_text = (pending['text'] + ' ' + text).strip()
+                merged_attachments = pending['attachments'] + attachment_info
+                
+                logger.info(f"🔗 LEGACY MERGE for {sender}: text='{merged_text[:50]}...', attachments={len(merged_attachments)}")
+                
+                # Remove from pending and process merged message
+                del pending_messages[merge_key]
+                await self._process_complete_message(app_state, sender, message, merged_text, merged_attachments, reply_context)
+                
+            else:
+                # Store this message part and wait for potential merging
+                pending_messages[merge_key] = {
+                    'text': text,
+                    'attachments': attachment_info,
+                    'message': message,
+                    'reply_context': reply_context,
+                    'created_at': now
+                }
+                
+                # Smart delay logic 
+                should_wait_for_merge = any(keyword in text.lower() for keyword in [
+                    'mô tả ảnh', 'xem ảnh', 'ảnh này', 'hình này', 'hình ảnh này',
+                    'phân tích ảnh', 'ảnh trên', 'hình trên', 'xem hình',
+                    'describe image', 'analyze image', 'this image', 'this picture'
+                ]) and not attachment_info
+                
+                delay_time = 8.0 if should_wait_for_merge else 0.1
+                logger.info(f"{'🕐 LEGACY SMART DELAY' if should_wait_for_merge else '⚡ LEGACY FAST PROCESS'}: {delay_time}s for '{text[:50]}...'")
+                
+                asyncio.create_task(self._process_after_delay(app_state, sender, merge_key, delay_time))
+                
+        except Exception as e:
+            logger.error(f"❌ Legacy processing error for {sender}: {e}")
+    
+    async def _process_smart_aggregated_context(self, app_state, sender: str, context: dict):
+        """Xử lý aggregated context từ Smart Aggregator"""
+        try:
+            text = context.get('text', '').strip()
+            attachments = context.get('attachments', [])
+            message_data = context.get('message_data', {})
+            
+            # Prepare message for processing
+            await self._process_complete_message(
+                app_state, sender, message_data.get('message', {}), 
+                text, attachments, message_data.get('reply_context', '')
+            )
+            
+        except Exception as e:
+            logger.error(f"❌ Error processing smart aggregated context for {sender}: {e}")
+
     async def _process_after_delay(self, app_state, sender: str, merge_key: str, delay: float):
-        """Process a pending message after delay if not merged"""
+        """Legacy: Process a pending message after delay if not merged"""
         await asyncio.sleep(delay)
         
         pending_messages = getattr(self, '_pending_messages', {})
         if merge_key in pending_messages:
             pending = pending_messages[merge_key]
-            logger.info(f"⏰ TIMEOUT processing for {sender}: no merge received within {delay}s")
+            logger.info(f"⏰ LEGACY TIMEOUT processing for {sender}: no merge received within {delay}s")
             del pending_messages[merge_key]
             await self._process_complete_message(
                 app_state, sender, pending['message'], 
                 pending['text'], pending['attachments'], pending['reply_context']
             )
-            
+
     async def _process_complete_message(self, app_state, sender: str, message: dict, text: str, attachment_info: list, reply_context: str = ""):
         """Process a complete message (merged or standalone)"""
         try:
