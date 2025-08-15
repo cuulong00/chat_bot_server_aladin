@@ -467,8 +467,8 @@ class FacebookMessengerService:
             # Show typing indicator
             await self.send_sender_action(user_id, "typing_on")
             
-            # Prepare message for agent
-            full_message = self._prepare_message_for_agent(text, attachments, "")
+            # Prepare message for agent (mark as aggregated to avoid old attachment patterns)
+            full_message = self._prepare_message_for_agent(text, attachments, "", is_aggregated=True)
             
             # Store in history
             self.message_history.store_message(
@@ -855,10 +855,11 @@ class FacebookMessengerService:
             logger.warning(f"Could not retrieve reply context: {e}")
             return "[Đây là phản hồi cho một tin nhắn trước đó]"
     
-    def _prepare_message_for_agent(self, text: str, attachments: List[Dict[str, Any]], reply_context: str) -> str:
+    def _prepare_message_for_agent(self, text: str, attachments: List[Dict[str, Any]], reply_context: str, is_aggregated: bool = False) -> str:
         """Prepare the complete message content for the agent.
         
         Format message to include attachment metadata that Graph can process.
+        For aggregated messages with text, prioritize text content over old attachments.
         """
         message_parts = []
         
@@ -866,10 +867,13 @@ class FacebookMessengerService:
         if reply_context:
             message_parts.append(f"[REPLY_CONTEXT] {reply_context}")
         
-        # Add attachment information for Graph to process
-        for attachment in attachments:
-            if attachment.get("description"):
-                message_parts.append(attachment["description"])
+        # For aggregated messages with text content, skip attachment descriptions
+        # to avoid triggering document processing for text-based queries
+        if not (is_aggregated and text.strip()):
+            # Add attachment information for Graph to process
+            for attachment in attachments:
+                if attachment.get("description"):
+                    message_parts.append(attachment["description"])
         
         # Add text content
         if text:
