@@ -30,7 +30,7 @@ from langchain_core.runnables import Runnable, RunnableConfig, RunnablePassthrou
 from src.utils.query_classifier import QueryClassifier
 
 from src.tools.memory_tools import save_user_preference, get_user_profile
-from src.tools.image_context_tools import save_image_context, retrieve_image_context, clear_image_context
+from src.tools.image_context_tools import save_image_context, clear_image_context
 from src.tools.image_analysis_tool import analyze_image
 from src.services.image_processing_service import get_image_processing_service
 from src.graphs.state.state import RagState
@@ -374,11 +374,19 @@ class Assistant:
         user_info = user_data.get("user_info", {"user_id": "unknown"})
         user_profile = user_data.get("user_profile", {})
 
+        # Lấy image_contexts từ state
+        image_contexts = state.get("image_contexts", [])
+        if image_contexts:
+            logging.info(f"🖼️ binding_prompt: Found {len(image_contexts)} image contexts")
+        else:
+            logging.debug("🖼️ binding_prompt: No image contexts found")
+
         prompt = {
             **state,
             "user_info": user_info,
             "user_profile": user_profile,
             "conversation_summary": running_summary,
+            "image_contexts": image_contexts,
         }
         
         # Validate that essential fields exist
@@ -544,7 +552,7 @@ def create_adaptive_rag_graph(
 
     web_search_tool = TavilySearch(max_results=5)
     memory_tools = [get_user_profile, save_user_preference]
-    image_context_tools = [save_image_context, retrieve_image_context, clear_image_context]
+    image_context_tools = [save_image_context, clear_image_context]
     
     all_tools = tools + [web_search_tool] + memory_tools + image_context_tools
 
@@ -842,10 +850,13 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
                 "📚 **TÀI LIỆU THAM KHẢO:**\n"
                 "{context}\n"
                 "\n"
-                "💬 **THÔNG TIN CUỘC TRÒ CHUYỆN:**\n"
-                "Tóm tắt trước đó: {conversation_summary}\n"
-                "Thông tin người dùng: {user_info}\n"
-                "Hồ sơ người dùng: {user_profile}\n"
+                "�️ **THÔNG TIN TỪ HÌNH ẢNH:**\n"
+                "{image_contexts}\n"
+                "\n"
+                "�💬 **THÔNG TIN CUỘC TRÒ CHUYỆN:**\n"
+                "Tóm tắt cuộc hội thoại: {conversation_summary}\n"
+                "Thông tin khách hàng: {user_info}\n"
+                "Hồ sơ cá nhân: {user_profile}\n"
                 "Ngày hiện tại: {current_date}\n"
                 "\n"
                 "🧠 **HƯỚNG DẪN PHÂN BIỆT LỊCH SỬ HỘI THOẠI:**\n"
@@ -855,20 +866,20 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
                 "- Ví dụ chào hỏi đầy đủ: 'Chào anh Tuấn Dương! Nhà hàng lẩu bò tươi Tian Long...'\n"
                 "- Ví dụ chào hỏi ngắn gọn: 'Dạ anh/chị', 'Vâng ạ', 'Dạ ạ'\n"
                 "\n"
-                "🖼️ **SỬ DỤNG THÔNG TIN TỪ HÌNH ẢNH (IMAGE CONTEXT TOOLS):**\n"
+                "🖼️ **SỬ DỤNG THÔNG TIN TỪ HÌNH ẢNH (IMAGE CONTEXTS):**\n"
                 "- Khi khách hàng hỏi về nội dung liên quan đến hình ảnh đã gửi trước đó:\n"
-                "  • LUÔN gọi `retrieve_image_context` để tìm thông tin từ hình ảnh đã phân tích\n"
+                "  • Thông tin từ hình ảnh đã được phân tích và có sẵn trong {image_contexts}\n"
                 "  • Sử dụng thông tin này để trả lời câu hỏi một cách chi tiết và chính xác\n"
                 "  • Kết hợp thông tin từ hình ảnh với context documents hiện có\n"
                 "- Nếu khách hàng hỏi về menu, món ăn, giá cả mà trước đó đã gửi ảnh thực đơn:\n"
-                "  • Gọi `retrieve_image_context` với query liên quan đến câu hỏi\n"
+                "  • Sử dụng thông tin từ {image_contexts} để trả lời dựa trên hình ảnh thực tế\n"
                 "  • Trả lời dựa trên thông tin thực tế từ hình ảnh thay vì thông tin chung\n"
                 "- **QUAN TRỌNG:** Luôn ưu tiên thông tin từ hình ảnh đã phân tích vì nó phản ánh thực tế hiện tại\n"
                 "\n"
-                "🔧 **CÔNG CỤ IMAGE CONTEXT TOOLS:**\n"
-                "- `retrieve_image_context(user_id, thread_id, query, limit)`: Tìm kiếm thông tin từ hình ảnh đã phân tích\n"
-                "- Chỉ sử dụng khi cần thông tin từ hình ảnh để trả lời câu hỏi của khách hàng\n"
-                "- Không cần gọi tool nếu câu hỏi không liên quan đến nội dung hình ảnh\n"
+                "�️ **THÔNG TIN HÌNH ẢNH HIỆN CÓ:**\n"
+                "- Thông tin từ hình ảnh được cung cấp trực tiếp trong {image_contexts}\n"
+                "- Sử dụng khi cần thông tin từ hình ảnh để trả lời câu hỏi của khách hàng\n"
+                "- Không cần gọi thêm tool nào khác khi đã có thông tin hình ảnh\n"
                 "\n"
                 "Hãy nhớ: Bạn là đại diện chuyên nghiệp của Tian Long, luôn lịch sự, nhiệt tình và sáng tạo trong cách trình bày thông tin!",
             ),
@@ -876,7 +887,7 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
         ]
     ).partial(current_date=datetime.now, domain_context=domain_context)
     def get_combined_context(ctx):
-        """Combine document context and image context for comprehensive RAG - prioritize direct state context."""
+        """Get document context for RAG - image contexts handled separately via binding_prompt."""
         # Get traditional document context
         doc_context = "\n\n".join(
             [
@@ -892,47 +903,27 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
         image_context = ""
         image_contexts = ctx.get("image_contexts", [])
         
+        logging.info(f"🔍 STATE DEBUG - image_contexts: {image_contexts}")
+        logging.info(f"🔍 STATE DEBUG - image_contexts type: {type(image_contexts)}")
+        logging.info(f"� STATE DEBUG - full state keys: {list(ctx.keys())}")
+        
         if image_contexts:
-            logging.info(f"🖼️ Found {len(image_contexts)} image context(s) in state")
+            logging.info(f"�🖼️ Found {len(image_contexts)} image context(s) in state")
+            logging.info(f"🖼️ IMAGE CONTEXTS CONTENT: {image_contexts}")
             # Combine all image analyses into one context block
             combined_image_text = "\n\n".join([
                 f"**Phân tích hình ảnh {i+1}:**\n{analysis}" 
                 for i, analysis in enumerate(image_contexts)
             ])
             image_context = f"\n\n<image_context>\n{combined_image_text}\n</image_context>"
-            logging.info("✅ Using direct image context from state")
+            logging.info(f"✅ Using direct image context from state: {image_context[:200]}...")
         else:
-            # Fallback: try to retrieve from vector database if no direct context
-            user_id = ctx.get("user", {}).get("user_info", {}).get("user_id", "")
-            session_id = ctx.get("session_id", "") or ""
-            current_question = get_current_user_question(ctx)
-            
-            if user_id and session_id and current_question:
-                logging.info("🔍 No direct image context, trying vector database fallback...")
-                try:
-                    thread_id = session_id.replace("facebook_session_", "") if session_id.startswith("facebook_session_") else session_id
-                    
-                    image_context_result = retrieve_image_context.invoke({
-                        "user_id": user_id,
-                        "thread_id": thread_id, 
-                        "query": current_question,
-                        "limit": 3
-                    })
-                    
-                    if image_context_result and not image_context_result.startswith("❌") and not "Không tìm thấy" in image_context_result:
-                        image_context = f"\n\n<image_context>\n{image_context_result}\n</image_context>"
-                        logging.info("✅ Retrieved image context from vector database fallback")
-                    else:
-                        logging.info("📋 No image context available from any source")
-                        
-                except Exception as e:
-                    logging.error(f"❌ Failed to retrieve image context fallback: {e}")
-            else:
-                logging.info("📋 No user/session info for image context retrieval")
+            logging.info("� No image contexts found in state")
         
+        print(f"combined_image_text:{combined_image_text}")
         # Combine contexts for comprehensive coverage
         combined = doc_context + image_context
-        
+        print(f"combined:{combined}")
         # Log context composition for debugging
         doc_count = len([doc for doc in ctx.get("documents", []) if isinstance(doc, tuple)])
         has_image = bool(image_context.strip())
@@ -1152,10 +1143,11 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
                 "- Tham khảo lịch sử cuộc hội thoại một cách phù hợp\n"
                 "\n"
                 "💬 **THÔNG TIN CUỘC TRÒ CHUYỆN:**\n"
-                "Tóm tắt trước đó: {conversation_summary}\n"
-                "Thông tin người dùng: {user_info}\n"
-                "Hồ sơ người dùng: {user_profile}\n"
-                "Ngày hiện tại: {current_date}\n"
+                "🖼️ Thông tin từ hình ảnh: {image_contexts}\n"
+                "📝 Tóm tắt cuộc hội thoại: {conversation_summary}\n"
+                "👤 Thông tin khách hàng: {user_info}\n"
+                "📋 Hồ sơ cá nhân: {user_profile}\n"
+                "📅 Ngày hiện tại: {current_date}\n"
                 "\n"
                 "🧠 **HƯỚNG DẪN PHÂN BIỆT LỊCH SỬ HỘI THOẠI:**\n"
                 "- Kiểm tra số lượng tin nhắn trong cuộc hội thoại:\n"
@@ -1172,7 +1164,11 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
     # Bind direct assistant with memory tools + domain action tools (e.g., reservation tools) + image tools
     # Avoid binding web search here to keep responses crisp for action/confirmation flows.
     llm_generate_direct_with_tools = llm_generate_direct.bind_tools(memory_tools + tools + image_context_tools)
-    direct_answer_runnable = direct_answer_prompt | llm_generate_direct_with_tools
+    direct_answer_runnable = (
+        RunnablePassthrough()
+        | direct_answer_prompt
+        | llm_generate_direct_with_tools
+    )
     direct_answer_assistant = Assistant(direct_answer_runnable)
 
     # 8. Document/Image Processing Assistant (Multimodal)
@@ -1577,6 +1573,11 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
         logging.info("---NODE: GENERATE DIRECT---")
         current_question = get_current_user_question(state)
         
+        # Debug state for image context
+        image_contexts = state.get("image_contexts", [])
+        logging.info(f"🔍 GENERATE_DIRECT DEBUG - image_contexts: {image_contexts}")
+        logging.info(f"🔍 GENERATE_DIRECT DEBUG - state keys: {list(state.keys())}")
+        
         # Check if this is a re-entry from tools (to avoid duplicate reasoning steps)
         messages = state.get("messages", [])
         is_tool_reentry = len(messages) > 0 and isinstance(messages[-1], ToolMessage)
@@ -1699,6 +1700,7 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
                 return {"messages": [response]}
             
             logging.info(f"Found {len(image_urls)} image URL(s), analyzing for context storage")
+            logging.info(f"🖼️ IMAGE URLS TO PROCESS: {image_urls}")
             
             # Import image context tools
             from src.tools.image_context_tools import save_image_context
@@ -1706,6 +1708,8 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
             # Process each image
             processed_images = 0
             analysis_results = []
+            
+            logging.info("🔬 Starting image analysis with Gemini Vision...")
             
             # Download and analyze images  
             import httpx
@@ -1860,12 +1864,18 @@ Hãy phân tích một cách chi tiết và toàn diện để thông tin này c
                 response = AIMessage(content=confirmation_msg)
             
             logging.info(f"✅ Image context extraction completed: {processed_images} images processed")
+            logging.info(f"🔬 ANALYSIS RESULTS: {analysis_results}")
+            logging.info(f"🔬 ANALYSIS RESULTS COUNT: {len(analysis_results)}")
             
             # Return both message and image contexts in state for immediate use
-            return {
+            return_data = {
                 "messages": [response],
                 "image_contexts": analysis_results if analysis_results else None
             }
+            
+            logging.info(f"🔬 PROCESS_DOCUMENT RETURN DATA: {return_data}")
+            
+            return return_data
             
                     
         except Exception as e:

@@ -389,6 +389,76 @@ class FacebookMessengerService:
 
         return await asyncio.to_thread(_run_stream)
 
+    async def call_agent_with_state(self, app_state, inputs: Dict[str, Any]) -> tuple[str, dict]:
+        """Call agent and return both response and final state"""
+        import asyncio
+
+        question = (inputs.get("question") or "").strip()
+        user_id = str(inputs.get("user_id") or "").strip()
+        session_id = str(inputs.get("session_id") or f"facebook_session_{user_id}")
+
+        if not question:
+            return "", {}
+
+        def _extract_text(content: Any) -> str:
+            if isinstance(content, str):
+                return content.strip()
+            if isinstance(content, list):
+                parts: list[str] = []
+                for item in content:
+                    if isinstance(item, dict) and "text" in item:
+                        parts.append(str(item.get("text", "")))
+                return " ".join(p for p in parts if p).strip()
+            return str(content).strip() if content is not None else ""
+
+        def _run_with_state() -> tuple[str, dict]:
+            try:
+                config = {"configurable": {"thread_id": session_id, "user_id": user_id}}
+                final_text = ""
+                final_state = {}
+                
+                # Include session_id in message metadata
+                message_with_metadata = {
+                    "role": "user", 
+                    "content": question,
+                    "additional_kwargs": {
+                        "session_id": session_id,
+                        "user_id": user_id
+                    }
+                }
+                
+                # Stream to get both final response and state
+                for chunk in app_state.graph.stream(
+                    {"messages": [message_with_metadata]},
+                    config,
+                    stream_mode="values",
+                ):
+                    try:
+                        # Capture final state
+                        if isinstance(chunk, dict):
+                            final_state = chunk
+                            
+                        # Extract response text
+                        messages = chunk.get("messages") if isinstance(chunk, dict) else None
+                        if messages:
+                            last = messages[-1]
+                            content = getattr(last, "content", None)
+                            text = _extract_text(content)
+                            if text:
+                                final_text = text
+                                
+                    except Exception as ie:
+                        logger.debug("Stream chunk parse error: %s", ie)
+                        continue
+                        
+                return final_text or "Tôi đã nhận được tin nhắn của bạn.", final_state
+                
+            except Exception as e:
+                logger.exception("Error in agent call with state: %s", e)
+                return "Xin lỗi, có lỗi xảy ra khi xử lý tin nhắn.", {}
+
+        return await asyncio.to_thread(_run_with_state)
+
     def _resolve_thread_id(self, messaging: Dict[str, Any]) -> str:
         """Best-effort thread id: use recipient.id (page) or PAGE_ID."""
         try:
@@ -452,7 +522,7 @@ class FacebookMessengerService:
             asyncio.create_task(self._background_message_processor())
     
     async def _process_aggregated_context_from_queue(self, user_id: str, context_data: dict):
-        """Xử lý aggregated context từ Redis queue"""
+        """Xử lý aggregated context từ Redis queue theo thứ tự: images trước, text sau"""
         try:
             text = context_data.get('text', '').strip()
             attachments = context_data.get('attachments', [])
@@ -467,43 +537,156 @@ class FacebookMessengerService:
             # Show typing indicator
             await self.send_sender_action(user_id, "typing_on")
             
-            # Prepare message for agent (mark as aggregated to avoid old attachment patterns)
-            full_message = self._prepare_message_for_agent(text, attachments, "", is_aggregated=True)
+            # STEP 1: Phân loại tin nhắn thành text và images
+            text_messages = []
+            image_messages = []
             
-            # Store in history
-            self.message_history.store_message(
-                user_id=user_id,
-                message_id=f"aggregated_{int(time.time())}",
-                content=full_message,
-                is_from_user=True,
-                attachments=attachments
-            )
+            # Phân loại attachments thành images và text
+            for attachment in attachments:
+                if attachment.get('type') == 'image':
+                    image_messages.append(attachment)
+                else:
+                    # Non-image attachments được coi như text message với metadata
+                    text_messages.append(attachment)
             
-            # Process with agent
-            try:
-                app_state = getattr(self, '_app_state', None)
-                if not app_state:
-                    logger.error("❌ No app_state available for agent processing")
-                    return
-                    
-                reply = await self.call_agent(app_state, user_id, full_message)
+            # Nếu có text content, thêm vào text_messages
+            if text:
+                text_messages.append({'type': 'text', 'content': text})
+            
+            logger.info(f"📋 Message classification: {len(image_messages)} images, {len(text_messages)} text items")
+            
+            # STEP 2: Xử lý images trước để tạo image_contexts
+            image_contexts = []
+            
+            if image_messages:
+                logger.info("🖼️ Processing images first to create image contexts...")
                 
-                if reply:  # Only send message if reply is not None
-                    await self.send_message(user_id, reply)
+                try:
+                    # Prepare image message for process_document_node
+                    image_message_content = ""
+                    for i, img in enumerate(image_messages):
+                        url = img.get('url', '')
+                        if url:
+                            image_message_content += f"[HÌNH ẢNH] URL: {url}\n"
                     
-                    # Store bot reply
+                    if image_message_content:
+                        logger.info(f"🔬 Processing {len(image_messages)} images for context extraction")
+                        
+                        # Call agent with image processing message
+                        app_state = getattr(self, '_app_state', None)
+                        if app_state:
+                            # Create image processing inputs
+                            session = f"facebook_session_{user_id}"
+                            image_inputs = {
+                                "question": image_message_content.strip(),
+                                "user_id": user_id,
+                                "session_id": session,
+                            }
+                            
+                            # Process images to get contexts and state
+                            logger.info("🔬 Calling agent for image analysis...")
+                            image_result, final_state = await self.call_agent_with_state(app_state, image_inputs)
+                            
+                            # Extract image_contexts from final state
+                            image_contexts = final_state.get("image_contexts", [])
+                            logger.info(f"🔬 Extracted {len(image_contexts)} image contexts from state")
+                            logger.info(f"🔬 Image contexts: {image_contexts}")
+                            
+                except Exception as e:
+                    logger.error(f"❌ Image processing failed: {e}")
+            
+            # STEP 3: Xử lý text messages với image_contexts đã có
+            if text_messages:
+                logger.info("📝 Processing text messages with image contexts...")
+                
+                # Prepare text message cho agent
+                text_content = ""
+                for item in text_messages:
+                    if item.get('type') == 'text':
+                        text_content += item.get('content', '') + " "
+                    else:
+                        # Non-image attachment metadata
+                        text_content += f"[{item.get('type', 'ATTACHMENT').upper()}] "
+                
+                text_content = text_content.strip()
+                
+                if text_content:
+                    # Store aggregated message in history
+                    full_message = text_content
                     self.message_history.store_message(
                         user_id=user_id,
-                        message_id=f"bot_{user_id}_{int(time.time())}",
-                        content=reply,
-                        is_from_user=False
+                        message_id=f"aggregated_text_{int(time.time())}",
+                        content=full_message,
+                        is_from_user=True,
+                        attachments=[]  # Attachments already processed
                     )
-                else:
-                    logger.info("📋 No reply needed for this message (document processing)")
                     
-            except Exception as e:
-                logger.error(f"❌ Agent error for {user_id}: {e}")
-                await self.send_message(user_id, "Xin lỗi, có lỗi xảy ra. Vui lòng thử lại sau.")
+                    # Process text với image contexts
+                    try:
+                        app_state = getattr(self, '_app_state', None)
+                        if not app_state:
+                            logger.error("❌ No app_state available for agent processing")
+                            return
+                        
+                        # Create text processing inputs with image contexts
+                        session = f"facebook_session_{user_id}"
+                        text_inputs = {
+                            "question": text_content,
+                            "user_id": user_id,
+                            "session_id": session,
+                        }
+                        
+                        # If we have image contexts, include them in the initial state
+                        initial_state = {"messages": [{"role": "user", "content": text_content, "additional_kwargs": {"session_id": session, "user_id": user_id}}]}
+                        if image_contexts:
+                            initial_state["image_contexts"] = image_contexts
+                            logger.info(f"🖼️ Including {len(image_contexts)} image contexts in text processing")
+                        
+                        # Call agent with enhanced inputs
+                        config = {"configurable": {"thread_id": session, "user_id": user_id}}
+                        
+                        def _run_text_with_context():
+                            try:
+                                final_text = ""
+                                for chunk in app_state.graph.stream(initial_state, config, stream_mode="values"):
+                                    try:
+                                        messages = chunk.get("messages") if isinstance(chunk, dict) else None
+                                        if messages:
+                                            last = messages[-1]
+                                            content = getattr(last, "content", None)
+                                            if isinstance(content, str) and content.strip():
+                                                final_text = content.strip()
+                                    except Exception as ie:
+                                        logger.debug("Text stream chunk parse error: %s", ie)
+                                        continue
+                                return final_text or "Tôi đã nhận được tin nhắn của bạn."
+                            except Exception as e:
+                                logger.exception("Error in text processing with context: %s", e)
+                                return "Xin lỗi, có lỗi xảy ra khi xử lý tin nhắn."
+                        
+                        import asyncio
+                        reply = await asyncio.to_thread(_run_text_with_context)
+                        
+                        if reply:  # Only send message if reply is not None
+                            await self.send_message(user_id, reply)
+                            
+                            # Store bot reply
+                            self.message_history.store_message(
+                                user_id=user_id,
+                                message_id=f"bot_{user_id}_{int(time.time())}",
+                                content=reply,
+                                is_from_user=False
+                            )
+                        else:
+                            logger.info("📋 No reply needed for this message")
+                            
+                    except Exception as e:
+                        logger.error(f"❌ Agent error for text processing {user_id}: {e}")
+                        await self.send_message(user_id, "Xin lỗi, có lỗi xảy ra. Vui lòng thử lại sau.")
+            
+            # If only images (no text), the image processing already handled the response
+            elif image_messages and not text_messages:
+                logger.info("📋 Only images processed - no additional text response needed")
                 
         except Exception as e:
             logger.error(f"❌ Context processing error for {user_id}: {e}")
