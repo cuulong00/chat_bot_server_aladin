@@ -1634,14 +1634,28 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
                             # Validate and potentially resize image
                             pil_image = PILImage.open(BytesIO(image_data))
                             
+                            # Convert RGBA to RGB if needed (for JPEG compatibility)
+                            if pil_image.mode == 'RGBA':
+                                # Create white background and paste RGBA image on it
+                                background = PILImage.new('RGB', pil_image.size, (255, 255, 255))
+                                background.paste(pil_image, mask=pil_image.split()[-1])  # Use alpha channel as mask
+                                pil_image = background
+                            elif pil_image.mode not in ['RGB', 'L']:
+                                # Convert other modes to RGB
+                                pil_image = pil_image.convert('RGB')
+                            
                             # Resize if too large (max 1024px on longest side)
                             max_size = 1024
+                            need_reprocess = False
+                            
                             if max(pil_image.size) > max_size:
                                 ratio = max_size / max(pil_image.size)
                                 new_size = tuple(int(dim * ratio) for dim in pil_image.size)
                                 pil_image = pil_image.resize(new_size, PILImage.Resampling.LANCZOS)
-                                
-                                # Convert back to bytes
+                                need_reprocess = True
+                            
+                            # If we converted color mode or resized, save as JPEG
+                            if need_reprocess or pil_image.format != 'JPEG':
                                 output = BytesIO()
                                 pil_image.save(output, format='JPEG', quality=85)
                                 image_data = output.getvalue()
