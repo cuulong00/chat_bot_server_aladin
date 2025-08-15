@@ -370,7 +370,7 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
     hallucination_grader_assistant = HallucinationGraderAssistant(llm_hallucination_grader)
 
     # 7. Direct Answer Assistant
-    direct_answer_assistant = DirectAnswerAssistant(llm_generate_direct, memory_tools + tools + image_context_tools)
+    direct_answer_assistant = DirectAnswerAssistant(llm_generate_direct, domain_context, memory_tools + tools + image_context_tools)
 
     # 8. Document/Image Processing Assistant (Multimodal)
     document_processing_assistant = DocumentProcessingAssistant(llm_generate_direct, image_context_tools)

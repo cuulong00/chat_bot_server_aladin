@@ -1,9 +1,11 @@
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.runnables import RunnablePassthrough
 from src.graphs.core.assistants.base_assistant import BaseAssistant
+from datetime import datetime
 
 class DirectAnswerAssistant(BaseAssistant):
-    def __init__(self, llm, tools):
+    def __init__(self, llm, domain_context, tools):
+        self.domain_context = domain_context
         prompt = ChatPromptTemplate.from_messages(
             [
                 (
@@ -200,3 +202,14 @@ class DirectAnswerAssistant(BaseAssistant):
             | llm_with_tools
         )
         super().__init__(runnable)
+    
+    def binding_prompt(self, state):
+        """Override binding_prompt to add domain_context and current_date variables."""
+        # Get base prompt data
+        prompt_data = super().binding_prompt(state)
+        
+        # Add missing variables
+        prompt_data['domain_context'] = self.domain_context
+        prompt_data['current_date'] = datetime.now().strftime("%d/%m/%Y")
+        
+        return prompt_data
