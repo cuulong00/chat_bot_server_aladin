@@ -244,8 +244,8 @@ class FacebookMessengerService:
             return None
 
     # --- Agent Integration ---
-    async def call_agent(self, app_state, user_id: str, message: str, thread_id: Optional[str] = None) -> str:
-        """Call the agent and handle the response"""
+    async def call_agent(self, app_state, user_id: str, message: str, thread_id: Optional[str] = None) -> Optional[str]:
+        """Call the agent and handle the response. Returns None if no reply should be sent."""
         try:
             # Validate user_id format
             if not user_id or not user_id.isdigit():
@@ -253,6 +253,10 @@ class FacebookMessengerService:
                 return "Xin lỗi, có lỗi xảy ra. Vui lòng thử lại sau."
             
             logger.info(f"🤖 Calling agent for user {user_id[:10]}...")
+            
+            # Check if this is a document/image processing request
+            import re
+            is_document_processing = bool(re.search(r'\[HÌNH ẢNH\]|\[VIDEO\]|\[TỆP TIN\]', message))
             
             session = thread_id or f"facebook_session_{user_id}"
             inputs = {
@@ -265,6 +269,12 @@ class FacebookMessengerService:
             
             result = await self.call_agent_stream(app_state, inputs)
             logger.info(f"✅ Agent result type: {type(result)}")
+            
+            # If document processing, check if response indicates context storage
+            if is_document_processing:
+                if result and ("đã phân tích và lưu thông tin" in result or "✅ Em đã phân tích" in result):
+                    logger.info("📋 Document processing completed - context stored, no reply needed")
+                    return None  # Don't send reply for document processing
             
             # Handle streaming response
             if hasattr(result, '__aiter__'):
@@ -462,7 +472,7 @@ class FacebookMessengerService:
                     
                 reply = await self.call_agent(app_state, user_id, full_message)
                 
-                if reply:
+                if reply:  # Only send message if reply is not None
                     await self.send_message(user_id, reply)
                     
                     # Store bot reply
@@ -472,6 +482,8 @@ class FacebookMessengerService:
                         content=reply,
                         is_from_user=False
                     )
+                else:
+                    logger.info("📋 No reply needed for this message (document processing)")
                     
             except Exception as e:
                 logger.error(f"❌ Agent error for {user_id}: {e}")
@@ -743,34 +755,24 @@ class FacebookMessengerService:
             
             try:
                 reply = await self.call_agent(app_state, sender, full_message)
+                
+                if reply:  # Only send message if reply is not None
+                    await self.send_message(sender, reply)
+                    
+                    # Store bot reply in history
+                    bot_message_id = f"bot_{sender}_{int(time.time())}"
+                    self.message_history.store_message(
+                        user_id=sender,
+                        message_id=bot_message_id,
+                        content=reply,
+                        is_from_user=False
+                    )
+                else:
+                    logger.info("� No reply needed for this message (document processing)")
             except Exception as agent_error:
                 logger.error(f"❌ Agent processing failed for {sender}: {agent_error}")
                 reply = "Xin lỗi, em đang gặp sự cố kỹ thuật. Anh/chị vui lòng thử lại sau ít phút."
-            
-            if reply:
-                # Deduplicate identical reply within short TTL
-                now = time.time()
-                last = self._last_reply.get(sender)
-                if last and (now - last[0] < self._last_reply_ttl) and last[1] == reply:
-                    logger.info("Skip sending duplicate reply within TTL window")
-                else:
-                    logger.info(f"📤 Sending MESSAGE reply to {sender}: {reply[:50]}...")
-                    try:
-                        await self.send_message(sender, reply)
-                        self._last_reply[sender] = (now, reply)
-                        
-                        # Store bot reply in history
-                        bot_message_id = f"bot_{sender}_{int(time.time())}"
-                        self.message_history.store_message(
-                            user_id=sender,
-                            message_id=bot_message_id,
-                            content=reply,
-                            is_from_user=False
-                        )
-                    except Exception as send_error:
-                        logger.error(f"❌ Failed to send message to {sender}: {send_error}")
-            else:
-                logger.warning(f"No reply generated for {sender}")
+                await self.send_message(sender, reply)
                         
         except Exception as e:
             logger.error(f"❌ Error processing complete message: {e}")

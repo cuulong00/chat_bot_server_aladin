@@ -30,6 +30,7 @@ from langchain_core.runnables import Runnable, RunnableConfig, RunnablePassthrou
 from src.utils.query_classifier import QueryClassifier
 
 from src.tools.memory_tools import save_user_preference, get_user_profile
+from src.tools.image_context_tools import save_image_context, retrieve_image_context, clear_image_context
 from src.tools.image_analysis_tool import analyze_image
 from src.services.image_processing_service import get_image_processing_service
 from src.graphs.state.state import RagState
@@ -543,8 +544,9 @@ def create_adaptive_rag_graph(
 
     web_search_tool = TavilySearch(max_results=5)
     memory_tools = [get_user_profile, save_user_preference]
+    image_context_tools = [save_image_context, retrieve_image_context, clear_image_context]
     image_tools = [analyze_image]
-    all_tools = tools + [web_search_tool] + memory_tools + image_tools
+    all_tools = tools + [web_search_tool] + memory_tools + image_context_tools + image_tools
 
     # === Chains for Summarization and Contextualization ===
 
@@ -853,23 +855,71 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
                 "- Ví dụ chào hỏi đầy đủ: 'Chào anh Tuấn Dương! Nhà hàng lẩu bò tươi Tian Long...'\n"
                 "- Ví dụ chào hỏi ngắn gọn: 'Dạ anh/chị', 'Vâng ạ', 'Dạ ạ'\n"
                 "\n"
+                "🖼️ **SỬ DỤNG THÔNG TIN TỪ HÌNH ẢNH (IMAGE CONTEXT TOOLS):**\n"
+                "- Khi khách hàng hỏi về nội dung liên quan đến hình ảnh đã gửi trước đó:\n"
+                "  • LUÔN gọi `retrieve_image_context` để tìm thông tin từ hình ảnh đã phân tích\n"
+                "  • Sử dụng thông tin này để trả lời câu hỏi một cách chi tiết và chính xác\n"
+                "  • Kết hợp thông tin từ hình ảnh với context documents hiện có\n"
+                "- Nếu khách hàng hỏi về menu, món ăn, giá cả mà trước đó đã gửi ảnh thực đơn:\n"
+                "  • Gọi `retrieve_image_context` với query liên quan đến câu hỏi\n"
+                "  • Trả lời dựa trên thông tin thực tế từ hình ảnh thay vì thông tin chung\n"
+                "- **QUAN TRỌNG:** Luôn ưu tiên thông tin từ hình ảnh đã phân tích vì nó phản ánh thực tế hiện tại\n"
+                "\n"
+                "🔧 **CÔNG CỤ IMAGE CONTEXT TOOLS:**\n"
+                "- `retrieve_image_context(user_id, thread_id, query, limit)`: Tìm kiếm thông tin từ hình ảnh đã phân tích\n"
+                "- Chỉ sử dụng khi cần thông tin từ hình ảnh để trả lời câu hỏi của khách hàng\n"
+                "- Không cần gọi tool nếu câu hỏi không liên quan đến nội dung hình ảnh\n"
+                "\n"
                 "Hãy nhớ: Bạn là đại diện chuyên nghiệp của Tian Long, luôn lịch sự, nhiệt tình và sáng tạo trong cách trình bày thông tin!",
             ),
             MessagesPlaceholder(variable_name="messages"),
         ]
     ).partial(current_date=datetime.now, domain_context=domain_context)
+    def get_combined_context(ctx):
+        """Combine document context and image context for comprehensive RAG."""
+        # Get traditional document context
+        doc_context = "\n\n".join(
+            [
+                f"<source id='{doc[0]}'>\n{doc[1].get('content', '')}\n</source>"
+                for doc in ctx.get("documents", [])
+                if isinstance(doc, tuple)
+                and len(doc) > 1
+                and isinstance(doc[1], dict)
+            ]
+        )
+        
+        # Get image context if available
+        user_id = ctx.get("user_id", "")
+        session_id = ctx.get("session_id", "")
+        current_question = get_current_user_question(ctx)
+        
+        image_context = ""
+        if user_id and session_id and current_question:
+            try:
+                # Extract thread_id from session_id
+                thread_id = session_id.replace("facebook_session_", "") if session_id.startswith("facebook_session_") else session_id
+                
+                # Retrieve image context using tool
+                image_context_result = retrieve_image_context(
+                    user_id=user_id,
+                    thread_id=thread_id, 
+                    query=current_question,
+                    limit=2  # Limit to avoid too much context
+                )
+                
+                if image_context_result and not image_context_result.startswith("❌") and not "Không tìm thấy" in image_context_result:
+                    image_context = f"\n\n<image_context>\n{image_context_result}\n</image_context>"
+                    
+            except Exception as e:
+                logging.debug(f"Failed to retrieve image context: {e}")
+        
+        # Combine contexts
+        combined = doc_context + image_context
+        return combined if combined.strip() else "No documents were provided."
+    
     generation_runnable = (
         RunnablePassthrough.assign(
-            context=lambda ctx: "\n\n".join(
-                [
-                    f"<source id='{doc[0]}'>\n{doc[1].get('content', '')}\n</source>"
-                    for doc in ctx.get("documents", [])
-                    if isinstance(doc, tuple)
-                    and len(doc) > 1
-                    and isinstance(doc[1], dict)
-                ]
-            )
-            or "No documents were provided."
+            context=lambda ctx: get_combined_context(ctx)
         )
         | generation_prompt
         | llm.bind_tools(all_tools)
@@ -1098,7 +1148,7 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
     ).partial(current_date=datetime.now, domain_context=domain_context)
     # Bind direct assistant with memory tools + domain action tools (e.g., reservation tools) + image tools
     # Avoid binding web search here to keep responses crisp for action/confirmation flows.
-    llm_generate_direct_with_tools = llm_generate_direct.bind_tools(memory_tools + tools + image_tools)
+    llm_generate_direct_with_tools = llm_generate_direct.bind_tools(memory_tools + tools + image_context_tools + image_tools)
     direct_answer_runnable = direct_answer_prompt | llm_generate_direct_with_tools
     direct_answer_assistant = Assistant(direct_answer_runnable)
 
@@ -1107,35 +1157,45 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
         [
             (
                 "system",
-                "Bạn là Vy – chuyên gia phân tích tài liệu và hình ảnh của nhà hàng lẩu bò tươi Tian Long (domain context: {domain_context}). "
-                "Bạn được gọi khi khách hàng gửi hình ảnh, tài liệu hoặc yêu cầu phân tích nội dung đính kèm.\n"
+                "Bạn là chuyên gia phân tích tài liệu và hình ảnh thông minh. "
+                "Nhiệm vụ chính của bạn là phân tích, mô tả và trích xuất thông tin chính xác từ hình ảnh và tài liệu được cung cấp.\n"
                 "\n"
                 "🎯 **VAI TRÒ CHUYÊN BIỆT:**\n"
-                "- Chuyên gia phân tích hình ảnh và tài liệu về ẩm thực, nhà hàng\n"
-                "- Nhận diện và mô tả món ăn, thực đơn, không gian nhà hàng\n"
-                "- Đưa ra lời khuyên dựa trên nội dung hình ảnh\n"
-                "- Kết nối nội dung phân tích với dịch vụ của Tian Long\n"
+                "- Phân tích hình ảnh một cách chi tiết và chính xác\n"
+                "- Trích xuất thông tin văn bản từ hình ảnh (OCR)\n"
+                "- Mô tả nội dung, đối tượng, cảnh vật trong hình ảnh\n"
+                "- Nhận diện và phân loại các loại tài liệu khác nhau\n"
+                "- Cung cấp thông tin khách quan và đầy đủ\n"
                 "\n"
-                "- **SỬ DỤNG ANALYZE_IMAGE TOOL:**\n"
+                "🔧 **SỬ DỤNG ANALYZE_IMAGE TOOL:**\n"
                 "- **QUAN TRỌNG:** Khi thấy URL hình ảnh trong tin nhắn (pattern: [HÌNH ẢNH] URL: https://...), PHẢI gọi tool `analyze_image`\n"
                 "- Truyền URL chính xác và context phù hợp vào tool\n"
                 "- Đợi kết quả phân tích từ tool trước khi phản hồi\n"
                 "- Dựa vào kết quả tool để tạo phản hồi chi tiết và chuyên nghiệp\n"
                 "- KHÔNG tự phân tích hình ảnh mà không dùng tool\n"
                 "\n"
-                "�📸 **XỬ LÝ HÌNH ẢNH:**\n"
-                "- **Phân tích món ăn:** Mô tả chi tiết món ăn, nguyên liệu, cách chế biến, đánh giá độ hấp dẫn\n"
-                "- **Phân tích thực đơn:** Đọc và liệt kê các món ăn, giá cả nếu có thể nhìn thấy\n"
-                "- **Phân tích không gian:** Mô tả không gian nhà hàng, bàn ghế, trang trí, không khí\n"
-                "- **Phân tích hóa đơn:** Đọc thông tin hóa đơn, các món đã order, tổng tiền\n"
-                "- **Phân tích khác:** Mô tả bất kỳ nội dung nào liên quan đến ẩm thực, nhà hàng\n"
+                "�📸 **LOẠI HÌNH ẢNH VÀ CÁCH XỬ LÝ:**\n"
+                "- **Hình ảnh món ăn/thực phẩm:** Mô tả món ăn, nguyên liệu, màu sắc, cách trình bày\n"
+                "- **Menu/thực đơn:** Đọc và liệt kê tên món, giá cả, mô tả (nếu có)\n"
+                "- **Hóa đơn/bill:** Trích xuất thông tin chi tiết các món, số lượng, giá tiền, tổng cộng\n"
+                "- **Tài liệu văn bản:** Đọc và tóm tắt nội dung chính\n"
+                "- **Hình ảnh không gian:** Mô tả môi trường, bố cục, đối tượng trong ảnh\n"
+                "- **Biểu đồ/chart:** Phân tích dữ liệu và xu hướng\n"
+                "- **Sản phẩm:** Mô tả đặc điểm, thông số kỹ thuật (nếu có)\n"
+                "- **Hình ảnh khác:** Mô tả chi tiết nội dung và ý nghĩa\n"
+                "\n"
+                "💾 **LƯU TRỮ THÔNG TIN NGỮ CẢNH:**\n"
+                "- **QUAN TRỌNG:** Sau khi phân tích hình ảnh thành công, PHẢI gọi tool `save_image_context`\n"
+                "- Lưu trữ thông tin chi tiết để sử dụng trong cuộc hội thoại sau này\n"
+                "- Đảm bảo thông tin được tổ chức và có thể tìm kiếm dễ dàng\n"
+                "- Bao gồm tất cả thông tin quan trọng từ kết quả phân tích\n"
                 "\n"
                 "🎨 **PHONG CÁCH PHẢN HỒI:**\n"
-                "- Mô tả chi tiết, sinh động và hấp dẫn\n"
-                "- Sử dụng emoji phong phú để tạo sự sinh động\n"
-                "- Đưa ra nhận xét chuyên môn về ẩm thực\n"
-                "- Kết nối với menu và dịch vụ của Tian Long khi phù hợp\n"
-                "- Gợi ý món ăn tương tự tại Tian Long nếu có\n"
+                "- Mô tả chi tiết, chính xác và khách quan\n"
+                "- Sử dụng emoji phù hợp để tạo sự sinh động\n"
+                "- Cấu trúc thông tin rõ ràng, dễ đọc\n"
+                "- Cung cấp thông tin đầy đủ mà không bịa đặt\n"
+                "- Phân biệt rõ ràng giữa thông tin trực tiếp nhìn thấy và suy đoán\n"
                 "\n"
                 "� **NGÔN NGỮ VÀ GIỌNG ĐIỆU:**\n"
                 "- Sử dụng ngôn ngữ của khách hàng (Vietnamese/English)\n"
@@ -1154,12 +1214,12 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
                 "Hồ sơ người dùng: {user_profile}\n"
                 "Ngày hiện tại: {current_date}\n"
                 "\n"
-                "Hãy phân tích hình ảnh một cách chi tiết, nhiệt tình và tạo sự kết nối cảm xúc với khách hàng! 🎯✨",
+                "Hãy phân tích hình ảnh/tài liệu một cách chi tiết, chính xác và cung cấp thông tin hữu ích nhất! 🎯✨",
             ),
             MessagesPlaceholder(variable_name="messages"),
         ]
     ).partial(current_date=datetime.now, domain_context=domain_context)
-    document_processing_runnable = document_processing_prompt | llm_generate_direct
+    document_processing_runnable = document_processing_prompt | llm_generate_direct.bind_tools(image_context_tools + image_tools)
     document_processing_assistant = Assistant(document_processing_runnable)
 
     # --- Routing sanitization helpers ---
@@ -1527,12 +1587,12 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
         }
 
     def process_document_node(state: RagState, config: RunnableConfig):
-        """Process documents/images using multimodal LLM directly.
+        """Extract and store image analysis as context for conversation.
         
         This node handles:
-        1. Download images from URLs and pass directly to multimodal LLM
-        2. Let LLM analyze images in context with conversation
-        3. Generate contextual response without tool calls
+        1. Download images from URLs and analyze with Gemini Vision
+        2. Extract detailed information and store in vector database  
+        3. Provide confirmation message for context storage
         """
         logging.info("---NODE: PROCESS DOCUMENT---")
         
@@ -1558,6 +1618,10 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
         logging.info(f"Processing document/image query: {current_question[:100]}...")
         
         try:
+            # Extract session/thread info for context storage
+            session_id = state.get("session_id", "")
+            thread_id = session_id.replace("facebook_session_", "") if session_id.startswith("facebook_session_") else session_id
+            
             # Check if this is a re-entry from tools (consistent with other nodes)
             is_tool_reentry = len(messages) > 0 and isinstance(messages[-1], ToolMessage)
             if is_tool_reentry:
@@ -1586,21 +1650,27 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
                 )
                 return {"messages": [response]}
             
-            logging.info(f"Found {len(image_urls)} image URL(s), downloading for multimodal LLM processing")
+            logging.info(f"Found {len(image_urls)} image URL(s), analyzing for context storage")
             
-            # Download images and prepare multimodal content
-            image_content_parts = []
-            text_without_urls = current_question
+            # Import image context tools
+            from src.tools.image_context_tools import save_image_context
             
-            # Download each image
+            # Process each image
+            processed_images = 0
+            analysis_results = []
+            
+            # Download and analyze images  
             import httpx
-            import base64
             from io import BytesIO
             from PIL import Image as PILImage
+            import google.generativeai as genai
+            
+            # Configure Gemini for analysis
+            genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
             
             for url in image_urls:
                 try:
-                    logging.info(f"🖼️ Downloading image: {url[:50]}...")
+                    logging.info(f"🖼️ Downloading and analyzing image: {url[:50]}...")
                     
                     # Download image
                     async def download_image():
@@ -1629,7 +1699,7 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
                         image_data = future.result(timeout=30)
                     
                     if image_data:
-                        # Convert to base64 for LLM
+                        # Process image for analysis
                         try:
                             # Validate and potentially resize image
                             pil_image = PILImage.open(BytesIO(image_data))
@@ -1660,90 +1730,91 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
                                 pil_image.save(output, format='JPEG', quality=85)
                                 image_data = output.getvalue()
                             
-                            # Create image content for multimodal LLM
-                            image_content_parts.append({
-                                "type": "image_url",
-                                "image_url": {
-                                    "url": f"data:image/jpeg;base64,{base64.b64encode(image_data).decode()}"
+                            # Analyze image with Gemini Vision
+                            analysis_prompt = """
+Bạn là chuyên gia phân tích ẩm thực của nhà hàng lẩu bò tươi Tian Long. 
+Hãy phân tích chi tiết hình ảnh này và trích xuất tất cả thông tin hữu ích làm ngữ cảnh cho cuộc hội thoại:
+
+🔍 **PHÂN TÍCH CHI TIẾT:**
+- **Loại nội dung:** (món ăn, thực đơn, không gian nhà hàng, hóa đơn, nguyên liệu, khuyến mãi...)
+- **Mô tả chi tiết:** Mô tả đầy đủ những gì nhìn thấy
+- **Thông tin cụ thể:** Tên món, giá cả, số lượng, đặc điểm nổi bật
+- **Ngữ cảnh liên quan:** Những thông tin này có thể hữu ích cho câu hỏi nào của khách hàng?
+
+📝 **TRÍCH XUẤT THÔNG TIN QUAN TRỌNG:**
+- Tên các món ăn và giá cả (nếu có)
+- Thông tin khuyến mãi, ưu đãi (nếu có)  
+- Đặc điểm, nguyên liệu của món ăn
+- Bất kỳ text, số liệu nào hiển thị trong ảnh
+
+Hãy phân tích một cách chi tiết và toàn diện để thông tin này có thể được sử dụng làm ngữ cảnh trả lời câu hỏi của khách hàng sau này.
+"""
+                            
+                            # Upload image to Gemini and analyze
+                            uploaded_file = genai.upload_file(BytesIO(image_data), mime_type="image/jpeg")
+                            
+                            # Generate analysis
+                            model = genai.GenerativeModel("gemini-1.5-flash")
+                            result = model.generate_content([analysis_prompt, uploaded_file])
+                            
+                            image_analysis = result.text
+                            analysis_results.append(image_analysis)
+                            
+                            # Save to vector database using tool
+                            save_result = save_image_context(
+                                user_id=user_id,
+                                thread_id=thread_id,
+                                image_url=url,
+                                image_analysis=image_analysis,
+                                metadata={
+                                    "analysis_timestamp": datetime.now().isoformat(),
+                                    "image_size": f"{pil_image.size[0]}x{pil_image.size[1]}",
+                                    "original_question": current_question[:200]
                                 }
-                            })
+                            )
                             
-                            # Remove URL from text (clean up)
-                            text_without_urls = text_without_urls.replace(f"[HÌNH ẢNH] URL: {url}", "").strip()
+                            processed_images += 1
+                            logging.info(f"✅ Image analyzed and context saved: {save_result}")
                             
-                            logging.info(f"✅ Image downloaded and prepared for multimodal LLM")
+                            # Clean up uploaded file
+                            genai.delete_file(uploaded_file.name)
                             
                         except Exception as e:
-                            logging.error(f"❌ Image processing failed for {url}: {e}")
+                            logging.error(f"❌ Image analysis failed for {url}: {e}")
                             continue
+                            
                     else:
                         logging.error(f"❌ Failed to download image from {url}")
                         continue
                         
                 except Exception as e:
-                    logging.error(f"❌ Image download failed for {url}: {e}")
+                    logging.error(f"❌ Image processing failed for {url}: {e}")
                     continue
             
-            if not image_content_parts:
-                logging.warning("No images could be downloaded successfully")
+            # Generate response based on processing results
+            if processed_images == 0:
                 from langchain_core.messages import AIMessage
                 response = AIMessage(
-                    content="Xin lỗi, em không thể tải được hình ảnh để phân tích. Anh/chị vui lòng thử gửi lại hình ảnh."
+                    content="Xin lỗi, em không thể phân tích được hình ảnh. Anh/chị vui lòng thử gửi lại hình ảnh."
                 )
-                return {"messages": [response]}
-            
-            # Prepare multimodal message for LLM
-            from langchain_core.messages import HumanMessage
-            
-            # Create multimodal content
-            multimodal_content = []
-            
-            # Add text part (clean question without URLs)
-            if text_without_urls.strip():
-                multimodal_content.append({
-                    "type": "text", 
-                    "text": text_without_urls.strip()
-                })
-            
-            # Add image parts
-            multimodal_content.extend(image_content_parts)
-            
-            # Create new multimodal message and update state
-            multimodal_message = HumanMessage(content=multimodal_content)
-            
-            # Update state with multimodal message (replace last human message)
-            updated_messages = list(state.get("messages", []))
-            if updated_messages and updated_messages[-1].content == current_question:
-                updated_messages[-1] = multimodal_message
             else:
-                updated_messages.append(multimodal_message)
+                # Create confirmation message
+                confirmation_msg = f"✅ Em đã phân tích và lưu thông tin từ {processed_images} hình ảnh! "
+                
+                if len(analysis_results) > 0:
+                    # Brief summary of what was found
+                    first_analysis = analysis_results[0][:200] + "..." if len(analysis_results[0]) > 200 else analysis_results[0]
+                    confirmation_msg += f"\n\n📋 **Tóm tắt ngắn:** {first_analysis}"
+                
+                confirmation_msg += f"\n\n💬 Bây giờ anh/chị có thể hỏi em bất cứ điều gì về hình ảnh này, em sẽ dựa vào thông tin đã phân tích để trả lời chi tiết nhé!"
+                
+                from langchain_core.messages import AIMessage
+                response = AIMessage(content=confirmation_msg)
             
-            enhanced_state = {**state, "messages": updated_messages}
-            
-            logging.info(f"🎯 Calling multimodal LLM with {len(image_content_parts)} image(s)")
-            
-            # Use document processing assistant with multimodal input
-            response = document_processing_assistant(enhanced_state, config)
-            
-            # Apply beautify formatting to document processing responses too
-            try:
-                content = getattr(response, "content", None)
-                if isinstance(content, str) and (not hasattr(response, "tool_calls") or not response.tool_calls):
-                    formatted = beautify_prices_if_any(content)
-                    if formatted != content:
-                        from langchain_core.messages import AIMessage
-                        response = AIMessage(content=formatted, additional_kwargs=getattr(response, "additional_kwargs", {}))
-                        logging.debug(f"process_document: Applied price formatting to response")
-                    else:
-                        logging.debug(f"process_document: No price formatting applied")
-                else:
-                    logging.debug(f"process_document: Response has tool calls or non-string content, skipping formatting")
-            except Exception as _fmt_err:
-                logging.debug(f"process_document post-format skipped: {_fmt_err}")
-            
-            logging.info("✅ Multimodal document/image processing completed successfully")
+            logging.info(f"✅ Image context extraction completed: {processed_images} images processed")
             return {"messages": [response]}
             
+                    
         except Exception as e:
             # Consistent error handling pattern like other nodes
             user_context = state.get("user", {}).get("user_info", {}).get("user_id", "unknown")
@@ -1886,7 +1957,7 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
     graph.add_node("generate_direct", generate_direct_node)
     graph.add_node("process_document", process_document_node)
     graph.add_node("tools", ToolNode(tools=all_tools))
-    graph.add_node("direct_tools", ToolNode(tools=memory_tools + tools + image_tools))
+    graph.add_node("direct_tools", ToolNode(tools=memory_tools + tools + image_context_tools))
 
     # --- Define Graph Flow ---
     graph.set_entry_point("user_info")
