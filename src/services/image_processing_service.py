@@ -78,7 +78,7 @@ class ImageProcessingService:
                 
                 # Prepare prompt for restaurant context
                 prompt = f"""
-                Bạn là trợ lý AI của nhà hàng Aladdin. Hãy phân tích hình ảnh này và mô tả nội dung một cách chi tiết.
+                Bạn là trợ lý AI của nhà hàng lẩu bò tươi Tian Long. Hãy phân tích hình ảnh này và mô tả nội dung một cách chi tiết.
                 
                 Nếu đây là:
                 - Hình ảnh món ăn: Mô tả món ăn, nguyên liệu, cách trình bày

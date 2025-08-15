@@ -255,7 +255,7 @@ def _format_price_inline_list_to_bullets(text: str) -> tuple[str, bool]:
 
     currency = r"(?:đ|₫|vnd|vnđ)"
     amount = rf"\d[\d\.]*\s?{currency}"
-    unit = r"(?:\/[\w\p{L}\d\s]+)?"  # optional "/..." part; \p{L} for unicode letters
+    unit = r"(?:\/[\w\s]+)?"  # optional "/..." part; simplified without \p{L}
     # One item:  <amount><unit?><space><desc (no comma)>
     item = rf"{amount}{unit}\s+[^,\.\n]+"
     # Sequence of at least 2 items separated by commas
@@ -398,7 +398,6 @@ class Assistant:
         retry_count = 0
         base_delay = 0.5  # Base delay in seconds
         
-        #while retry_count <= max_retries:
         try:
             # Configure user ID for request context - với xử lý an toàn
             user_data = state.get("user", {})
@@ -429,25 +428,15 @@ class Assistant:
             if self._is_valid_response(result):
                 if retry_count > 0:
                     logging.info(f"Assistant: Valid response received after {retry_count} retries")
+                else:
+                    logging.debug(f"Assistant: Valid response received on first try")
                 return result
-            
-            # Handle retry logic for invalid responses
-            retry_count += 1
-            if retry_count <= max_retries:
-                delay = base_delay * (2 ** (retry_count - 1))  # Exponential backoff
-                logging.warning(
-                    f"Assistant: Empty/invalid response from LLM, retrying... "
-                    f"({retry_count}/{max_retries}) - waiting {delay}s"
-                )
-                
-                # Add small delay to prevent rapid successive calls
-                time.sleep(delay)
             else:
-                logging.error(f"Assistant: Max retries ({max_retries}) reached, providing fallback response")
+                logging.warning(f"Assistant: Invalid response detected - content empty or malformed")
+                logging.debug(f"Assistant: Response content: {getattr(result, 'content', 'No content attr')}")
                 return self._create_fallback_response(state)
                 
         except Exception as e:
-            retry_count += 1
             user_id = state.get("user", {}).get("user_info", {}).get("user_id", "unknown")
             
             # Kiểm tra lỗi cụ thể của Gemini
@@ -459,17 +448,12 @@ class Assistant:
             # Log detailed exception information to file
             log_exception_details(
                 exception=e,
-                context=f"Assistant LLM call failure (attempt {retry_count})",
+                context=f"Assistant LLM call failure (no retries configured)",
                 user_id=user_id
             )
             
-            if retry_count <= max_retries:
-                delay = base_delay * (2 ** (retry_count - 1))
-                logging.warning(f"Assistant: Retrying after exception - waiting {delay}s")
-                time.sleep(delay)
-            else:
-                logging.error(f"Assistant: Max retries reached after exceptions, providing fallback")
-                return self._create_fallback_response(state)
+            logging.error(f"Assistant: Exception occurred, providing fallback: {str(e)}")
+            return self._create_fallback_response(state)
         
         # Should never reach here, but provide fallback just in case
         return self._create_fallback_response(state)
@@ -1132,7 +1116,14 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
                 "- Đưa ra lời khuyên dựa trên nội dung hình ảnh\n"
                 "- Kết nối nội dung phân tích với dịch vụ của Tian Long\n"
                 "\n"
-                "📸 **XỬ LÝ HÌNH ẢNH:**\n"
+                "� **SỬ DỤNG ANALYZE_IMAGE TOOL:**\n"
+                "- **QUAN TRỌNG:** Khi thấy URL hình ảnh trong tin nhắn (pattern: [HÌNH ẢNH] URL: https://...), PHẢI gọi tool `analyze_image`\n"
+                "- Truyền URL chính xác và context phù hợp vào tool\n"
+                "- Đợi kết quả phân tích từ tool trước khi phản hồi\n"
+                "- Dựa vào kết quả tool để tạo phản hồi chi tiết và chuyên nghiệp\n"
+                "- KHÔNG tự phân tích hình ảnh mà không dùng tool\n"
+                "\n"
+                "�📸 **XỬ LÝ HÌNH ẢNH:**\n"
                 "- **Phân tích món ăn:** Mô tả chi tiết món ăn, nguyên liệu, cách chế biến, đánh giá độ hấp dẫn\n"
                 "- **Phân tích thực đơn:** Đọc và liệt kê các món ăn, giá cả nếu có thể nhìn thấy\n"
                 "- **Phân tích không gian:** Mô tả không gian nhà hàng, bàn ghế, trang trí, không khí\n"
@@ -1147,11 +1138,13 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
                 "- Gợi ý món ăn tương tự tại Tian Long nếu có\n"
                 "\n"
                 "🔍 **CÁCH PHÂN TÍCH:**\n"
-                "1. **Mô tả tổng quan:** Nội dung chính của hình ảnh/tài liệu\n"
-                "2. **Chi tiết cụ thể:** Các yếu tố đáng chú ý, màu sắc, bố cục, văn bản\n"
-                "3. **Đánh giá chuyên môn:** Nhận xét về chất lượng, cách trình bày, độ hấp dẫn\n"
-                "4. **Kết nối dịch vụ:** Liên hệ với menu, dịch vụ của Tian Long\n"
-                "5. **Gợi ý hành động:** Đề xuất món ăn, dịch vụ phù hợp\n"
+                "1. **Phát hiện URL:** Tìm pattern [HÌNH ẢNH] URL: trong tin nhắn\n"
+                "2. **Gọi tool:** Sử dụng analyze_image với URL và context phù hợp\n"
+                "3. **Xử lý kết quả:** Dựa vào kết quả tool để tạo phản hồi\n"
+                "4. **Mô tả chi tiết:** Các yếu tố đáng chú ý, màu sắc, bố cục, văn bản\n"
+                "5. **Đánh giá chuyên môn:** Nhận xét về chất lượng, cách trình bày, độ hấp dẫn\n"
+                "6. **Kết nối dịch vụ:** Liên hệ với menu, dịch vụ của Tian Long\n"
+                "7. **Gợi ý hành động:** Đề xuất món ăn, dịch vụ phù hợp\n"
                 "\n"
                 "💬 **NGÔN NGỮ PHẢN HỒI:**\n"
                 "- Sử dụng ngôn ngữ của khách hàng (Vietnamese/English)\n"
@@ -1174,7 +1167,7 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
             MessagesPlaceholder(variable_name="messages"),
         ]
     ).partial(current_date=datetime.now, domain_context=domain_context)
-    document_processing_runnable = document_processing_prompt | llm_generate_direct
+    document_processing_runnable = document_processing_prompt | llm_generate_direct.bind_tools(image_tools)
     document_processing_assistant = Assistant(document_processing_runnable)
 
     # --- Routing sanitization helpers ---
@@ -1545,10 +1538,9 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
         """Process documents/images using specialized document processing assistant.
         
         This node handles:
-        1. Extract image/document URLs from attachment metadata 
-        2. Analyze content using image_processing_service
+        1. Route image/document questions to LLM with image analysis tools
+        2. Let LLM decide when and how to analyze content using tools
         3. Generate contextual response using document_processing_assistant
-        4. Handle follow-up questions about analyzed content
         """
         logging.info("---NODE: PROCESS DOCUMENT---")
         
@@ -1579,10 +1571,7 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
             if is_tool_reentry:
                 logging.debug("process_document_node: Tool re-entry detected")
             
-            # Extract image URLs from message content
-            image_analysis_results = []
-            
-            # Look for attachment metadata patterns like [HÌNH ẢNH] URL: ...
+            # Check for attachment URLs to ensure this is appropriate route
             import re
             url_patterns = [
                 r'\[HÌNH ẢNH\] URL: (https?://[^\s]+)',
@@ -1598,62 +1587,36 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
 
             # Short-circuit if no URLs found to avoid unnecessary processing
             if not image_urls:
-                logging.info("No attachment URLs found in current message; skipping document analysis")
+                logging.info("No attachment URLs found in current message; providing fallback")
                 from langchain_core.messages import AIMessage
                 response = AIMessage(
                     content="Em chưa thấy tệp/hình ảnh nào trong tin nhắn này. Anh/chị có thể gửi lại ảnh hoặc tệp cần phân tích không ạ?"
                 )
                 return {"messages": [response]}
             
-            # Get image processing service
-            image_service = get_image_processing_service()
-            
-            # Analyze each image URL found
-            for url in image_urls:
-                logging.info(f"🖼️ Analyzing image URL: {url[:50]}...")
-                try:
-                    # Run async image analysis safely in sync context
-                    import asyncio
-                    import concurrent.futures
-                    
-                    def run_image_analysis():
-                        """Run image analysis in a separate thread with its own event loop"""
-                        # Create new event loop for this thread
-                        new_loop = asyncio.new_event_loop()
-                        asyncio.set_event_loop(new_loop)
-                        try:
-                            return new_loop.run_until_complete(
-                                image_service.analyze_image_from_url(
-                                    url, 
-                                    "Hình ảnh được gửi bởi khách hàng của nhà hàng Tian Long"
-                                )
-                            )
-                        finally:
-                            new_loop.close()
-                    
-                    # Execute in thread pool to avoid blocking current thread
-                    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-                        future = executor.submit(run_image_analysis)
-                        analysis_result = future.result(timeout=30)  # 30s timeout
-                    
-                    image_analysis_results.append(analysis_result)
-                    logging.info(f"✅ Image analysis completed: {analysis_result[:100]}...")
-                except Exception as e:
-                    logging.error(f"❌ Image analysis failed for {url}: {e}")
-                    image_analysis_results.append(f"Không thể phân tích hình ảnh từ URL: {url}")
-            
-            # Prepare enhanced question with image analysis
-            enhanced_question = current_question
-            if image_analysis_results:
-                analysis_text = "\n\n".join(image_analysis_results)
-                enhanced_question = f"{current_question}\n\n📸 **Phân tích hình ảnh:**\n{analysis_text}"
-                logging.info(f"📝 Enhanced question with image analysis: {enhanced_question[:200]}...")
-            
-            # Update state with enhanced question
-            enhanced_state = {**state, "question": enhanced_question}
+            logging.info(f"Found {len(image_urls)} image/document URL(s), letting LLM handle analysis with tools")
             
             # Use document processing assistant to generate response
-            response = document_processing_assistant(enhanced_state, config)
+            # The LLM will use analyze_image tool when needed
+            logging.debug(f"process_document: Calling document_processing_assistant")
+            response = document_processing_assistant(state, config)
+            logging.debug(f"process_document: Got response type: {type(response)}, has content: {hasattr(response, 'content')}")
+            
+            # Apply beautify formatting to document processing responses too
+            try:
+                content = getattr(response, "content", None)
+                if isinstance(content, str) and (not hasattr(response, "tool_calls") or not response.tool_calls):
+                    formatted = beautify_prices_if_any(content)
+                    if formatted != content:
+                        from langchain_core.messages import AIMessage
+                        response = AIMessage(content=formatted, additional_kwargs=getattr(response, "additional_kwargs", {}))
+                        logging.debug(f"process_document: Applied price formatting to response")
+                    else:
+                        logging.debug(f"process_document: No price formatting applied")
+                else:
+                    logging.debug(f"process_document: Response has tool calls or non-string content, skipping formatting")
+            except Exception as _fmt_err:
+                logging.debug(f"process_document post-format skipped: {_fmt_err}")
             
             logging.info("✅ Document/image processing completed successfully")
             return {"messages": [response]}
