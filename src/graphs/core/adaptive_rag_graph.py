@@ -887,14 +887,14 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
                 and isinstance(doc[1], dict)
             ]
         )
-        print(f"-----------------------ctx:{ctx}-----------------")
         # Always try to get image context for maximum accuracy
-        user_id = ctx.get("user_id", "")
-        session_id = ctx.get("session_id", "")
+        user_id = ctx.get("user", {}).get("user_info", {}).get("user_id", "")
+        session_id = ctx.get("session_id", "")  # This should be added to state by Facebook service
         current_question = get_current_user_question(ctx)
         
         image_context = ""
-        print(f"user_id and session_id and current_question:{user_id} and {session_id} and {current_question}")
+        logging.info(f"🔍 Context variables: user_id={user_id}, session_id={session_id}, current_question={current_question}")
+        
         # Always retrieve image context when available - prioritize accuracy over performance
         if user_id and session_id and current_question:
             logging.info("🔍 Đang truy xuất image context để đảm bảo độ chính xác...")
@@ -917,8 +917,15 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
                     logging.info("📋 Không có image context, chỉ sử dụng static documents")
                     
             except Exception as e:
-                logging.debug(f"Failed to retrieve image context: {e}")
+                logging.error(f"❌ Failed to retrieve image context: {e}")
                 logging.info("📋 Fallback to static documents only")
+        else:
+            missing_vars = []
+            if not user_id: missing_vars.append("user_id")
+            if not session_id: missing_vars.append("session_id") 
+            if not current_question: missing_vars.append("current_question")
+            logging.warning(f"⚠️ Missing variables for image context retrieval: {missing_vars}")
+            logging.info("📋 Using static documents only")
         
         # Combine contexts for comprehensive coverage
         combined = doc_context + image_context

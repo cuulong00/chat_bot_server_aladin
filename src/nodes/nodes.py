@@ -114,6 +114,10 @@ def user_info(state: State, config: RunnableConfig):
     if not user_id:
         # fallback cuối cùng
         user_id = "13e42408-2f96-4274-908d-ed1c826ae170"
+    
+    # Get session_id from config and set it to state for image context retrieval
+    session_id = configurable.get("thread_id", "")  # thread_id in config is actually session_id
+    logging.info(f"🔍 Setting session_id in state: {session_id}")
         
     # Get current question for context
     question = ""
@@ -171,6 +175,7 @@ def user_info(state: State, config: RunnableConfig):
         updates = {
             "reasoning_steps": [step], 
             "question": question,
+            "session_id": session_id,  # Set session_id for image context retrieval
             # Also reset other query-specific state to prevent accumulation
             "documents": [],
             "rewrite_count": 0,
@@ -253,6 +258,7 @@ def user_info(state: State, config: RunnableConfig):
         **state, 
         "user": user, 
         "thread_id": thread_id, 
+        "session_id": session_id,  # Set session_id for image context retrieval
         "reasoning_steps": [step],  # Clean start with only current step - smart update will handle reset
         "question": question,  # Ensure question is set for consistent context
         # Reset other query-specific state to prevent accumulation
