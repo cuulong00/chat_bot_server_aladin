@@ -254,9 +254,16 @@ class FacebookMessengerService:
             
             logger.info(f"🤖 Calling agent for user {user_id[:10]}...")
             
-            # Check if this is a document/image processing request
+            # Check if this is ONLY a document/image processing request (no text content)
             import re
-            is_document_processing = bool(re.search(r'\[HÌNH ẢNH\]|\[VIDEO\]|\[TỆP TIN\]', message))
+            # Only consider pure attachment messages as document processing
+            has_attachment_pattern = bool(re.search(r'\[HÌNH ẢNH\]|\[VIDEO\]|\[TỆP TIN\]', message))
+            has_text_content = bool(re.sub(r'\[HÌNH ẢNH\][^\n]*\n?|\[VIDEO\][^\n]*\n?|\[TỆP TIN\][^\n]*\n?', '', message).strip())
+            
+            # Only document processing if has attachment pattern but no meaningful text
+            is_document_processing = has_attachment_pattern and not has_text_content
+            
+            logger.info(f"🔍 Message analysis: has_attachment={has_attachment_pattern}, has_text={has_text_content}, is_doc_processing={is_document_processing}")
             
             session = thread_id or f"facebook_session_{user_id}"
             inputs = {
