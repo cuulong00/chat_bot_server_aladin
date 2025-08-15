@@ -903,12 +903,12 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
                 thread_id = session_id.replace("facebook_session_", "") if session_id.startswith("facebook_session_") else session_id
                 
                 # Retrieve image context using tool
-                image_context_result = retrieve_image_context(
-                    user_id=user_id,
-                    thread_id=thread_id, 
-                    query=current_question,
-                    limit=3  # Reasonable limit for combined context
-                )
+                image_context_result = retrieve_image_context.invoke({
+                    "user_id": user_id,
+                    "thread_id": thread_id, 
+                    "query": current_question,
+                    "limit": 3  # Reasonable limit for combined context
+                })
                 
                 if image_context_result and not image_context_result.startswith("❌") and not "Không tìm thấy" in image_context_result:
                     image_context = f"\n\n<image_context>\n{image_context_result}\n</image_context>"
