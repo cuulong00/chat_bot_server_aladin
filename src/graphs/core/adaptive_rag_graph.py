@@ -1361,28 +1361,53 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
             logging.debug(f"Khong tim duoc tai lieu nao")
             return {"documents": []}
 
+        # Limit number of documents to grade to prevent timeout
+        max_docs_to_grade = 8  # Reduce from 12 to prevent timeout
+        documents_to_grade = documents[:max_docs_to_grade]
+        remaining_docs = documents[max_docs_to_grade:]
+        
+        logging.info(f"Grading {len(documents_to_grade)} documents, including {len(remaining_docs)} without grading")
+
         filtered_docs = []
-        for d in documents:
-            if isinstance(d, tuple) and len(d) > 1 and isinstance(d[1], dict):
-                doc_content = d[1].get("content", "")
-            else:
-                continue
-            query_grade_document = {
-                "document": doc_content,
-                "messages": question,
-                "user": state.get("user", {}),
-            }
-            logging.debug(f"query_grade_document:{query_grade_document}")
-            score = doc_grader_assistant(
-                query_grade_document,
-                config,
-            )
-            logging.debug(f"score:{score}")
-            if score.binary_score.lower() == "yes":
+        
+        # Grade limited number of documents
+        for i, d in enumerate(documents_to_grade):
+            try:
+                logging.debug(f"Grading document {i+1}/{len(documents_to_grade)}")
+                
+                if isinstance(d, tuple) and len(d) > 1 and isinstance(d[1], dict):
+                    doc_content = d[1].get("content", "")
+                else:
+                    logging.warning(f"Skipping invalid document format at index {i}")
+                    continue
+                    
+                query_grade_document = {
+                    "document": doc_content,
+                    "messages": question,
+                    "user": state.get("user", {}),
+                }
+                logging.debug(f"query_grade_document:{query_grade_document}")
+                
+                score = doc_grader_assistant(
+                    query_grade_document,
+                    config,
+                )
+                
+                logging.debug(f"score:{score}")
+                if score.binary_score.lower() == "yes":
+                    filtered_docs.append(d)
+                        
+            except Exception as e:
+                logging.error(f"Error grading document {i+1}: {e}")
+                # Include document if grading fails to avoid losing content
                 filtered_docs.append(d)
+                continue
+        
+        # Include remaining documents without grading to ensure we have enough content
+        filtered_docs.extend(remaining_docs)
 
         logging.info(
-            f"Finished grading. {len(filtered_docs)} of {len(documents)} documents are relevant."
+            f"Finished grading. {len(filtered_docs)} total documents ({len(filtered_docs) - len(remaining_docs)} graded, {len(remaining_docs)} auto-included)."
         )
 
         return {"documents": filtered_docs}
