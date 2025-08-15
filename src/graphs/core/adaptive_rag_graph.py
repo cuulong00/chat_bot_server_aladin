@@ -1102,7 +1102,7 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
     direct_answer_runnable = direct_answer_prompt | llm_generate_direct_with_tools
     direct_answer_assistant = Assistant(direct_answer_runnable)
 
-    # 8. Document/Image Processing Assistant
+    # 8. Document/Image Processing Assistant (Multimodal)
     document_processing_prompt = ChatPromptTemplate.from_messages(
         [
             (
@@ -1116,7 +1116,7 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
                 "- Đưa ra lời khuyên dựa trên nội dung hình ảnh\n"
                 "- Kết nối nội dung phân tích với dịch vụ của Tian Long\n"
                 "\n"
-                "� **SỬ DỤNG ANALYZE_IMAGE TOOL:**\n"
+                "- **SỬ DỤNG ANALYZE_IMAGE TOOL:**\n"
                 "- **QUAN TRỌNG:** Khi thấy URL hình ảnh trong tin nhắn (pattern: [HÌNH ẢNH] URL: https://...), PHẢI gọi tool `analyze_image`\n"
                 "- Truyền URL chính xác và context phù hợp vào tool\n"
                 "- Đợi kết quả phân tích từ tool trước khi phản hồi\n"
@@ -1137,24 +1137,16 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
                 "- Kết nối với menu và dịch vụ của Tian Long khi phù hợp\n"
                 "- Gợi ý món ăn tương tự tại Tian Long nếu có\n"
                 "\n"
-                "🔍 **CÁCH PHÂN TÍCH:**\n"
-                "1. **Phát hiện URL:** Tìm pattern [HÌNH ẢNH] URL: trong tin nhắn\n"
-                "2. **Gọi tool:** Sử dụng analyze_image với URL và context phù hợp\n"
-                "3. **Xử lý kết quả:** Dựa vào kết quả tool để tạo phản hồi\n"
-                "4. **Mô tả chi tiết:** Các yếu tố đáng chú ý, màu sắc, bố cục, văn bản\n"
-                "5. **Đánh giá chuyên môn:** Nhận xét về chất lượng, cách trình bày, độ hấp dẫn\n"
-                "6. **Kết nối dịch vụ:** Liên hệ với menu, dịch vụ của Tian Long\n"
-                "7. **Gợi ý hành động:** Đề xuất món ăn, dịch vụ phù hợp\n"
-                "\n"
-                "💬 **NGÔN NGỮ PHẢN HỒI:**\n"
+                "� **NGÔN NGỮ VÀ GIỌNG ĐIỆU:**\n"
                 "- Sử dụng ngôn ngữ của khách hàng (Vietnamese/English)\n"
-                "- Giọng điệu thân thiện, chuyên nghiệp\n"
-                "- Tránh mô tả quá kỹ thuật, tập trung vào trải nghiệm người dùng\n"
-                "- Luôn kết thúc bằng câu hỏi hoặc gợi ý tiếp theo\n"
+                "- Giọng điệu thân thiện, nhiệt tình như một food enthusiast\n"
+                "- Tránh mô tả quá kỹ thuật, tập trung vào cảm xúc và trải nghiệm\n"
+                "- Sử dụng từ ngữ gợi cảm như 'hấp dẫn', 'thơm ngon', 'bắt mắt', 'cảm giác'\n"
+                "- Luôn kết thúc bằng câu hỏi hoặc gợi ý để tiếp tục cuộc trò chuyện\n"
                 "\n"
-                "📋 **VÍ DỤ PHẢN HỒI:**\n"
-                "- Hình ảnh món lẩu: 'Wao! 🤤 Nhìn nồi lẩu này thật hấp dẫn với nước dùng đỏ rực, có vẻ rất cay và đậm đà. Em thấy có [mô tả nguyên liệu]... Tại Tian Long, chúng mình cũng có món [tên món tương tự] với hương vị tương tự đó ạ!'\n"
-                "- Hình ảnh thực đơn: 'Em thấy thực đơn này có nhiều món hấp dẫn như [liệt kê món]. Đặc biệt là [món nổi bật]... Anh/chị có muốn tham khảo thực đơn của Tian Long để so sánh không ạ?'\n"
+                "� **VÍ DỤ PHẢN HỒI MẪU:**\n"
+                "- **Món lẩu:** 'Wao! 🤤 Nhìn nồi lẩu này thật hấp dẫn với nước dùng đỏ rực, có vẻ rất cay và đậm đà! Em thấy có tôm tươi, thịt bò thái mỏng, rau cải xanh mướt... Cách bày trí rất đẹp mắt với màu sắc phong phú. Tại Tian Long, chúng mình cũng có lẩu bò tươi với nước dùng đậm đà tương tự đó ạ! 🔥'\n"
+                "- **Thực đơn:** 'Em thấy thực đơn này có nhiều món hấp dẫn! Có lẩu bò (120k), bánh tráng nướng (25k), nem nướng (80k)... Đặc biệt món lẩu bò giá rất hợp lý! So với Tian Long thì giá cả khá tương đương. Anh/chị muốn tham khảo menu đầy đủ của Tian Long không ạ? 📋✨'\n"
                 "\n"
                 "💬 **THÔNG TIN CUỘC TRÒ CHUYỆN:**\n"
                 "Tóm tắt trước đó: {conversation_summary}\n"
@@ -1162,12 +1154,12 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
                 "Hồ sơ người dùng: {user_profile}\n"
                 "Ngày hiện tại: {current_date}\n"
                 "\n"
-                "Hãy phân tích nội dung một cách chi tiết và thú vị, tạo sự kết nối với khách hàng và dịch vụ của Tian Long!",
+                "Hãy phân tích hình ảnh một cách chi tiết, nhiệt tình và tạo sự kết nối cảm xúc với khách hàng! 🎯✨",
             ),
             MessagesPlaceholder(variable_name="messages"),
         ]
     ).partial(current_date=datetime.now, domain_context=domain_context)
-    document_processing_runnable = document_processing_prompt | llm_generate_direct.bind_tools(image_tools)
+    document_processing_runnable = document_processing_prompt | llm_generate_direct
     document_processing_assistant = Assistant(document_processing_runnable)
 
     # --- Routing sanitization helpers ---
@@ -1535,12 +1527,12 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
         }
 
     def process_document_node(state: RagState, config: RunnableConfig):
-        """Process documents/images using specialized document processing assistant.
+        """Process documents/images using multimodal LLM directly.
         
         This node handles:
-        1. Route image/document questions to LLM with image analysis tools
-        2. Let LLM decide when and how to analyze content using tools
-        3. Generate contextual response using document_processing_assistant
+        1. Download images from URLs and pass directly to multimodal LLM
+        2. Let LLM analyze images in context with conversation
+        3. Generate contextual response without tool calls
         """
         logging.info("---NODE: PROCESS DOCUMENT---")
         
@@ -1571,7 +1563,7 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
             if is_tool_reentry:
                 logging.debug("process_document_node: Tool re-entry detected")
             
-            # Check for attachment URLs to ensure this is appropriate route
+            # Extract image URLs from message content
             import re
             url_patterns = [
                 r'\[HÌNH ẢNH\] URL: (https?://[^\s]+)',
@@ -1585,7 +1577,7 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
                 matches = re.findall(pattern, current_question)
                 image_urls.extend(matches)
 
-            # Short-circuit if no URLs found to avoid unnecessary processing
+            # Short-circuit if no URLs found
             if not image_urls:
                 logging.info("No attachment URLs found in current message; providing fallback")
                 from langchain_core.messages import AIMessage
@@ -1594,13 +1586,130 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
                 )
                 return {"messages": [response]}
             
-            logging.info(f"Found {len(image_urls)} image/document URL(s), letting LLM handle analysis with tools")
+            logging.info(f"Found {len(image_urls)} image URL(s), downloading for multimodal LLM processing")
             
-            # Use document processing assistant to generate response
-            # The LLM will use analyze_image tool when needed
-            logging.debug(f"process_document: Calling document_processing_assistant")
-            response = document_processing_assistant(state, config)
-            logging.debug(f"process_document: Got response type: {type(response)}, has content: {hasattr(response, 'content')}")
+            # Download images and prepare multimodal content
+            image_content_parts = []
+            text_without_urls = current_question
+            
+            # Download each image
+            import httpx
+            import base64
+            from io import BytesIO
+            from PIL import Image as PILImage
+            
+            for url in image_urls:
+                try:
+                    logging.info(f"🖼️ Downloading image: {url[:50]}...")
+                    
+                    # Download image
+                    async def download_image():
+                        async with httpx.AsyncClient(timeout=30.0) as client:
+                            response = await client.get(url)
+                            if response.status_code == 200:
+                                return response.content
+                            else:
+                                logging.warning(f"Failed to download image: HTTP {response.status_code}")
+                                return None
+                    
+                    # Run async download in sync context
+                    import asyncio
+                    import concurrent.futures
+                    
+                    def run_download():
+                        new_loop = asyncio.new_event_loop()
+                        asyncio.set_event_loop(new_loop)
+                        try:
+                            return new_loop.run_until_complete(download_image())
+                        finally:
+                            new_loop.close()
+                    
+                    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                        future = executor.submit(run_download)
+                        image_data = future.result(timeout=30)
+                    
+                    if image_data:
+                        # Convert to base64 for LLM
+                        try:
+                            # Validate and potentially resize image
+                            pil_image = PILImage.open(BytesIO(image_data))
+                            
+                            # Resize if too large (max 1024px on longest side)
+                            max_size = 1024
+                            if max(pil_image.size) > max_size:
+                                ratio = max_size / max(pil_image.size)
+                                new_size = tuple(int(dim * ratio) for dim in pil_image.size)
+                                pil_image = pil_image.resize(new_size, PILImage.Resampling.LANCZOS)
+                                
+                                # Convert back to bytes
+                                output = BytesIO()
+                                pil_image.save(output, format='JPEG', quality=85)
+                                image_data = output.getvalue()
+                            
+                            # Create image content for multimodal LLM
+                            image_content_parts.append({
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": f"data:image/jpeg;base64,{base64.b64encode(image_data).decode()}"
+                                }
+                            })
+                            
+                            # Remove URL from text (clean up)
+                            text_without_urls = text_without_urls.replace(f"[HÌNH ẢNH] URL: {url}", "").strip()
+                            
+                            logging.info(f"✅ Image downloaded and prepared for multimodal LLM")
+                            
+                        except Exception as e:
+                            logging.error(f"❌ Image processing failed for {url}: {e}")
+                            continue
+                    else:
+                        logging.error(f"❌ Failed to download image from {url}")
+                        continue
+                        
+                except Exception as e:
+                    logging.error(f"❌ Image download failed for {url}: {e}")
+                    continue
+            
+            if not image_content_parts:
+                logging.warning("No images could be downloaded successfully")
+                from langchain_core.messages import AIMessage
+                response = AIMessage(
+                    content="Xin lỗi, em không thể tải được hình ảnh để phân tích. Anh/chị vui lòng thử gửi lại hình ảnh."
+                )
+                return {"messages": [response]}
+            
+            # Prepare multimodal message for LLM
+            from langchain_core.messages import HumanMessage
+            
+            # Create multimodal content
+            multimodal_content = []
+            
+            # Add text part (clean question without URLs)
+            if text_without_urls.strip():
+                multimodal_content.append({
+                    "type": "text", 
+                    "text": text_without_urls.strip()
+                })
+            
+            # Add image parts
+            multimodal_content.extend(image_content_parts)
+            
+            # Create new multimodal message and update state
+            multimodal_message = HumanMessage(content=multimodal_content)
+            
+            # Update state with multimodal message (replace last human message)
+            updated_messages = list(state.get("messages", []))
+            if updated_messages and updated_messages[-1].content == current_question:
+                updated_messages[-1] = multimodal_message
+            else:
+                updated_messages.append(multimodal_message)
+            
+            enhanced_state = {**state, "messages": updated_messages}
+            
+            logging.info(f"🎯 Calling multimodal LLM with {len(image_content_parts)} image(s)")
+            
+            # Use document processing assistant with multimodal input
+            response = document_processing_assistant(enhanced_state, config)
             
             # Apply beautify formatting to document processing responses too
             try:
@@ -1618,7 +1727,7 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
             except Exception as _fmt_err:
                 logging.debug(f"process_document post-format skipped: {_fmt_err}")
             
-            logging.info("✅ Document/image processing completed successfully")
+            logging.info("✅ Multimodal document/image processing completed successfully")
             return {"messages": [response]}
             
         except Exception as e:
