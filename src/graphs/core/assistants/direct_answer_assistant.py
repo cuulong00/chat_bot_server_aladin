@@ -1,7 +1,9 @@
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.runnables import RunnablePassthrough
 from src.graphs.core.assistants.base_assistant import BaseAssistant
+from src.graphs.state.state import RagState
 from datetime import datetime
+from typing import Dict, Any
 
 class DirectAnswerAssistant(BaseAssistant):
     def __init__(self, llm, domain_context, tools):
@@ -203,13 +205,22 @@ class DirectAnswerAssistant(BaseAssistant):
         )
         super().__init__(runnable)
     
-    def binding_prompt(self, state):
+    def binding_prompt(self, state: RagState) -> Dict[str, Any]:
         """Override binding_prompt to add domain_context and current_date variables."""
         # Get base prompt data
         prompt_data = super().binding_prompt(state)
         
-        # Add missing variables
-        prompt_data['domain_context'] = self.domain_context
+        # Ensure domain_context is available
+        domain_context_value = getattr(self, 'domain_context', 'Nhà hàng lẩu bò tươi Tian Long')
+        
+        # Add missing variables that are required by the prompt template
+        prompt_data['domain_context'] = domain_context_value
         prompt_data['current_date'] = datetime.now().strftime("%d/%m/%Y")
+        
+        # Debug logging to verify variables are added
+        import logging
+        logging.debug(f"DirectAnswerAssistant binding_prompt keys: {list(prompt_data.keys())}")
+        logging.debug(f"domain_context: {prompt_data.get('domain_context', 'MISSING')}")
+        logging.debug(f"current_date: {prompt_data.get('current_date', 'MISSING')}")
         
         return prompt_data
