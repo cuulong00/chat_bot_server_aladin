@@ -545,8 +545,8 @@ def create_adaptive_rag_graph(
     web_search_tool = TavilySearch(max_results=5)
     memory_tools = [get_user_profile, save_user_preference]
     image_context_tools = [save_image_context, retrieve_image_context, clear_image_context]
-    image_tools = [analyze_image]
-    all_tools = tools + [web_search_tool] + memory_tools + image_context_tools + image_tools
+    
+    all_tools = tools + [web_search_tool] + memory_tools + image_context_tools
 
     # === Chains for Summarization and Contextualization ===
 
@@ -1148,7 +1148,7 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
     ).partial(current_date=datetime.now, domain_context=domain_context)
     # Bind direct assistant with memory tools + domain action tools (e.g., reservation tools) + image tools
     # Avoid binding web search here to keep responses crisp for action/confirmation flows.
-    llm_generate_direct_with_tools = llm_generate_direct.bind_tools(memory_tools + tools + image_context_tools + image_tools)
+    llm_generate_direct_with_tools = llm_generate_direct.bind_tools(memory_tools + tools + image_context_tools)
     direct_answer_runnable = direct_answer_prompt | llm_generate_direct_with_tools
     direct_answer_assistant = Assistant(direct_answer_runnable)
 
@@ -1219,7 +1219,7 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
             MessagesPlaceholder(variable_name="messages"),
         ]
     ).partial(current_date=datetime.now, domain_context=domain_context)
-    document_processing_runnable = document_processing_prompt | llm_generate_direct.bind_tools(image_context_tools + image_tools)
+    document_processing_runnable = document_processing_prompt | llm_generate_direct.bind_tools(image_context_tools)
     document_processing_assistant = Assistant(document_processing_runnable)
 
     # --- Routing sanitization helpers ---
@@ -1761,17 +1761,17 @@ Hãy phân tích một cách chi tiết và toàn diện để thông tin này c
                             analysis_results.append(image_analysis)
                             
                             # Save to vector database using tool
-                            save_result = save_image_context(
-                                user_id=user_id,
-                                thread_id=thread_id,
-                                image_url=url,
-                                image_analysis=image_analysis,
-                                metadata={
+                            save_result = save_image_context.invoke({
+                                "user_id": user_id,
+                                "thread_id": thread_id,
+                                "image_url": url,
+                                "image_analysis": image_analysis,
+                                "metadata": {
                                     "analysis_timestamp": datetime.now().isoformat(),
                                     "image_size": f"{pil_image.size[0]}x{pil_image.size[1]}",
                                     "original_question": current_question[:200]
                                 }
-                            )
+                            })
                             
                             processed_images += 1
                             logging.info(f"✅ Image analyzed and context saved: {save_result}")
