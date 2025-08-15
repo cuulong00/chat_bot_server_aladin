@@ -68,6 +68,13 @@ class FacebookMessengerService:
         except ValueError:
             self._last_reply_ttl = 8
 
+        # Cache to de-duplicate processing of similar contexts within a short TTL
+        self._processed_context_cache: dict[str, float] = {}
+        try:
+            self._process_dedup_ttl = int(os.getenv("FB_PROCESS_DEDUP_TTL", "10"))  # seconds
+        except ValueError:
+            self._process_dedup_ttl = 10
+
         # Message history service
         self.message_history = get_message_history_service()
         
@@ -80,6 +87,16 @@ class FacebookMessengerService:
             self.message_aggregator = SmartMessageAggregator(self.redis_queue)
             self._redis_processor_started = False
             logger.info("✅ Redis Smart Message Aggregator initialized")
+            # Diagnostic: instance identities for singleton verification
+            try:
+                logger.info(
+                    "🔧 FBService init: service_id=%s redis_queue_id=%s aggregator_id=%s",
+                    hex(id(self)),
+                    hex(id(self.redis_queue)),
+                    hex(id(self.message_aggregator)),
+                )
+            except Exception:
+                pass
         else:
             self.redis_queue = None
             self.message_aggregator = None
@@ -403,6 +420,11 @@ class FacebookMessengerService:
             
             logger.info(f"🎯 Processing AGGREGATED message - User: {user_id}, Text: '{text[:50]}...', Attachments: {len(attachments)}")
             
+            # De-dup: avoid processing same context within short TTL
+            if not self._should_process_context(user_id, text, attachments):
+                logger.info(f"🛑 Skipping duplicate queued context for {user_id} within TTL")
+                return
+
             # Show typing indicator
             await self.send_sender_action(user_id, "typing_on")
             
@@ -448,6 +470,12 @@ class FacebookMessengerService:
     # --- Entry processing ---
     async def handle_webhook_event(self, app_state, body: Dict[str, Any]) -> None:
         try:
+            # Diagnostic: confirm which service instance is handling this webhook
+            logger.debug(
+                "📥 Webhook handled by service_id=%s aggregator_id=%s",
+                hex(id(self)),
+                hex(id(self.message_aggregator)) if self.message_aggregator else None,
+            )
             if body.get("object") != "page":
                 logger.debug("Ignoring non-page webhook object: %s", body.get("object"))
                 return
@@ -538,9 +566,21 @@ class FacebookMessengerService:
         try:
             # Determine event type
             if text and attachment_info:
-                # Combined message - process immediately
-                logger.info(f"📝+📎 COMBINED message from {sender}: text + {len(attachment_info)} attachments")
-                await self._process_complete_message(app_state, sender, message, text, attachment_info, reply_context)
+                # Combined message - enqueue and let aggregator handle
+                logger.info(f"📝+📎 COMBINED message from {sender}: text + {len(attachment_info)} attachments → enqueue")
+                event_type = "combined"
+                data = {
+                    "text": text,
+                    "attachments": attachment_info,
+                    "message": message,
+                    "reply_context": reply_context,
+                    "timestamp": messaging.get("timestamp"),
+                }
+                await self.redis_queue.enqueue_event(sender, event_type, data)
+                context, ready = await self.message_aggregator.aggregate_message(sender, event_type, data)
+                if ready:
+                    logger.info(f"✅ COMBINED context ready for {sender}: processing aggregated context")
+                    await self._process_smart_aggregated_context(app_state, sender, context)
                 return
             
             # Single-type message - use aggregation
@@ -658,6 +698,10 @@ class FacebookMessengerService:
     async def _process_complete_message(self, app_state, sender: str, message: dict, text: str, attachment_info: list, reply_context: str = ""):
         """Process a complete message (merged or standalone)"""
         try:
+            # De-dup: avoid double-processing across code paths
+            if not self._should_process_context(sender, text, attachment_info):
+                logger.info(f"🛑 Skipping duplicate complete message for {sender} within TTL")
+                return
             # Store user message in history
             message_id = message.get("mid", f"temp_{int(time.time())}")
             self.message_history.store_message(
@@ -810,6 +854,38 @@ class FacebookMessengerService:
         full_message = "\n".join(message_parts) if message_parts else ""
         
         return full_message
+
+    # --- Process de-dup helpers ---
+    def _make_context_key(self, user_id: str, text: str, attachments: List[Dict[str, Any]]) -> str:
+        try:
+            norm_text = (text or '').strip()
+            # Extract attachment URLs/descriptions for hashing
+            parts: List[str] = []
+            for a in (attachments or []):
+                u = a.get('url') or ''
+                d = a.get('description') or ''
+                parts.append(u + '|' + d)
+            parts.sort()
+            base = f"{user_id}|{norm_text[:200]}|{'#'.join(parts)}"
+            return hashlib.sha1(base.encode('utf-8')).hexdigest()
+        except Exception:
+            return f"fallback:{user_id}:{int(time.time()//10)}"
+
+    def _should_process_context(self, user_id: str, text: str, attachments: List[Dict[str, Any]]) -> bool:
+        now = time.time()
+        key = self._make_context_key(user_id, text, attachments)
+        # Cleanup old entries
+        try:
+            to_del = [k for k, t in self._processed_context_cache.items() if now - t > self._process_dedup_ttl]
+            for k in to_del:
+                self._processed_context_cache.pop(k, None)
+        except Exception:
+            pass
+        last = self._processed_context_cache.get(key)
+        if last and (now - last) < self._process_dedup_ttl:
+            return False
+        self._processed_context_cache[key] = now
+        return True
 
     # --- Dedup helpers ---
     def _event_signature(self, messaging: Dict[str, Any]) -> str:

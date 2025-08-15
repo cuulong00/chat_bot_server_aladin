@@ -221,6 +221,14 @@ class SmartMessageAggregator:
         
         current_time = time.time()
         context_key = f"{user_id}_{int(current_time // 10)}"  # 10-second window
+        # Diagnostic: trace aggregator identity and context key
+        try:
+            logger.debug(
+                "🧭 Aggregator %s aggregate: user=%s type=%s key=%s", 
+                hex(id(self)), user_id, event_type, context_key
+            )
+        except Exception:
+            pass
         
         # Khởi tạo user context nếu chưa có
         if user_id not in self.pending_contexts:
@@ -250,20 +258,39 @@ class SmartMessageAggregator:
             merge_time = current_time - existing_ctx['created_at']
             self._update_merge_time(merge_time)
             
-            logger.info(f"🔗 MERGED context for {user_id}: {event_type} (merge_time: {merge_time:.2f}s)")
-            return merged_context, True  # Sẵn sàng xử lý
+            # Đánh dấu đã sẵn sàng để tránh timeout task enqueue lần nữa
+            merged_context['processed'] = True
+            logger.info(f"🔗 MERGED context for {user_id}: {event_type} (merge_time: {merge_time:.2f}s) → READY")
+            return merged_context, True  # Sẵn sàng xử lý ngay
             
         else:
             # Tạo context mới
-            new_context = {
-                'user_id': user_id,
-                'text': data.get('text', '') if event_type == 'text' else '',
-                'attachments': [data] if event_type == 'attachment' else [],
-                'created_at': current_time,
-                'message_data': data,
-                'processed': False,
-                'context_key': context_key
-            }
+            if event_type == 'combined':
+                # Sự kiện đã có cả text và attachments trong cùng webhook
+                new_context = {
+                    'user_id': user_id,
+                    'text': data.get('text', ''),
+                    'attachments': data.get('attachments', []),
+                    'created_at': current_time,
+                    'message_data': data,
+                    'processed': True,  # đã đầy đủ, xử lý ngay
+                    'context_key': context_key,
+                    'wait_time': 0.0,
+                    'should_wait': False,
+                }
+                user_contexts[context_key] = new_context
+                logger.info(f"✅ COMBINED context ready for {user_id}: text+{len(new_context['attachments'])} attachments")
+                return new_context, True
+            else:
+                new_context = {
+                    'user_id': user_id,
+                    'text': data.get('text', '') if event_type == 'text' else '',
+                    'attachments': [data] if event_type == 'attachment' else [],
+                    'created_at': current_time,
+                    'message_data': data,
+                    'processed': False,
+                    'context_key': context_key
+                }
             
             # Xác định chiến lược chờ
             if event_type == 'text':
@@ -278,10 +305,11 @@ class SmartMessageAggregator:
                 
             user_contexts[context_key] = new_context
             
-            # Lên lịch xử lý sau delay
-            asyncio.create_task(
-                self._delayed_processing(user_id, context_key, new_context['wait_time'])
-            )
+            # Lên lịch xử lý sau delay (chỉ khi chưa processed)
+            if not new_context.get('processed'):
+                asyncio.create_task(
+                    self._delayed_processing(user_id, context_key, new_context['wait_time'])
+                )
             
             return new_context, False  # Chưa sẵn sàng
     
@@ -290,11 +318,19 @@ class SmartMessageAggregator:
         if event_type == 'text':
             # Kết hợp text (tránh trùng lặp)
             new_text = data.get('text', '')
-            if new_text and new_text not in existing_ctx['text']:
-                existing_ctx['text'] = (existing_ctx['text'] + ' ' + new_text).strip()
+            if new_text and new_text not in existing_ctx.get('text', ''):
+                existing_ctx['text'] = (existing_ctx.get('text', '') + ' ' + new_text).strip()
         elif event_type == 'attachment':
             # Thêm attachments
+            existing_ctx.setdefault('attachments', [])
             existing_ctx['attachments'].extend(data.get('attachments', [data]))
+        elif event_type == 'combined':
+            # Kết hợp cả text và attachments
+            new_text = data.get('text', '')
+            if new_text and new_text not in existing_ctx.get('text', ''):
+                existing_ctx['text'] = (existing_ctx.get('text', '') + ' ' + new_text).strip()
+            existing_ctx.setdefault('attachments', [])
+            existing_ctx['attachments'].extend(data.get('attachments', []))
             
         existing_ctx['updated_at'] = time.time()
         return existing_ctx
