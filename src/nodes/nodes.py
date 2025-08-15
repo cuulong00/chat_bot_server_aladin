@@ -115,8 +115,19 @@ def user_info(state: State, config: RunnableConfig):
         # fallback cuối cùng
         user_id = "13e42408-2f96-4274-908d-ed1c826ae170"
     
-    # Get session_id from config and set it to state for image context retrieval
-    session_id = configurable.get("thread_id", "")  # thread_id in config is actually session_id
+    # Get session_id from message metadata or config 
+    session_id = ""
+    messages = state.get("messages", [])
+    if messages:
+        last_message = messages[-1]
+        if hasattr(last_message, 'additional_kwargs'):
+            additional_kwargs = getattr(last_message, 'additional_kwargs', {})
+            session_id = additional_kwargs.get("session_id", "")
+    
+    # Fallback to config if not in message metadata
+    if not session_id:
+        session_id = configurable.get("thread_id", "")  # thread_id in config is actually session_id
+    
     logging.info(f"🔍 Setting session_id in state: {session_id}")
         
     # Get current question for context

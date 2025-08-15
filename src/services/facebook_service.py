@@ -348,9 +348,18 @@ class FacebookMessengerService:
             try:
                 config = {"configurable": {"thread_id": session_id, "user_id": user_id}}
                 final_text = ""
+                # Include session_id in message metadata so it's available in state
+                message_with_metadata = {
+                    "role": "user", 
+                    "content": question,
+                    "additional_kwargs": {
+                        "session_id": session_id,
+                        "user_id": user_id
+                    }
+                }
                 # Stream values to capture the latest assistant message
                 for chunk in app_state.graph.stream(
-                    {"messages": [{"role": "user", "content": question}]},
+                    {"messages": [message_with_metadata]},
                     config,
                     stream_mode="values",
                 ):

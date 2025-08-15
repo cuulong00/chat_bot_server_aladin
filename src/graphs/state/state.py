@@ -143,6 +143,7 @@ class State(TypedDict):
     messages: Annotated[list[AnyMessage], add_messages]
     user: User
     thread_id: str
+    session_id: Optional[str]  # Added for image context retrieval, can be None initially
     dialog_state: Annotated[
         list[
             Literal[

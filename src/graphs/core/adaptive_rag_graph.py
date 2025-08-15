@@ -889,7 +889,7 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
         )
         # Always try to get image context for maximum accuracy
         user_id = ctx.get("user", {}).get("user_info", {}).get("user_id", "")
-        session_id = ctx.get("session_id", "")  # This should be added to state by Facebook service
+        session_id = ctx.get("session_id", "") or ""  # Handle None case
         current_question = get_current_user_question(ctx)
         
         image_context = ""
