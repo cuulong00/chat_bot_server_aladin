@@ -887,14 +887,14 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
                 and isinstance(doc[1], dict)
             ]
         )
-        
+        print(f"-----------------------ctx:{ctx}-----------------")
         # Always try to get image context for maximum accuracy
         user_id = ctx.get("user_id", "")
         session_id = ctx.get("session_id", "")
         current_question = get_current_user_question(ctx)
         
         image_context = ""
-        
+        print(f"user_id and session_id and current_question:{user_id} and {session_id} and {current_question}")
         # Always retrieve image context when available - prioritize accuracy over performance
         if user_id and session_id and current_question:
             logging.info("🔍 Đang truy xuất image context để đảm bảo độ chính xác...")
