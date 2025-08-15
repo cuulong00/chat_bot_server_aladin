@@ -125,6 +125,7 @@ def retrieve_image_context(
         Relevant image context information
     """
     try:
+        print(f"--------------------------retrieve_image_context----------------------------")
         namespace = get_image_context_namespace(user_id, thread_id)
         qdrant_store = get_qdrant_store()
         

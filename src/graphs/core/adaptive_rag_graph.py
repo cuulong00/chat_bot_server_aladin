@@ -876,7 +876,7 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
         ]
     ).partial(current_date=datetime.now, domain_context=domain_context)
     def get_combined_context(ctx):
-        """Combine document context and image context for comprehensive RAG."""
+        """Combine document context and image context for comprehensive RAG - always retrieve both for maximum accuracy."""
         # Get traditional document context
         doc_context = "\n\n".join(
             [
@@ -888,13 +888,16 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
             ]
         )
         
-        # Get image context if available
+        # Always try to get image context for maximum accuracy
         user_id = ctx.get("user_id", "")
         session_id = ctx.get("session_id", "")
         current_question = get_current_user_question(ctx)
         
         image_context = ""
+        
+        # Always retrieve image context when available - prioritize accuracy over performance
         if user_id and session_id and current_question:
+            logging.info("🔍 Đang truy xuất image context để đảm bảo độ chính xác...")
             try:
                 # Extract thread_id from session_id
                 thread_id = session_id.replace("facebook_session_", "") if session_id.startswith("facebook_session_") else session_id
@@ -904,17 +907,27 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
                     user_id=user_id,
                     thread_id=thread_id, 
                     query=current_question,
-                    limit=2  # Limit to avoid too much context
+                    limit=3  # Reasonable limit for combined context
                 )
                 
                 if image_context_result and not image_context_result.startswith("❌") and not "Không tìm thấy" in image_context_result:
                     image_context = f"\n\n<image_context>\n{image_context_result}\n</image_context>"
+                    logging.info("✅ Đã thêm image context - kết hợp cả static và dynamic context")
+                else:
+                    logging.info("📋 Không có image context, chỉ sử dụng static documents")
                     
             except Exception as e:
                 logging.debug(f"Failed to retrieve image context: {e}")
+                logging.info("📋 Fallback to static documents only")
         
-        # Combine contexts
+        # Combine contexts for comprehensive coverage
         combined = doc_context + image_context
+        
+        # Log context composition for debugging
+        doc_count = len([doc for doc in ctx.get("documents", []) if isinstance(doc, tuple)])
+        has_image = bool(image_context.strip())
+        logging.info(f"📖 Context kết hợp: {doc_count} static docs + {'có' if has_image else 'không có'} image context")
+        
         return combined if combined.strip() else "No documents were provided."
     
     generation_runnable = (
