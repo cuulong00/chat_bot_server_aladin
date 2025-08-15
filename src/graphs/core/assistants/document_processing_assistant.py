@@ -1,9 +1,9 @@
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.runnables import RunnablePassthrough
 from src.graphs.core.assistants.base_assistant import BaseAssistant
-
+from datetime import datetime
 class DocumentProcessingAssistant(BaseAssistant):
-    def __init__(self, llm, tools):
+    def __init__(self, llm, tools, domain_context: str ):
         prompt = ChatPromptTemplate.from_messages(
             [
                 (
@@ -72,7 +72,7 @@ class DocumentProcessingAssistant(BaseAssistant):
                 ),
                 MessagesPlaceholder(variable_name="messages"),
             ]
-        )
+        ).partial(current_date=datetime.now, domain_context=domain_context)
         llm_with_tools = llm.bind_tools(tools)
         runnable = prompt | llm_with_tools
         super().__init__(runnable)

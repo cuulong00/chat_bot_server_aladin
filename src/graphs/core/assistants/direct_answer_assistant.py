@@ -196,7 +196,7 @@ class DirectAnswerAssistant(BaseAssistant):
                 ),
                 MessagesPlaceholder(variable_name="messages"),
             ]
-        )
+        ).partial(current_date=datetime.now, domain_context=domain_context)
         llm_with_tools = llm.bind_tools(tools)
         runnable = (
             RunnablePassthrough()
@@ -207,15 +207,12 @@ class DirectAnswerAssistant(BaseAssistant):
     
     def binding_prompt(self, state: RagState) -> Dict[str, Any]:
         """Override binding_prompt to add domain_context and current_date variables."""
-        # Get base prompt data
+        # Get base prompt data (this will include default values)
         prompt_data = super().binding_prompt(state)
         
-        # Ensure domain_context is available
-        domain_context_value = getattr(self, 'domain_context', 'Nhà hàng lẩu bò tươi Tian Long')
-        
-        # Add missing variables that are required by the prompt template
-        prompt_data['domain_context'] = domain_context_value
-        prompt_data['current_date'] = datetime.now().strftime("%d/%m/%Y")
+        # Override domain_context with the specific value from constructor
+        if hasattr(self, 'domain_context') and self.domain_context:
+            prompt_data['domain_context'] = self.domain_context
         
         # Debug logging to verify variables are added
         import logging

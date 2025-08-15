@@ -367,13 +367,13 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
     suggestive_assistant = SuggestiveAssistant(llm, domain_context)
 
     # 6. Hallucination Grader Assistant
-    hallucination_grader_assistant = HallucinationGraderAssistant(llm_hallucination_grader)
+    hallucination_grader_assistant = HallucinationGraderAssistant(llm_hallucination_grader, domain_context)
 
     # 7. Direct Answer Assistant
     direct_answer_assistant = DirectAnswerAssistant(llm_generate_direct, domain_context, memory_tools + tools + image_context_tools)
 
     # 8. Document/Image Processing Assistant (Multimodal)
-    document_processing_assistant = DocumentProcessingAssistant(llm_generate_direct, image_context_tools)
+    document_processing_assistant = DocumentProcessingAssistant(llm_generate_direct, image_context_tools, domain_context)
 
     # --- Routing sanitization helpers ---
     def _strip_reply_context_block(text: str) -> str:

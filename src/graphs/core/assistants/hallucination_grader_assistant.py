@@ -3,7 +3,7 @@ from __future__ import annotations
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import Runnable
 from pydantic import BaseModel, Field
-
+from datetime import datetime
 from src.graphs.core.assistants.base_assistant import BaseAssistant
 
 
@@ -18,7 +18,7 @@ class HallucinationGraderAssistant(BaseAssistant):
     """
     An assistant that grades whether the generated answer is grounded in the provided documents.
     """
-    def __init__(self, llm: Runnable):
+    def __init__(self, llm: Runnable, domain_context: str):
         prompt = ChatPromptTemplate.from_messages(
             [
                 (
@@ -29,6 +29,6 @@ class HallucinationGraderAssistant(BaseAssistant):
                 ),
                 ("human", "Documents:\n\n{documents}\n\nGeneration: {generation}"),
             ]
-        )
+        ).partial(domain_context=domain_context, current_date=datetime.now())
         runnable = prompt | llm.with_structured_output(GradeHallucinations)
         super().__init__(runnable)

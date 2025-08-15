@@ -13,7 +13,7 @@ from langchain_openai import ChatOpenAI
 from langchain_google_genai import ChatGoogleGenerativeAI
 from src.database.checkpointer import get_checkpointer
 from src.api.facebook import router as facebook_router
-
+from src.domain_configs.domain_configs import MARKETING_DOMAIN
 load_dotenv()
 
 # Setup logging
@@ -45,18 +45,7 @@ def compile_graph(checkpointer: BaseCheckpointSaver):
         collection_name="accounting_store", embedding_model="text-embedding-3-small"
     )
     
-    # Domain configuration for restaurant/accounting
-    DOMAIN = {
-        "domain_context": "nhà hàng lẩu bò tươi Tian Long",
-        "domain_instructions": "Hỗ trợ khách hàng về thực đơn, địa chỉ, ưu đãi và đặt bàn",
-        "domain_examples": [
-            "Thực đơn có những món gì?",
-            "Địa chỉ các chi nhánh?", 
-            "Có ưu đãi gì không?",
-            "Tôi muốn đặt bàn"
-        ],
-        "collection_name": "accounting_store"
-    }
+
 
     adaptive_graph = create_adaptive_rag_graph(
         llm=accounting_llm,
@@ -69,7 +58,7 @@ def compile_graph(checkpointer: BaseCheckpointSaver):
         llm_contextualize=llm_contextualize,
         retriever=retriever,
         tools=accounting_tools,
-        DOMAIN=DOMAIN,
+        DOMAIN=MARKETING_DOMAIN,
     )
 
     compiled_app = adaptive_graph.compile(checkpointer=checkpointer)

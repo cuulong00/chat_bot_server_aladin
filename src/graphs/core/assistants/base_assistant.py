@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 from typing import Any
+from datetime import datetime
 
 from langchain_core.messages import AIMessage
 from langchain_core.runnables import Runnable, RunnableConfig
@@ -40,7 +41,8 @@ class BaseAssistant:
             "user_info": user_info,
             "user_profile": user_profile,
             "conversation_summary": running_summary,
-            "image_contexts": image_contexts,
+            "image_contexts": image_contexts
+            
         }
         
         if not prompt.get("messages"):
