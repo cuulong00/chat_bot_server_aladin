@@ -244,7 +244,7 @@ class FacebookMessengerService:
             return None
 
     # --- Agent Integration ---
-    async def call_agent(self, app_state, user_id: str, message: str) -> str:
+    async def call_agent(self, app_state, user_id: str, message: str, thread_id: Optional[str] = None) -> str:
         """Call the agent and handle the response"""
         try:
             # Validate user_id format
@@ -254,10 +254,11 @@ class FacebookMessengerService:
             
             logger.info(f"🤖 Calling agent for user {user_id[:10]}...")
             
+            session = thread_id or f"facebook_session_{user_id}"
             inputs = {
                 "question": message,
                 "user_id": user_id,
-                "session_id": f"facebook_session_{user_id}",
+                "session_id": session,
             }
             
             logger.info(f"📝 Agent inputs prepared: {inputs}")
@@ -361,6 +362,18 @@ class FacebookMessengerService:
                 return "Xin lỗi, có lỗi xảy ra khi xử lý tin nhắn. Vui lòng thử lại sau."
 
         return await asyncio.to_thread(_run_stream)
+
+    def _resolve_thread_id(self, messaging: Dict[str, Any]) -> str:
+        """Best-effort thread id: use recipient.id (page) or PAGE_ID."""
+        try:
+            recipient_id = (messaging.get("recipient") or {}).get("id")
+            if recipient_id:
+                return str(recipient_id)
+            if self.page_id:
+                return str(self.page_id)
+        except Exception:
+            pass
+        return "default"
 
     # --- Redis Background Processing ---
     async def start_redis_processor(self, app_state):
@@ -577,10 +590,8 @@ class FacebookMessengerService:
                     "timestamp": messaging.get("timestamp"),
                 }
                 await self.redis_queue.enqueue_event(sender, event_type, data)
-                context, ready = await self.message_aggregator.aggregate_message(sender, event_type, data)
-                if ready:
-                    logger.info(f"✅ COMBINED context ready for {sender}: processing aggregated context")
-                    await self._process_smart_aggregated_context(app_state, sender, context)
+                thread_id = self._resolve_thread_id(messaging)
+                await self.message_aggregator.aggregate_message(sender, thread_id, event_type, data)
                 return
             
             # Single-type message - use aggregation
@@ -594,13 +605,9 @@ class FacebookMessengerService:
             # Enqueue to Redis
             await self.redis_queue.enqueue_event(sender, event_type, data)
             
-            # Smart aggregation
-            context, ready = await self.message_aggregator.aggregate_message(sender, event_type, data)
-            
-            if ready:
-                # Context merged and ready - process immediately
-                logger.info(f"🔗 SMART MERGE completed for {sender}: processing aggregated context")
-                await self._process_smart_aggregated_context(app_state, sender, context)
+            # Smart aggregation (5s inactivity window)
+            thread_id = self._resolve_thread_id(messaging)
+            await self.message_aggregator.aggregate_message(sender, thread_id, event_type, data)
                 
         except Exception as e:
             logger.error(f"❌ Smart aggregation error for {sender}: {e}")

@@ -34,6 +34,8 @@ class MessageProcessingConfig:
     image_keywords_wait: float = float(os.getenv("IMAGE_KEYWORDS_WAIT", "8.0"))
     file_keywords_wait: float = float(os.getenv("FILE_KEYWORDS_WAIT", "5.0"))
     fast_process_delay: float = 0.1
+    # New: inactivity window for batching (seconds)
+    inactivity_window: float = float(os.getenv("INACTIVITY_WINDOW_SECS", "5.0"))
 
 class RedisMessageQueue:
     """Redis Streams-based message queue cho Facebook webhook events"""
@@ -166,7 +168,8 @@ class SmartMessageAggregator:
     def __init__(self, redis_queue: RedisMessageQueue, config: Optional[MessageProcessingConfig] = None):
         self.redis_queue = redis_queue
         self.config = config or MessageProcessingConfig()
-        self.pending_contexts = {}  # user_id -> {context_key -> context}
+        # Keyed by f"{user_id}:{thread_id}" -> accumulated context with resettable timer
+        self.pending_contexts: dict[str, dict] = {}
         self.metrics = {
             'total_messages': 0,
             'merged_messages': 0,
@@ -216,102 +219,59 @@ class SmartMessageAggregator:
         logger.info(f"⚡ FAST PROCESS: Normal message, processing in {self.config.fast_process_delay}s")
         return False, self.config.fast_process_delay
     
-    async def aggregate_message(self, user_id: str, event_type: str, data: dict) -> Tuple[dict, bool]:
-        """Aggregation thông minh với context awareness"""
-        
+    async def aggregate_message(self, user_id: str, thread_id: str, event_type: str, data: dict) -> Tuple[dict, bool]:
+        """Aggregate per (user_id, thread_id) with a resettable 5s inactivity window.
+
+        Always returns ready=False; finalization occurs when inactivity timer fires.
+        """
         current_time = time.time()
-        context_key = f"{user_id}_{int(current_time // 10)}"  # 10-second window
-        # Diagnostic: trace aggregator identity and context key
+        key = f"{user_id}:{thread_id}"
+        # Diagnostic
         try:
             logger.debug(
-                "🧭 Aggregator %s aggregate: user=%s type=%s key=%s", 
-                hex(id(self)), user_id, event_type, context_key
+                "🧭 Aggregator %s aggregate: user=%s thread=%s type=%s",
+                hex(id(self)), user_id, thread_id, event_type
             )
         except Exception:
             pass
-        
-        # Khởi tạo user context nếu chưa có
-        if user_id not in self.pending_contexts:
-            self.pending_contexts[user_id] = {}
-            
-        user_contexts = self.pending_contexts[user_id]
-        
-        # Dọn dẹp expired contexts
-        expired_keys = [
-            key for key, ctx in user_contexts.items() 
-            if current_time - ctx['created_at'] > self.config.max_context_ttl
-        ]
-        for key in expired_keys:
-            logger.debug(f"🧹 Cleaning expired context: {key}")
-            del user_contexts[key]
-        
+
         self.metrics['total_messages'] += 1
-        
-        # Kiểm tra context hiện có để merge
-        if context_key in user_contexts:
-            # Merge với context hiện có
-            existing_ctx = user_contexts[context_key]
-            merged_context = self._merge_contexts(existing_ctx, event_type, data)
-            user_contexts[context_key] = merged_context
-            
-            self.metrics['merged_messages'] += 1
-            merge_time = current_time - existing_ctx['created_at']
-            self._update_merge_time(merge_time)
-            
-            # Đánh dấu đã sẵn sàng để tránh timeout task enqueue lần nữa
-            merged_context['processed'] = True
-            logger.info(f"🔗 MERGED context for {user_id}: {event_type} (merge_time: {merge_time:.2f}s) → READY")
-            return merged_context, True  # Sẵn sàng xử lý ngay
-            
-        else:
-            # Tạo context mới
-            if event_type == 'combined':
-                # Sự kiện đã có cả text và attachments trong cùng webhook
-                new_context = {
-                    'user_id': user_id,
-                    'text': data.get('text', ''),
-                    'attachments': data.get('attachments', []),
-                    'created_at': current_time,
-                    'message_data': data,
-                    'processed': True,  # đã đầy đủ, xử lý ngay
-                    'context_key': context_key,
-                    'wait_time': 0.0,
-                    'should_wait': False,
-                }
-                user_contexts[context_key] = new_context
-                logger.info(f"✅ COMBINED context ready for {user_id}: text+{len(new_context['attachments'])} attachments")
-                return new_context, True
-            else:
-                new_context = {
-                    'user_id': user_id,
-                    'text': data.get('text', '') if event_type == 'text' else '',
-                    'attachments': [data] if event_type == 'attachment' else [],
-                    'created_at': current_time,
-                    'message_data': data,
-                    'processed': False,
-                    'context_key': context_key
-                }
-            
-            # Xác định chiến lược chờ
-            if event_type == 'text':
-                should_wait, wait_time = self.should_wait_for_attachment(new_context['text'])
-                new_context['wait_time'] = wait_time
-                new_context['should_wait'] = should_wait
-            else:
-                # Attachment có thể đang chờ text
-                new_context['wait_time'] = self.config.default_attachment_wait
-                new_context['should_wait'] = True
-                logger.info(f"📎 ATTACHMENT DELAY: Waiting {new_context['wait_time']}s for potential text")
-                
-            user_contexts[context_key] = new_context
-            
-            # Lên lịch xử lý sau delay (chỉ khi chưa processed)
-            if not new_context.get('processed'):
-                asyncio.create_task(
-                    self._delayed_processing(user_id, context_key, new_context['wait_time'])
-                )
-            
-            return new_context, False  # Chưa sẵn sàng
+
+        ctx = self.pending_contexts.get(key)
+        if not ctx:
+            ctx = {
+                'user_id': user_id,
+                'thread_id': thread_id,
+                'text': '',
+                'attachments': [],
+                'created_at': current_time,
+                'last_activity': current_time,
+                'timer': None,
+                'last_message_data': {},
+            }
+            self.pending_contexts[key] = ctx
+        # Merge content
+        ctx = self._merge_contexts(ctx, event_type, data)
+        ctx['last_activity'] = current_time
+        ctx['last_message_data'] = data
+
+        # Update metrics (approximate merge time since first part)
+        self.metrics['merged_messages'] += 1
+        self._update_merge_time(current_time - ctx['created_at'])
+
+        # Reset inactivity timer
+        timer: Optional[asyncio.Task] = ctx.get('timer')
+        if timer and not timer.done():
+            try:
+                timer.cancel()
+            except Exception:
+                pass
+        delay = self.config.inactivity_window
+        ctx['timer'] = asyncio.create_task(self._finalize_after_inactivity(key, delay))
+        logger.info(
+            f"⏳ Reset inactivity timer for user={user_id} thread={thread_id} to {delay:.1f}s (parts: T={1 if ctx.get('text') else 0}, A={len(ctx.get('attachments') or [])})"
+        )
+        return ctx, False
     
     def _merge_contexts(self, existing_ctx: dict, event_type: str, data: dict) -> dict:
         """Merge event mới vào context hiện có"""
@@ -323,7 +283,14 @@ class SmartMessageAggregator:
         elif event_type == 'attachment':
             # Thêm attachments
             existing_ctx.setdefault('attachments', [])
-            existing_ctx['attachments'].extend(data.get('attachments', [data]))
+            # data may already contain list of attachments or be a single attachment metadata
+            attachments = data.get('attachments') if isinstance(data, dict) else None
+            if attachments and isinstance(attachments, list):
+                existing_ctx['attachments'].extend(attachments)
+            else:
+                # Fallback: add raw data as one attachment if it has url/type
+                if isinstance(data, dict) and (data.get('url') or data.get('type')):
+                    existing_ctx['attachments'].append(data)
         elif event_type == 'combined':
             # Kết hợp cả text và attachments
             new_text = data.get('text', '')
@@ -335,29 +302,38 @@ class SmartMessageAggregator:
         existing_ctx['updated_at'] = time.time()
         return existing_ctx
     
-    async def _delayed_processing(self, user_id: str, context_key: str, delay: float):
-        """Xử lý context sau delay nếu không được merge"""
-        await asyncio.sleep(delay)
-        
-        user_contexts = self.pending_contexts.get(user_id, {})
-        if context_key in user_contexts and not user_contexts[context_key]['processed']:
-            context = user_contexts[context_key]
-            context['processed'] = True
-            
+    async def _finalize_after_inactivity(self, key: str, delay: float):
+        """Finalize a pending context if no new activity within delay seconds."""
+        try:
+            await asyncio.sleep(delay)
+            ctx = self.pending_contexts.get(key)
+            if not ctx:
+                return
+            # Double-check inactivity
+            last = ctx.get('last_activity', 0)
+            if time.time() - last < delay - 0.05:
+                # Someone reset; skip (timer was not properly canceled)
+                return
+            user_id = ctx['user_id']
+            thread_id = ctx.get('thread_id') or ''
+            final_context = {
+                'user_id': user_id,
+                'thread_id': thread_id,
+                'text': (ctx.get('text') or '').strip(),
+                'attachments': ctx.get('attachments') or [],
+                'created_at': ctx.get('created_at'),
+                'message_data': ctx.get('last_message_data', {}),
+            }
             self.metrics['timeout_processed'] += 1
-            
-            wait_type = "SMART" if context.get('should_wait', False) else "FAST"
-            logger.info(f"⏰ {wait_type} TIMEOUT processing for {user_id} after {delay}s")
-            
-            # Emit processing event
-            await self.redis_queue.enqueue_event(
-                user_id, 
-                "process_complete_message", 
-                context
+            logger.info(
+                f"✅ Inactivity window reached. Finalizing batch for user={user_id} thread={thread_id}: text_len={len(final_context['text'])}, attachments={len(final_context['attachments'])}"
             )
-            
+            # Emit processing event to queue
+            await self.redis_queue.enqueue_event(user_id, "process_complete_message", final_context)
             # Cleanup
-            del user_contexts[context_key]
+            self.pending_contexts.pop(key, None)
+        except Exception as e:
+            logger.error(f"❌ Inactivity finalization error for {key}: {e}")
     
     def _update_merge_time(self, merge_time: float):
         """Cập nhật average merge time metric"""
