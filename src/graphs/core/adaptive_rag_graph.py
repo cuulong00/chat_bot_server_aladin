@@ -876,7 +876,7 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
         ]
     ).partial(current_date=datetime.now, domain_context=domain_context)
     def get_combined_context(ctx):
-        """Combine document context and image context for comprehensive RAG - always retrieve both for maximum accuracy."""
+        """Combine document context and image context for comprehensive RAG - prioritize direct state context."""
         # Get traditional document context
         doc_context = "\n\n".join(
             [
@@ -887,45 +887,48 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
                 and isinstance(doc[1], dict)
             ]
         )
-        # Always try to get image context for maximum accuracy
-        user_id = ctx.get("user", {}).get("user_info", {}).get("user_id", "")
-        session_id = ctx.get("session_id", "") or ""  # Handle None case
-        current_question = get_current_user_question(ctx)
         
+        # Get image context from state (direct access - no need to search)
         image_context = ""
-        logging.info(f"🔍 Context variables: user_id={user_id}, session_id={session_id}, current_question={current_question}")
+        image_contexts = ctx.get("image_contexts", [])
         
-        # Always retrieve image context when available - prioritize accuracy over performance
-        if user_id and session_id and current_question:
-            logging.info("🔍 Đang truy xuất image context để đảm bảo độ chính xác...")
-            try:
-                # Extract thread_id from session_id
-                thread_id = session_id.replace("facebook_session_", "") if session_id.startswith("facebook_session_") else session_id
-                
-                # Retrieve image context using tool
-                image_context_result = retrieve_image_context.invoke({
-                    "user_id": user_id,
-                    "thread_id": thread_id, 
-                    "query": current_question,
-                    "limit": 3  # Reasonable limit for combined context
-                })
-                print(f"image_context_result:{image_context_result}")
-                if image_context_result and not image_context_result.startswith("❌") and not "Không tìm thấy" in image_context_result:
-                    image_context = f"\n\n<image_context>\n{image_context_result}\n</image_context>"
-                    logging.info("✅ Đã thêm image context - kết hợp cả static và dynamic context")
-                else:
-                    logging.info("📋 Không có image context, chỉ sử dụng static documents")
-                    
-            except Exception as e:
-                logging.error(f"❌ Failed to retrieve image context: {e}")
-                logging.info("📋 Fallback to static documents only")
+        if image_contexts:
+            logging.info(f"🖼️ Found {len(image_contexts)} image context(s) in state")
+            # Combine all image analyses into one context block
+            combined_image_text = "\n\n".join([
+                f"**Phân tích hình ảnh {i+1}:**\n{analysis}" 
+                for i, analysis in enumerate(image_contexts)
+            ])
+            image_context = f"\n\n<image_context>\n{combined_image_text}\n</image_context>"
+            logging.info("✅ Using direct image context from state")
         else:
-            missing_vars = []
-            if not user_id: missing_vars.append("user_id")
-            if not session_id: missing_vars.append("session_id") 
-            if not current_question: missing_vars.append("current_question")
-            logging.warning(f"⚠️ Missing variables for image context retrieval: {missing_vars}")
-            logging.info("📋 Using static documents only")
+            # Fallback: try to retrieve from vector database if no direct context
+            user_id = ctx.get("user", {}).get("user_info", {}).get("user_id", "")
+            session_id = ctx.get("session_id", "") or ""
+            current_question = get_current_user_question(ctx)
+            
+            if user_id and session_id and current_question:
+                logging.info("🔍 No direct image context, trying vector database fallback...")
+                try:
+                    thread_id = session_id.replace("facebook_session_", "") if session_id.startswith("facebook_session_") else session_id
+                    
+                    image_context_result = retrieve_image_context.invoke({
+                        "user_id": user_id,
+                        "thread_id": thread_id, 
+                        "query": current_question,
+                        "limit": 3
+                    })
+                    
+                    if image_context_result and not image_context_result.startswith("❌") and not "Không tìm thấy" in image_context_result:
+                        image_context = f"\n\n<image_context>\n{image_context_result}\n</image_context>"
+                        logging.info("✅ Retrieved image context from vector database fallback")
+                    else:
+                        logging.info("📋 No image context available from any source")
+                        
+                except Exception as e:
+                    logging.error(f"❌ Failed to retrieve image context fallback: {e}")
+            else:
+                logging.info("📋 No user/session info for image context retrieval")
         
         # Combine contexts for comprehensive coverage
         combined = doc_context + image_context
@@ -1805,7 +1808,7 @@ Hãy phân tích một cách chi tiết và toàn diện để thông tin này c
                             image_analysis = result.text
                             analysis_results.append(image_analysis)
                             
-                            # Save to vector database using tool
+                            # Save to both vector database AND state for immediate use
                             save_result = save_image_context.invoke({
                                 "user_id": user_id,
                                 "thread_id": thread_id,
@@ -1857,7 +1860,12 @@ Hãy phân tích một cách chi tiết và toàn diện để thông tin này c
                 response = AIMessage(content=confirmation_msg)
             
             logging.info(f"✅ Image context extraction completed: {processed_images} images processed")
-            return {"messages": [response]}
+            
+            # Return both message and image contexts in state for immediate use
+            return {
+                "messages": [response],
+                "image_contexts": analysis_results if analysis_results else None
+            }
             
                     
         except Exception as e:

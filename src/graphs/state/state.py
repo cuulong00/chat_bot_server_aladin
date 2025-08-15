@@ -172,4 +172,5 @@ class RagState(State):
     skip_hallucination: bool = False
     summarized_messages: list[AnyMessage]
     context: dict[str, RunningSummary]
+    image_contexts: Optional[List[str]]  # Direct image analysis contexts for immediate use
     
