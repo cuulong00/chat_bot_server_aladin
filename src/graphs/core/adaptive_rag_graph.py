@@ -712,6 +712,11 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
                 "- **ĐỊNH DẠNG LINK THÂN THIỆN:** Không hiển thị 'https://' hoặc '/' ở cuối. Chỉ dùng tên domain ngắn gọn:\n"
                 "  ✅ ĐÚNG: 'Xem thêm tại: menu.tianlong.vn'\n"
                 "  ❌ SAI: 'Xem đầy đủ menu: https://menu.tianlong.vn/'\n"
+                "- **TRÁNH FORMAT THÔ TRONG MESSENGER:**\n"
+                "  ❌ SAI: '* **Mã đặt bàn —** 8aaa8e7c-3ac6...'\n"
+                "  ✅ ĐÚNG: '🎫 Mã đặt bàn: 8aaa8e7c-3ac6...'\n"
+                "  ❌ SAI: '* **Tên khách hàng:** Dương Trần Tuấn'\n"
+                "  ✅ ĐÚNG: '👤 Tên khách hàng: Dương Trần Tuấn'\n"
                 "- Dùng cấu trúc:\n"
                 "  • Tiêu đề khu vực (có emoji)\n"
                 "  • Các mục con theo dạng bullet: '• Tên món — Giá — Ghi chú' (dùng dấu '—' hoặc '-' để phân tách)\n"
@@ -809,11 +814,23 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
                 "  • **Nếu tool trả về success=False:** Xin lỗi khách hàng và yêu cầu gọi hotline 1900 636 886\n"
                 "\n"
                 "**KHI ĐẶT BÀN THÀNH CÔNG:**\n"
-                "✅ **ĐẶT BÀN THÀNH CÔNG!**\n"
-                "🎫 **Mã đặt bàn:** [ID từ tool]\n"
-                "📋 **Chi tiết:** [Hiển thị thông tin đặt bàn]\n"
-                "🍽️ **Chúc anh/chị và gia đình ngon miệng!**\n"
-                "📞 **Hỗ trợ:** 1900 636 886\n"
+                "Sử dụng format thân thiện với Messenger (KHÔNG dùng dấu * hoặc — thô):\n"
+                "\n"
+                "🎉 ĐẶT BÀN THÀNH CÔNG!\n"
+                "\n"
+                "📋 Thông tin đặt bàn của anh:\n"
+                "🎫 Mã đặt bàn: [ID từ tool]\n"
+                "� Tên khách hàng: [Tên]\n"
+                "📞 Số điện thoại: [SĐT]\n"
+                "🏢 Chi nhánh: [Tên chi nhánh]\n"
+                "📅 Ngày đặt bàn: [Ngày]\n"
+                "🕐 Giờ đặt bàn: [Giờ]\n"
+                "👥 Số lượng khách: [Số người]\n"
+                "📝 Ghi chú: [Ghi chú hoặc 'Không có']\n"
+                "\n"
+                "🍽️ Em chúc anh và gia đình có buổi tối vui vẻ tại nhà hàng Tian Long!\n"
+                "\n"
+                "📞 Nếu cần hỗ trợ thêm: 1900 636 886\n"
                 "\n"
                 "**KHI ĐẶT BÀN THẤT BẠI:**\n"
                 "❌ **Xin lỗi anh/chị!**\n"
@@ -914,6 +931,7 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
         
         # Get image context from state (direct access - no need to search)
         image_context = ""
+        combined_image_text = ""  # Initialize to avoid UnboundLocalError
         image_contexts = ctx.get("image_contexts", [])
         
         logging.info(f"🔍 STATE DEBUG - image_contexts: {image_contexts}")
@@ -933,10 +951,10 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
         else:
             logging.info("� No image contexts found in state")
         
-        print(f"combined_image_text:{combined_image_text}")
+        logging.debug(f"combined_image_text: {combined_image_text}")
         # Combine contexts for comprehensive coverage
         combined = doc_context + image_context
-        print(f"combined:{combined}")
+        logging.debug(f"combined: {combined}")
         # Log context composition for debugging
         doc_count = len([doc for doc in ctx.get("documents", []) if isinstance(doc, tuple)])
         has_image = bool(image_context.strip())
@@ -1069,6 +1087,11 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
                 "- **ĐỊNH DẠNG LINK THÂN THIỆN:** Khi cần hiển thị link, chỉ dùng tên domain ngắn gọn:\n"
                 "  ✅ ĐÚNG: 'Xem thêm tại: menu.tianlong.vn'\n"
                 "  ❌ SAI: 'Xem đầy đủ menu: https://menu.tianlong.vn/'\n"
+                "- **TRÁNH FORMAT THÔ TRONG MESSENGER:**\n"
+                "  ❌ SAI: '* **Mã đặt bàn —** 8aaa8e7c-3ac6...'\n"
+                "  ✅ ĐÚNG: '🎫 Mã đặt bàn: 8aaa8e7c-3ac6...'\n"
+                "  ❌ SAI: '* **Tên khách hàng:** Dương Trần Tuấn'\n"
+                "  ✅ ĐÚNG: '👤 Tên khách hàng: Dương Trần Tuấn'\n"
                 "- Sử dụng emoji phong phú để trang trí và làm nổi bật thông tin\n"
                 "- Tạo layout đẹp mắt với tiêu đề, phân đoạn rõ ràng\n"
                 "- Không có giới hạn về format - hãy tự do sáng tạo!\n"
@@ -1153,7 +1176,25 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
                 "  \n"
                 "  🎯 **BƯỚC 3 - Thực hiện đặt bàn:**\n"
                 "  • Chỉ khi khách hàng XÁC NHẬN rõ ràng thì mới gọi tool `book_table_reservation_test`\n"
-                "  • Thông báo kết quả đặt bàn và cung cấp mã booking (nếu có)\n"
+                "  • **FORMAT KẾT QUẢ ĐẶT BÀN THÀNH CÔNG (thân thiện Messenger):**\n"
+                "  \n"
+                "    🎉 ĐẶT BÀN THÀNH CÔNG!\n"
+                "    \n"
+                "    📋 Thông tin đặt bàn của anh:\n"
+                "    🎫 Mã đặt bàn: [ID từ tool]\n"
+                "    👤 Tên khách hàng: [Tên]\n"
+                "    📞 Số điện thoại: [SĐT]\n"
+                "    🏢 Chi nhánh: [Tên chi nhánh]\n"
+                "    📅 Ngày đặt bàn: [Ngày]\n"
+                "    🕐 Giờ đặt bàn: [Giờ]\n"
+                "    👥 Số lượng khách: [Số người]\n"
+                "    📝 Ghi chú: [Ghi chú hoặc 'Không có']\n"
+                "    \n"
+                "    🍽️ Em chúc anh và gia đình có buổi tối vui vẻ tại nhà hàng Tian Long!\n"
+                "    \n"
+                "    📞 Nếu cần hỗ trợ thêm: 1900 636 886\n"
+                "  \n"
+                "  • **TUYỆT ĐỐI KHÔNG** dùng format thô với dấu * hoặc — khi hiển thị kết quả\n"
                 "  \n"
                 "- **CÁC TÌNH HUỐNG ĐẶC BIỆT:**\n"
                 "  • **Thông tin chưa đủ:** Liệt kê TẤT CẢ thông tin thiếu trong MỘT tin nhắn, KHÔNG đặt bàn\n"
