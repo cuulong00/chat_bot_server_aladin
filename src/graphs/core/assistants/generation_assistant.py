@@ -65,7 +65,7 @@ class GenerationAssistant(BaseAssistant):
                         
             # ALWAYS create context from documents (ignore existing context)
             documents = ctx.get("documents", [])
-            print(f"get_combined_context->documents:{documents}")
+            
             if documents:
                 logging.info(f"📄 GENERATION DOCUMENTS ANALYSIS:")
                 context_parts = []
