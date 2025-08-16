@@ -173,5 +173,6 @@ class RagState(State):
     summarized_messages: list[AnyMessage]
     context: dict[str, RunningSummary]
     image_contexts: Optional[List[str]]  # Direct image analysis contexts for immediate use
-    summarizer:str
+    
+    summary:str
     
