@@ -20,11 +20,20 @@ class BaseAssistant:
         logging.debug(f"🔍 BaseAssistant.binding_prompt - START with state keys: {list(state.keys())}")
             
         running_summary = ""
-        if state.get("context") and isinstance(state["context"], dict):
-            summary_obj = state["context"].get("running_summary")
+        context_obj = state.get("context")
+        logging.info(f"🔍 CONTEXT DEBUG: context type={type(context_obj)}, value={context_obj}")
+        
+        if context_obj and isinstance(context_obj, dict):
+            summary_obj = context_obj.get("running_summary")
+            logging.info(f"🔍 RUNNING_SUMMARY DEBUG: summary_obj type={type(summary_obj)}, value={summary_obj}")
+            
             if summary_obj and hasattr(summary_obj, "summary"):
                 running_summary = summary_obj.summary
-                logging.debug(f"Running summary found for prompt: {running_summary[:100]}...")
+                logging.info(f"✅ FOUND RUNNING SUMMARY: {running_summary[:100]}...")
+            else:
+                logging.warning(f"⚠️ No summary attribute found in running_summary object")
+        else:
+            logging.warning(f"⚠️ No context dict found in state")
 
         # DIRECT ACCESS: user_data luôn có format dict với user_info và user_profile
         user_data = state.get("user", {})

@@ -14,7 +14,7 @@ class SuggestiveAssistant(BaseAssistant):
     """
     An assistant that provides a helpful suggestion when no relevant documents are found.
     """
-    def __init__(self, llm: Runnable, domain_context: str):
+    def __init__(self, llm: Runnable, domain_context: str, tools=None):
         prompt = ChatPromptTemplate.from_messages(
             [
                 (
@@ -37,6 +37,10 @@ class SuggestiveAssistant(BaseAssistant):
                     "- **Hotline:** 📞 1900 636 886\n"
                     "- **Website menu:** 🌐 menu.tianlong.vn\n"
                     "- Luôn format đẹp mắt với emoji khi cung cấp thông tin liên hệ\n\n"
+                    "🧠 **MEMORY TOOLS (bắt buộc):**\n"
+                    "- Nếu <UserProfile> trống → gọi `get_user_profile`\n"
+                    "- Khi khách tiết lộ sở thích mới → gọi `save_user_preference`\n"
+                    "- KHÔNG tiết lộ đang dùng tool\n\n"
                     "**ĐẶC BIỆT QUAN TRỌNG - XỬ LÝ PHÂN TÍCH HÌNH ẢNH:**\n"
                     "Nếu tin nhắn bắt đầu bằng '📸 **Phân tích hình ảnh:**' hoặc chứa nội dung phân tích hình ảnh:\n"
                     "- KHÔNG được nói 'em chưa thể xem được hình ảnh' vì hình ảnh ĐÃ được phân tích thành công\n"
@@ -88,7 +92,14 @@ class SuggestiveAssistant(BaseAssistant):
                 MessagesPlaceholder(variable_name="messages"),
             ]
         ).partial(current_date=datetime.now, domain_context=domain_context)
-        runnable = prompt | llm
+        
+        # Bind tools if provided
+        if tools:
+            llm_with_tools = llm.bind_tools(tools)
+            runnable = prompt | llm_with_tools
+        else:
+            runnable = prompt | llm
+            
         super().__init__(runnable)
 
     def binding_prompt(self, state: RagState) -> Dict[str, Any]:

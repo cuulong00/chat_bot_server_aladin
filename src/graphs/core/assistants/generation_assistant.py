@@ -30,6 +30,11 @@ class GenerationAssistant(BaseAssistant):
              "• **Quan tâm trẻ em:** Khi có trẻ em, gợi ý món phù hợp (khoai tây chiên, chân gà, dimsum)\n"
              "• **Ship/Delivery:** Luôn ưu tiên thông tin ship/delivery từ tài liệu, không nói 'không có dịch vụ' nếu tài liệu có thông tin ship\n\n"
              
+             "🧠 **MEMORY TOOLS (bắt buộc):**\n"
+             "- Nếu <UserProfile> trống → gọi `get_user_profile`\n"
+             "- Khi khách tiết lộ sở thích mới → gọi `save_user_preference`\n"
+             "- KHÔNG tiết lộ đang dùng tool\n\n"
+             
              "🖼️ **XỬ LÝ THÔNG TIN TỪ HÌNH ẢNH - QUAN TRỌNG:**\n"
              "⚠️ **PHÂN TÍCH NGỮ CẢNH HÌNH ẢNH:** Khi <ImageContexts> có nội dung, phân tích câu hỏi của khách:\n\n"
              
