@@ -151,36 +151,6 @@ def should_reset_dialog_state(state: RagState) -> bool:
     return False
 
 
-def should_summarize_conversation(state: RagState) -> bool:
-    """
-    FIXED: Determine if conversation should be summarized based on message count and token count.
-    Only summarize when conversation gets long to prevent summary content replacing AI responses.
-    """
-    messages = state.get("messages", [])
-    
-    # Don't summarize for short conversations (avoid summary replacing actual responses)
-    if len(messages) <= 8:  # Increased threshold - only summarize longer conversations
-        return False
-        
-    # Check token count to determine if summarization is needed
-    total_tokens = 0
-    for message in messages:
-        content = message.content if hasattr(message, 'content') else str(message)
-        if isinstance(content, str):
-            total_tokens += len(content.split()) * 1.3  # Rough token estimation
-        elif isinstance(content, list):
-            for item in content:
-                if isinstance(item, dict) and 'text' in item:
-                    total_tokens += len(str(item['text']).split()) * 1.3
-    
-    # Only summarize if conversation is getting long (more than ~2000 tokens)
-    should_summarize = total_tokens > 2500
-    
-    logging.info(f"🧠 Summarization decision: messages={len(messages)}, tokens≈{int(total_tokens)}, summarize={should_summarize}")
-    
-    return should_summarize
-
-
 
 
 
@@ -1189,12 +1159,9 @@ Hãy phân tích một cách chi tiết và toàn diện để thông tin này c
     # Restore entry point như code cũ
     graph.set_entry_point("user_info")
 
-    # Restore flow từ user_info như code cũ
-    graph.add_conditional_edges(
-        "user_info",
-        lambda state: "summarize" if should_summarize_conversation(state) else "continue",
-        {"summarize": "summarizer", "continue": "router"},
-    )
+    # Direct flow: user_info -> summarizer -> router
+    # Let SummarizationNode handle its own logic internally
+    graph.add_edge("user_info", "summarizer")
     graph.add_edge("summarizer", "router")
     graph.add_conditional_edges(
         "router",
