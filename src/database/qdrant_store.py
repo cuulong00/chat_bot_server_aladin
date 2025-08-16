@@ -162,7 +162,28 @@ class QdrantStore:
                     must=[FieldCondition(key="namespace", match=MatchValue(value=namespace))]
                 ),
             )
-            print(f"search->search_result:{search_result}")
+            # Print concise summary of results without embeddings or full payloads
+            try:
+                summary = []
+                for i, sp in enumerate(search_result, 1):
+                    payload = getattr(sp, "payload", {}) or {}
+                    value = payload.get("value") if isinstance(payload, dict) else None
+                    content = ""
+                    if isinstance(value, dict):
+                        content = value.get("content") or value.get("text") or ""
+                    preview = (content[:200] + "...") if isinstance(content, str) and len(content) > 200 else content
+                    entry = {
+                        "#": i,
+                        "id": getattr(sp, "id", None),
+                        "score": getattr(sp, "score", None),
+                        "namespace": payload.get("namespace") if isinstance(payload, dict) else None,
+                        "key": payload.get("key") if isinstance(payload, dict) else None,
+                        "content_preview": preview,
+                    }
+                    summary.append(entry)
+                print(f"search->results_summary:{summary}")
+            except Exception as _e:
+                print(f"search->results_summary:<unavailable> (error summarizing: {_e})")
             results: List[Tuple[str, Dict[str, Any], float]] = []
             for sp in search_result:
                 payload = sp.payload
