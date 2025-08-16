@@ -44,6 +44,15 @@ Key signals include: {', '.join(signals[:10])}...
 
 """
             base_prompt += boost_section
+        
+        # Add specific boost for delivery/shipping queries
+        if "ship" in query.lower() or "mang về" in query.lower() or "giao hàng" in query.lower():
+            delivery_boost = """
+SPECIAL RELEVANCE BOOST FOR DELIVERY/TAKEOUT QUERIES: Documents containing delivery/takeout information are highly relevant.
+Delivery signals include: "ship", "mang về", "giao hàng", "đặt ship", "thu thập thông tin đặt ship", "xác nhận thông tin đơn hàng", "hoàn tất đặt ship", "địa chỉ", "giờ nhận hàng", "phí ship", "app giao hàng".
+
+"""
+            base_prompt += delivery_boost
     
     base_prompt += """Does the document mention keywords or topics related to the user's question or the conversation context?
 For example, if the question is about today's date, any document discussing calendars, dates, or 'today' is relevant.

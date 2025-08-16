@@ -46,7 +46,11 @@ class DocGraderAssistant(BaseAssistant):
                     "RELEVANCE BOOST FOR ADDRESS QUERIES: If the user asks about 'địa chỉ', 'ở đâu', 'chi nhánh', 'branch', 'hotline', documents listing addresses, branches, cities, or hotline numbers are relevant. Lines that start with branch names or include street names/cities should be considered relevant.\n"
                     "RELEVANCE BOOST FOR PROMOTION/DISCOUNT QUERIES: If the user asks about 'ưu đãi', 'khuyến mãi', 'giảm giá', 'chương trình', 'thành viên', 'discount', 'promotion', 'offer', 'program' then any document containing promotion signals is relevant.\n"
 
-                    "Promotion signals include words like 'ưu đãi', 'khuyến mãi', 'giảm', '%', 'thành viên', 'thẻ', 'BẠC', 'VÀNG', 'KIM CƯƠNG', 'sinh nhật', 'Ngày hội', 'chương trình', or membership-related content.\n"
+                    "Promotion signals include words like 'ưu đãi', 'khuyến mãi', 'giảm', '%', 'thành viên', 'thẻ', 'BẠC', 'VÀNG', 'KIM CƯƠNG', 'sinh nhật', 'Ngày hội', 'chương trình', or membership-related content.\n\n"
+                    
+                    "RELEVANCE BOOST FOR DELIVERY/TAKEOUT QUERIES: If the user asks about 'ship', 'mang về', 'giao hàng', 'delivery', 'takeout', 'đặt ship', 'ship về', 'order online', 'online order' then any document containing delivery/takeout signals is relevant.\n"
+                    
+                    "Delivery/takeout signals include words like 'ship', 'mang về', 'giao hàng', 'delivery', 'đặt ship', 'thu thập thông tin đặt ship', 'xác nhận thông tin đơn hàng', 'hoàn tất đặt ship', 'địa chỉ giao hàng', 'giờ nhận hàng', 'phí ship', 'app giao hàng', or shipping-related content.\n"
                     "Does the document mention keywords or topics related to the user's question or the conversation context? "
                     "For example, if the question is about today's date, any document discussing calendars, dates, or 'today' is relevant.\n"
                     "Consider both the current question AND the conversation history when determining relevance.\n"
