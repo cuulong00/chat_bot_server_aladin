@@ -4,6 +4,13 @@ import copy
 import time
 import os
 from pathlib import Path
+import copy
+import re
+import asyncio
+import concurrent.futures
+import httpx
+import os
+import google.generativeai as genai
 
 from typing import List, TypedDict, Annotated, Literal
 
@@ -187,6 +194,41 @@ def should_summarize_conversation(state: RagState) -> bool:
 
 
 
+
+
+def clean_documents_remove_embeddings(documents):
+    """
+    Remove embedding vectors from documents to reduce memory usage and token consumption.
+    Keeps only content text and metadata, removes embedding vectors entirely.
+    
+    Args:
+        documents: List of tuples in format (key, value_dict, score)
+    
+    Returns:
+        List of tuples with embeddings removed from value_dict
+    """
+    if not documents:
+        return documents
+        
+    cleaned_documents = []
+    for doc in documents:
+        if isinstance(doc, tuple) and len(doc) >= 2:
+            key, value_dict, *rest = doc
+            if isinstance(value_dict, dict):
+                # Create cleaned copy without embedding
+                cleaned_value = {k: v for k, v in value_dict.items() if k != "embedding"}
+                # Reconstruct tuple with cleaned value
+                cleaned_doc = (key, cleaned_value, *rest)
+                cleaned_documents.append(cleaned_doc)
+            else:
+                # Keep doc as-is if value is not dict
+                cleaned_documents.append(doc)
+        else:
+            # Keep doc as-is if format is unexpected
+            cleaned_documents.append(doc)
+    
+    logging.info(f"🧹 Cleaned {len(documents)} documents: removed embedding vectors, kept content text only")
+    return cleaned_documents
 
 
 def truncate_for_logging(data, max_len=250):
@@ -394,8 +436,7 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
             }
 
         try:
-            logging.debug(f"retrieve->question -> {question}")
-            
+                       
             # Use QueryClassifier for clean, maintainable query classification
             classifier = QueryClassifier(domain="restaurant")
             classification = classifier.classify_query(question)
@@ -405,12 +446,8 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
 
             # Determine namespace: default to domain namespace, switch to 'faq' for FAQ queries
             default_namespace = DOMAIN.get("namespace", "default")
-            faq_namespace = DOMAIN.get("faq_namespace", "faq")
-            primary = classification.get("primary_category")
-            namespace = faq_namespace if primary == "faq" else default_namespace
-            logging.info(
-                f"Vector search namespace selected: {namespace} (default={default_namespace}, primary={primary})"
-            )
+            namespace = "faq" if classification.get("primary_category") == "faq" else default_namespace
+            logging.info(f"Vector search namespace selected: {namespace} (default={default_namespace}, primary={classification.get('primary_category')})")
 
             # Detailed logging for retrieval parameters
             try:
@@ -425,97 +462,15 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
                 question,
             )
 
-            # Build location-aware multi-attempt search strategy
-            search_attempts_plan = [(namespace, question, "primary")]  # (ns, query, label)
-            expanded_query = None
-            if primary in {"location", "address", "branch", "hotline"}:
-                # Append strong location keywords to help vector search
-                expanded_keywords = (
-                    " địa chỉ chi nhánh branch address hotline Hà Nội Hải Phòng TP. Hồ Chí Minh HCM Sài Gòn"
-                    " Times City Vincom Lê Văn Sỹ Tian Long"
-                )
-                expanded_query = (question or "").strip() + expanded_keywords
-                # Try expanded query in default namespace first
-                search_attempts_plan.append((default_namespace, expanded_query, "expanded_default"))
-                # If faq namespace exists, try there as a last resort
-                if faq_namespace:
-                    search_attempts_plan.append((faq_namespace, expanded_query, "expanded_faq"))
-
-            chosen_docs = []
-            chosen_label = "primary"
-            chosen_ns = namespace
-            branch_signal_found = False
-
-            def _has_branch_signal(content: str) -> bool:
-                low = (content or "").lower()
-                return any(k in low for k in ["chi nhánh", "địa chỉ", "branch", "address", "hotline", "cơ sở"])  # 'cơ sở' often appears with branches
-
-            # Execute attempts until we see any branch/address signals for location-type queries
-            for ns_attempt, query_attempt, label in search_attempts_plan:
-                logging.info(
-                    "Vector search params: collection=%s, namespace=%s, limit=%s, query=%.120s",
-                    collection_name,
-                    ns_attempt,
-                    limit,
-                    query_attempt,
-                )
-                docs = retriever.search(namespace=ns_attempt, query=query_attempt, limit=limit)
-                logging.info(f"Retrieved {len(docs)} documents.")
-
-                # CRITICAL: Log full text content for each retrieved document (no embeddings)
-                logging.info("🔍 RETRIEVED DOCUMENTS (full text, no embeddings):")
-                local_branch_signal = False
-                for i, d in enumerate(docs):
-                    try:
-                        if isinstance(d, tuple) and len(d) >= 3 and isinstance(d[1], dict):
-                            key, value, score = d[0], d[1], d[2]
-                            content = value.get("content") or value.get("text") or ""
-                            if not isinstance(content, str):
-                                content = str(content)
-                            score_str = f"{score:.4f}" if isinstance(score, (int, float)) else str(score)
-                            logging.info(f"\n— Doc {i+1} | key={key} | score={score_str}\n{content}")
-                            if _has_branch_signal(content):
-                                logging.info(f"   🎯 BRANCH/ADDRESS SIGNAL detected in Doc {i+1}")
-                                local_branch_signal = True
-                        else:
-                            logging.info(f"— Doc {i+1} (raw): {str(d)}")
-                    except Exception as _e:
-                        logging.debug(f"retrieve logging skipped for doc {i+1}: {_e}")
-
-                # Choose this attempt if it matches location intent and we saw any signals
-                if primary in {"location", "address", "branch", "hotline"} and local_branch_signal:
-                    chosen_docs = docs
-                    chosen_label = label
-                    chosen_ns = ns_attempt
-                    branch_signal_found = True
-                    logging.info(f"✅ Using '{label}' retrieval attempt (namespace={ns_attempt}) due to branch/address signals")
-                    break
-
-                # For non-location intents, just take the first attempt
-                if primary not in {"location", "address", "branch", "hotline"}:
-                    chosen_docs = docs
-                    chosen_label = label
-                    chosen_ns = ns_attempt
-                    break
-
-                # Otherwise, keep searching next attempts
-
-            # If nothing selected yet (e.g., location but no signals), use the first attempt's results
-            if not chosen_docs:
-                # Run the first attempt again to obtain docs (if not already captured)
-                ns_attempt, query_attempt, label = search_attempts_plan[0]
-                if label != chosen_label:  # ensure we have docs
-                    chosen_docs = retriever.search(namespace=ns_attempt, query=query_attempt, limit=limit)
-                chosen_label = label
-                chosen_ns = ns_attempt
-                logging.info(f"ℹ️ Falling back to '{label}' retrieval attempt (namespace={ns_attempt})")
+            documents = retriever.search(namespace=namespace, query=question, limit=limit)
+            logging.info(f"Retrieved {len(documents)} documents.")
             
+            # Clean documents: remove embedding vectors to save memory and reduce token usage
+            cleaned_documents = clean_documents_remove_embeddings(documents)
+            print(f"Cleaned documents: {cleaned_documents}")
             return {
-                "documents": chosen_docs,
+                "documents": cleaned_documents,
                 "search_attempts": state.get("search_attempts", 0) + 1,
-                "retrieval_variant": chosen_label,
-                "retrieval_namespace": chosen_ns,
-                "retrieval_branch_signal": branch_signal_found,
             }
         except Exception as e:
             user_id = state.get("user", {}).get("user_info", {}).get("user_id", "unknown")
@@ -739,10 +694,12 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
             # LangChain AIMessage typically; support dict for safety
             content = getattr(generation, "content", None)
             if isinstance(content, str) and (not hasattr(generation, "tool_calls") or not generation.tool_calls):
-                formatted = beautify_prices_if_any(content)
-                if formatted != content:
-                    from langchain_core.messages import AIMessage
-                    generation = AIMessage(content=formatted, additional_kwargs=getattr(generation, "additional_kwargs", {}))
+                # TODO: beautify_prices_if_any function missing - commented out temporarily
+                # formatted = beautify_prices_if_any(content)
+                # if formatted != content:
+                #     from langchain_core.messages import AIMessage
+                #     generation = AIMessage(content=formatted, additional_kwargs=getattr(generation, "additional_kwargs", {}))
+                pass
         except Exception as _fmt_err:
             logging.debug(f"generate post-format skipped: {_fmt_err}")
 
