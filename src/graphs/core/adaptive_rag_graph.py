@@ -315,30 +315,6 @@ def create_adaptive_rag_graph(
     
     all_tools = tools + [web_search_tool] + memory_tools + image_context_tools + validation_tools
 
-    # === Chains for Summarization and Contextualization ===
-
-    summarizer_prompt = ChatPromptTemplate.from_messages(
-        [
-            MessagesPlaceholder(variable_name="messages"),
-            (
-                "user",
-                "Concisely summarize the conversation above. Extract key information, user preferences, and decisions. The summary will be used as context for the next turn. Keep the summary in the original language of the conversation.",
-            ),
-        ]
-    )
-    summarizer_chain = summarizer_prompt | llm_summarizer
-
-    contextualize_q_system_prompt = """Given a chat history (which may include a summary of earlier messages) and the latest user question, \
-formulate a standalone question which can be understood without the chat history. Do NOT answer the question, \
-just reformulate it if needed and otherwise return it as is. Keep the question in its original language."""
-    contextualize_q_prompt = ChatPromptTemplate.from_messages(
-        [
-            ("system", contextualize_q_system_prompt),
-            MessagesPlaceholder(variable_name="messages"),
-            ("human", "Rephrase the last user question to be a standalone question."),
-        ]
-    )
-    contextualize_q_chain = contextualize_q_prompt | llm_contextualize
 
     # === Assistants and Runnables ===
 
