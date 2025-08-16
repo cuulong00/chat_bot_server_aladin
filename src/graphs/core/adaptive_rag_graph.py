@@ -41,6 +41,7 @@ from src.utils.query_classifier import QueryClassifier
 from src.tools.memory_tools import save_user_preference, get_user_profile
 from src.tools.image_context_tools import save_image_context, clear_image_context
 from src.tools.image_analysis_tool import analyze_image
+from src.tools.booking_validation_tool import validate_booking_info
 from src.graphs.state.state import RagState
 from src.database.qdrant_store import QdrantStore
 from src.graphs.core.assistants.router_assistant import RouterAssistant, RouteQuery
@@ -310,8 +311,9 @@ def create_adaptive_rag_graph(
     web_search_tool = TavilySearch(max_results=5)
     memory_tools = [get_user_profile, save_user_preference]
     image_context_tools = [save_image_context, clear_image_context]
+    validation_tools = [validate_booking_info]
     
-    all_tools = tools + [web_search_tool] + memory_tools + image_context_tools
+    all_tools = tools + [web_search_tool] + memory_tools + image_context_tools + validation_tools
 
     # === Chains for Summarization and Contextualization ===
 
@@ -359,7 +361,7 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
     hallucination_grader_assistant = HallucinationGraderAssistant(llm_hallucination_grader, domain_context)
 
     # 7. Direct Answer Assistant
-    direct_answer_assistant = DirectAnswerAssistant(llm_generate_direct, domain_context, memory_tools + tools + image_context_tools)
+    direct_answer_assistant = DirectAnswerAssistant(llm_generate_direct, domain_context, memory_tools + tools + image_context_tools + validation_tools)
 
     # 8. Document/Image Processing Assistant (Multimodal)
     document_processing_assistant = DocumentProcessingAssistant(llm_generate_direct, image_context_tools, domain_context)
@@ -1216,7 +1218,7 @@ Hãy phân tích một cách chi tiết và toàn diện để thông tin này c
     graph.add_node("generate_direct", generate_direct_node)
     graph.add_node("process_document", process_document_node)
     graph.add_node("tools", ToolNode(tools=all_tools))
-    graph.add_node("direct_tools", ToolNode(tools=memory_tools + tools + image_context_tools))
+    graph.add_node("direct_tools", ToolNode(tools=memory_tools + tools + image_context_tools + validation_tools))
 
     # --- Define Graph Flow ---
     # Restore entry point như code cũ
