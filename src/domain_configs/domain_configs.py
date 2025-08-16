@@ -57,24 +57,22 @@ WOLT_FOOD = {
     "embedding_model": "models/text-embedding-004",
     "output_dimensionality_query": 512
 }
-
+DOMAIN1 = {
+        "domain_context": "nhà hàng lẩu bò tươi Tian Long",
+        "domain_instructions": "Hỗ trợ khách hàng về thực đơn, địa chỉ, ưu đãi và đặt bàn",
+        "domain_examples": [
+            "Thực đơn có những món gì?",
+            "Địa chỉ các chi nhánh?", 
+            "Có ưu đãi gì không?",
+            "Tôi muốn đặt bàn"
+        ],
+        "collection_name": "accounting_store"
+    }
 # Marketing domain configuration for unified 'chatbot' graph
 MARKETING_DOMAIN = {
     # Re-purposed for Tian Long restaurant virtual assistant (Vy)
-    "domain_context": (
-        "Tian Long restaurant, Vietnamese cuisine, menu, dishes, dish availability, pricing, set menu, promotions, branches, "
-        "locations, reservation, booking, table holding policy, opening hours, contact information, seating capacity, dietary notes, "
-        "parking, customer service"
-    ),
-    "domain_instructions": (
-        "Act as a customer support & reservation assistant (name: Vy). Always answer using retrieved restaurant data when available. "
-        "If data is missing, ask concise clarifying questions; do NOT invent menu items, prices, promotions, or policies. "
-        "Prioritize: 1) Menu / dishes & prices; 2) Reservation details (name, phone, party size adults/children, date, time, branch); "
-        "3) Branch information (address, hours, contact); 4) Current promotions if not already shared. "
-        "If user intent implies booking but info incomplete, politely collect missing fields. "
-        "Keep answers concise, emoji-friendly (Messenger safe), and in the user's language (mostly Vietnamese). "
-        "Confirm table hold (15 minutes before scheduled time) only after all reservation fields are present."
-    ),
+    "domain_context": "nhà hàng lẩu bò tươi Tian Long",
+    "domain_instructions": "Hỗ trợ khách hàng về thực đơn, địa chỉ, ưu đãi và đặt bàn",
     "domain_examples": [
         "Menu hôm nay có những món gì?",
         "Giá set menu cho 4 người là bao nhiêu?",
