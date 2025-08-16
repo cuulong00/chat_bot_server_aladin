@@ -492,25 +492,10 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
             # Use dynamic retrieval limit based on classification
             limit = classification["retrieval_limit"]
 
-            # Determine namespace: default to domain namespace; allow category-specific overrides via env/DOMAIN
+            # Determine namespace: default to domain namespace, switch to 'faq' for FAQ queries
             default_namespace = DOMAIN.get("namespace", "default")
-            primary_category = classification.get("primary_category")
-
-            # Env/DOMAIN overrides per category (optional)
-            faq_ns = os.getenv("FAQ_NAMESPACE") or DOMAIN.get("faq_namespace")
-            location_ns = os.getenv("LOCATION_NAMESPACE") or DOMAIN.get("location_namespace")
-
-            if primary_category == "faq" and faq_ns:
-                namespace = faq_ns
-            elif primary_category == "location" and location_ns:
-                namespace = location_ns
-            else:
-                # Fallback to default when no override is configured
-                namespace = default_namespace if primary_category != "faq" else (faq_ns or default_namespace)
-
-            logging.info(
-                f"Vector search namespace selected: {namespace} (default={default_namespace}, primary={primary_category}, faq_ns={bool(faq_ns)}, location_ns={bool(location_ns)})"
-            )
+            namespace = "faq" if classification.get("primary_category") == "faq" else default_namespace
+            logging.info(f"Vector search namespace selected: {namespace} (default={default_namespace}, primary={classification.get('primary_category')})")
 
             # Detailed logging for retrieval parameters
             try:
@@ -615,11 +600,8 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
                 filtered_docs.append(d)
                 continue
         
-        # Only include remaining (ungraded) documents when we already have some graded-relevant docs
-        if filtered_docs:
-            filtered_docs.extend(remaining_docs)
-        else:
-            logging.info("No documents passed grading; skipping auto-include of remaining docs to avoid noise.")
+        # Include remaining documents without grading to ensure we have enough content
+        filtered_docs.extend(remaining_docs)
         
         # DETAILED LOGGING for documents passed to next node
         logging.info(f"📋 GRADE_DOCUMENTS OUTPUT ANALYSIS:")
