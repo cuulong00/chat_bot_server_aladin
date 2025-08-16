@@ -75,6 +75,73 @@ except ImportError as _langmem_err:
         f"❌ LangMem unavailable ({_langmem_err}). Short-term summarization disabled."
         " Please install compatible 'langmem' & 'langgraph' versions."
     )
+    
+    # Create mock classes for fallback
+    class MockRunningSummary:
+        def __init__(self, max_tokens: int = 1200):
+            self.max_tokens = max_tokens
+            self.summary = ""
+            
+        def append(self, text: str):
+            # Simple append - in real usage this would be summarized
+            if len(self.summary) + len(text) > self.max_tokens:
+                # Truncate older content
+                self.summary = self.summary[-(self.max_tokens//2):] + text
+            else:
+                self.summary += text
+                
+    class MockSummarizationNode:
+        def __init__(self, token_counter, model, max_tokens=1200, 
+                     max_tokens_before_summary=1000, max_summary_tokens=800):
+            self.token_counter = token_counter
+            self.model = model
+            self.max_tokens = max_tokens
+            self.max_tokens_before_summary = max_tokens_before_summary
+            self.max_summary_tokens = max_summary_tokens
+            logging.info("📝 MockSummarizationNode initialized")
+            
+        def __call__(self, state: "RagState", config=None):
+            """Mock summarization - just manage context without LLM summarization"""
+            import logging
+            logging.info("📝 MockSummarizationNode processing...")
+            
+            messages = state.get("messages", [])
+            thread_id = state.get("thread_id", "default")
+            context = state.get("context", {})
+            
+            # Initialize context for thread if not exists
+            if thread_id not in context:
+                context[thread_id] = MockRunningSummary(self.max_tokens)
+                
+            # Simple token counting approximation
+            total_tokens = sum(len(str(msg.content)) // 4 for msg in messages if hasattr(msg, 'content'))
+            
+            logging.info(f"📝 MockSummarizer: {len(messages)} messages, ~{total_tokens} tokens")
+            
+            # If messages are too long, keep only recent ones  
+            if total_tokens > self.max_tokens_before_summary and len(messages) > 3:
+                # Keep last 3 messages
+                recent_messages = messages[-3:]
+                # Store summary of older messages
+                older_messages_text = " ".join([str(msg.content) for msg in messages[:-3] if hasattr(msg, 'content')])
+                context[thread_id].append(f"[Older conversation: {older_messages_text[:200]}...]")
+                
+                logging.info(f"📝 MockSummarizer: Trimmed to {len(recent_messages)} recent messages")
+                
+                return {
+                    "messages": recent_messages,
+                    "context": context,
+                    "summary": f"Conversation with {len(messages)} total messages, keeping {len(recent_messages)} recent ones"
+                }
+            else:
+                logging.info(f"📝 MockSummarizer: Messages within limit, no summarization needed")
+                return {
+                    "context": context,
+                    "summary": f"Conversation with {len(messages)} messages, no summarization needed"
+                }
+    
+    SummarizationNode = MockSummarizationNode
+    RunningSummary = MockRunningSummary
 
 
 # --- State Reset and Management Functions ---
@@ -1128,14 +1195,24 @@ Hãy phân tích một cách chi tiết và toàn diện để thông tin này c
     graph = StateGraph(RagState)
 
     # Create summarization node only if LangMem is available
-   
-    summarization_node = SummarizationNode(
-        token_counter=count_tokens_approximately,
-        model=llm_summarizer,
-        max_tokens=1200,
-        max_tokens_before_summary=1000,
-        max_summary_tokens=800,
-    )
+    if _LANGMEM_AVAILABLE and SummarizationNode is not None:
+        summarization_node = SummarizationNode(
+            token_counter=count_tokens_approximately,
+            model=llm_summarizer,
+            max_tokens=1200,
+            max_tokens_before_summary=1000,
+            max_summary_tokens=800,
+        )
+        logging.info("✅ SummarizationNode created successfully")
+    else:
+        # Fallback: create a simple pass-through node
+        def simple_summarizer_node(state: RagState, config=None):
+            logging.warning("🚨 Using fallback summarizer (LangMem unavailable)")
+            # Just pass through without summarization
+            return {}
+        
+        summarization_node = simple_summarizer_node
+        logging.warning("⚠️ Using fallback summarization node (LangMem unavailable)")
 
 
     # Add nodes to graph
