@@ -170,9 +170,7 @@ class RagState(State):
     messages: Annotated[list[BaseMessage], add_messages]
     hallucination_score: str
     skip_hallucination: bool = False
-    summarized_messages: list[AnyMessage]
-    context: dict[str, RunningSummary]
-    image_contexts: Optional[List[str]]  # Direct image analysis contexts for immediate use
-    
-    summary:str
+    # summarized_messages: list[AnyMessage]  # DEPRECATED: This was redundant with messages
+    summary: dict[str, RunningSummary]  # Real conversation summary via LangMem
+    image_contexts: Optional[List[str]]  # Direct image analysis contexts for immediate use 
     
