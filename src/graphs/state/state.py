@@ -171,6 +171,6 @@ class RagState(State):
     hallucination_score: str
     skip_hallucination: bool = False
     # summarized_messages: list[AnyMessage]  # DEPRECATED: This was redundant with messages
-    summary: dict[str, RunningSummary]  # Real conversation summary via LangMem
+    context: dict[str, RunningSummary]  # Real conversation summary via LangMem
     image_contexts: Optional[List[str]]  # Direct image analysis contexts for immediate use 
     
