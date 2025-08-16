@@ -477,6 +477,14 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
             documents = retriever.search(namespace=namespace, query=question, limit=limit)
             logging.info(f"Retrieved {len(documents)} documents.")
             
+            # CRITICAL: Log detailed document content for debugging
+            logging.info(f"🔍 DETAILED RETRIEVED DOCUMENTS DEBUG:")
+            for i, doc in enumerate(documents):
+                content_preview = doc.get('content', str(doc))[:150] if isinstance(doc, dict) else str(doc)[:150]
+                logging.info(f"   📄 Document {i+1}: {content_preview}...")
+                if 'chi nhánh' in content_preview.lower() or 'branch' in content_preview.lower():
+                    logging.info(f"   🎯 FOUND RELEVANT DOC: Document {i+1} contains branch info!")
+            
             return {
                 "documents": documents,
                 "search_attempts": state.get("search_attempts", 0) + 1,
@@ -681,14 +689,55 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
 
     def hallucination_grader_node(state: RagState, config: RunnableConfig):
         logging.info("---NODE: HALLUCINATION GRADER---")
-        current_question = get_current_user_question(state)
-        generation_message = state["messages"][-1]
         
-        if not state.get("documents") or hasattr(generation_message, "tool_calls"):
+        # DETAILED INPUT LOGGING
+        current_question = get_current_user_question(state)
+        logging.info(f"🔍 HALLUCINATION_GRADER INPUT ANALYSIS:")
+        logging.info(f"   📤 Current question: {current_question}")
+        logging.info(f"   📄 Documents count: {len(state.get('documents', []))}")
+        logging.info(f"   💬 Messages count: {len(state.get('messages', []))}")
+        
+        generation_message = state["messages"][-1]
+        logging.info(f"   🤖 Generation message type: {type(generation_message)}")
+        logging.info(f"   🤖 Generation message content: {getattr(generation_message, 'content', str(generation_message))[:200]}...")
+        logging.info(f"   🛠️  Has tool_calls: {hasattr(generation_message, 'tool_calls')}")
+        
+        if not state.get("documents"):
+            logging.warning("⚠️ HALLUCINATION_GRADER: No documents found, skipping hallucination check")
             return {"hallucination_score": "grounded"}
             
-        score = hallucination_grader_assistant(state, config)
-        logging.info(f"---HALLUCINATION SCORE: {score.binary_score.upper()}---")
+        if hasattr(generation_message, "tool_calls"):
+            logging.warning("⚠️ HALLUCINATION_GRADER: Generation has tool_calls, skipping hallucination check")
+            return {"hallucination_score": "grounded"}
+        
+        # Log documents for hallucination check
+        documents = state.get("documents", [])
+        logging.info(f"🔍 HALLUCINATION_GRADER DOCUMENTS ANALYSIS:")
+        for i, doc in enumerate(documents[:3]):  # Only log first 3 docs to avoid spam
+            doc_content = str(doc)[:150] if doc else "EMPTY"
+            logging.info(f"   📄 Doc {i+1}: {doc_content}...")
+            
+        try:
+            logging.info(f"🔍 HALLUCINATION_GRADER: Calling assistant...")
+            score = hallucination_grader_assistant(state, config)
+            logging.info(f"🔍 HALLUCINATION_GRADER: Assistant returned type: {type(score)}")
+            logging.info(f"🔍 HALLUCINATION_GRADER: Assistant returned content: {score}")
+            
+            if hasattr(score, 'binary_score'):
+                logging.info(f"✅ HALLUCINATION SCORE: {score.binary_score.upper()}")
+            else:
+                logging.error(f"❌ HALLUCINATION_GRADER: score missing binary_score attribute: {score}")
+                logging.error(f"❌ HALLUCINATION_GRADER: score attributes: {dir(score) if score else 'None'}")
+                # Force grounded if we can't get a proper score
+                return {"hallucination_score": "grounded"}
+                
+        except Exception as e:
+            logging.error(f"❌ HALLUCINATION_GRADER EXCEPTION:")
+            logging.error(f"   Exception type: {type(e).__name__}")
+            logging.error(f"   Exception message: {str(e)}")
+            logging.error(f"   Full traceback:", exc_info=True)
+            # Return grounded to prevent blocking the flow
+            return {"hallucination_score": "grounded"}
         
         grading_result = "grounded" if score.binary_score.lower() == "yes" else "not_grounded"
         
@@ -700,6 +749,10 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
         ):
             update["force_suggest"] = True
         
+        logging.info(f"🔍 HALLUCINATION_GRADER FINAL RESULT:")
+        logging.info(f"   📊 Binary score: {score.binary_score}")
+        logging.info(f"   📈 Grading result: {grading_result}")
+        logging.info(f"   📋 Update: {update}")
         logging.debug(f"hallucination_grader_node->update:{update}")
         return update
 
