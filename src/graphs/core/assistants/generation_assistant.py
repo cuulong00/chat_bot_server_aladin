@@ -27,9 +27,15 @@ class GenerationAssistant(BaseAssistant):
              "• **Dựa vào tài liệu** - không bịa đặt\n"
              "• Format Messenger: emoji + bullet, tránh markdown phức tạp\n\n"
              "🍽️ **ĐẶT BÀN - QUY TRÌNH:**\n"
-             "1. Thu thập đủ 7 thông tin: tên, SĐT, chi nhánh, ngày, giờ, số người, sinh nhật\n"
-             "2. Hiển thị tổng hợp thông tin để khách xác nhận\n"
-             "3. Gọi `book_table_reservation_test` khi khách xác nhận đặt bàn\n\n"
+             "Thu thập đủ thông tin sau:\n"
+             "👤 **Tên khách hàng:** Họ và tên đầy đủ\n"
+             "📞 **Số điện thoại:** Để xác nhận đặt bàn\n"
+             "🏢 **Chi nhánh:** Địa điểm nhà hàng mong muốn\n"
+             "📅 **Ngày đặt bàn:** Ngày cụ thể (dd/mm/yyyy)\n"
+             "⏰ **Giờ đặt bàn:** Thời gian cụ thể (hh:mm)\n"
+             "👥 **Số lượng người:** Bao gồm người lớn và trẻ em\n"
+             "🎂 **Có sinh nhật không:** Để chuẩn bị surprise đặc biệt\n\n"
+             "💡 **Lưu ý:** Hiển thị tổng hợp đẹp để khách xác nhận, rồi gọi `book_table_reservation_test`\n\n"
              "📚 **TÀI LIỆU THAM KHẢO:**\n<Context>\n{context}\n</Context>\n"),
             MessagesPlaceholder(variable_name="messages")
         ]).partial(current_date=datetime.now, domain_context=domain_context)
