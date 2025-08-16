@@ -18,7 +18,7 @@ class BaseAssistant:
     def binding_prompt(self, state: RagState) -> dict[str, Any]:
         """Binds state to the prompt, adding necessary context."""
         logging.debug(f"🔍 BaseAssistant.binding_prompt - START with state keys: {list(state.keys())}")
-        print(f"--------------------binding_prompt->state: {state}")
+        
         running_summary = ""
         if state.get("context") and isinstance(state["context"], dict):
             summary_obj = state["context"].get("running_summary")
@@ -28,22 +28,32 @@ class BaseAssistant:
 
         # FIXED: Tương thích với code cũ - state.user chứa user_info và user_profile
         user_data = state.get("user")
+        logging.debug(f"🔍 BaseAssistant.binding_prompt - user_data type: {type(user_data)}, value: {user_data}")
+        
         if user_data and hasattr(user_data, 'user_info') and hasattr(user_data, 'user_profile'):
             # Code cũ - user là User object với user_info và user_profile attributes
             user_info = user_data.user_info if hasattr(user_data.user_info, '__dict__') else user_data.user_info.__dict__ if user_data.user_info else {"user_id": "unknown"}
             user_profile = user_data.user_profile if hasattr(user_data.user_profile, '__dict__') else user_data.user_profile.__dict__ if user_data.user_profile else {}
             logging.debug(f"BaseAssistant: Using User object format - user_info: {user_info}, user_profile: {user_profile}")
-        elif user_data and isinstance(user_data, dict):
-            # Code mới - user là dict với user_info và user_profile keys
+        elif user_data and isinstance(user_data, dict) and "user_info" in user_data:
+            # Code mới - user là dict với user_info và user_profile keys (MOST COMMON CASE)
             user_info = user_data.get("user_info", {"user_id": "unknown"})
             user_profile = user_data.get("user_profile", {})
             logging.debug(f"BaseAssistant: Using dict format - user_info: {user_info}, user_profile: {user_profile}")
+        elif user_data and isinstance(user_data, dict):
+            # Fallback cho dict format khác (có thể có trực tiếp user_id)
+            user_id = user_data.get("user_id", "unknown")
+            user_name = user_data.get("name", "anh/chị")
+            user_info = {"user_id": user_id, "name": user_name}
+            user_profile = {}
+            logging.debug(f"BaseAssistant: Using fallback dict format - user_info: {user_info}")
         else:
-            # Fallback - không có user data hoặc user_id trực tiếp từ config
-            logging.warning("No user data found in state, creating defaults from user_id")
+            # Fallback cuối cùng - tạo defaults từ user_id trong state hoặc config
+            logging.warning(f"No proper user data found in state, user_data: {user_data}, creating defaults from user_id")
             user_id = state.get("user_id", "unknown")
             user_info = {"user_id": user_id, "name": "anh/chị"}
             user_profile = {}
+            logging.debug(f"BaseAssistant: Using ultimate fallback - user_info: {user_info}")
 
         image_contexts = state.get("image_contexts", [])
         if image_contexts:
