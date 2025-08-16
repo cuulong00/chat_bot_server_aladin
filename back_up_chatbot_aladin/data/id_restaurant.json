@@ -1,0 +1,318 @@
+[
+    {
+        "id": "667a27e9af01b69bf",
+        "name": "LW-BG01:L3-07 Vincom Bắc Giang - số 43 Ngô Gia Tự, Bắc Giang"
+    },
+    {
+        "id": "683d187026925c1a2",
+        "name": "LW-DN01:K33 Võ Thị Sáu - Biên Hòa - Đồng Nai"
+    },
+    {
+        "id": "6383b75c9ee5ebd3f",
+        "name": "LW-HN01:84 Ngọc khánh - Ba Đình - Hà Nội"
+    },
+    {
+        "id": "640b7159787af5b1f",
+        "name": "LW-HN02:409 Minh Khai (539 cũ) - Vĩnh Tuy, Hai Bà Trưng, Hà Nội"
+    },
+    {
+        "id": "646185080b04c743e",
+        "name": "LW-HN03:1A Tăng Bạt Hổ - Phạm Đình Hổ - Hai Bà Trưng"
+    },
+    {
+        "id": "6445f07c7d726aa28",
+        "name": "LW-HN04:15A Hàng Cót - Hàng mã - Hoàn Kiếm"
+    },
+    {
+        "id": "65a74a3d752c43eab",
+        "name": "LW-HN05:Mipec - 229 Tây Sơn"
+    },
+    {
+        "id": "655427215a290a7b0",
+        "name": "LW-HN06:17T4 Hoàng Đạo Thúy - THNC- Cầu giấy"
+    },
+    {
+        "id": "6573beb79ea91c37f",
+        "name": "LW-HN07:Mega Grand World - Ocean Park 3"
+    },
+    {
+        "id": "65a72f7266292e345",
+        "name": "LW-HN08:Tòa Golden Field - 24 Nguyễn Cơ Thạch, Nam Từ Liêm, Hà Nội"
+    },
+    {
+        "id": "661889382ed1858c8",
+        "name": "LW-HN09:34 Thợ Nhuộm, Phường Trần Hưng Đạo, Quận Hoàn Kiếm, HN"
+    },
+    {
+        "id": "664c42ee88f00d2d2",
+        "name": "LW-HN10:Lô DD-22A2 tầng B1, TTTM Vincom Megamall Times City"
+    },
+    {
+        "id": "66500c795546ce21a",
+        "name": "LW-HN11:Tầng B2, TTTM Vincom Mega Mall Royal City, số 724 Nguyễn Trãi"
+    },
+    {
+        "id": "668e3d2e3f72caf80",
+        "name": "LW-HN12:Tòa nhà Trung Yên 1, KDT Trung Yên, Vũ Phạm Hàm, Trung Hòa"
+    },
+    {
+        "id": "6729c9c1d3c1894dc",
+        "name": "LW-HN15:299 Đ.Cầu Giấy, Dịch Vọng"
+    },
+    {
+        "id": "6735b7ae2aa5d1d1d",
+        "name": "LW-HN16:Aeon Mall Long Biên"
+    },
+    {
+        "id": "674d7f51a40c0c83a",
+        "name": "LW-HN17:VinCom Phạm Ngọc Thạch"
+    },
+    {
+        "id": "674d8356967ba0997",
+        "name": "LW-HN18:VinCom Trần Duy Hưng"
+    },
+    {
+        "id": "6833e4aa75bba83a9",
+        "name": "LW-HN19:Tầng 5 TTTM Vincom Center Bà Triệu, Hà Nội"
+    },
+    {
+        "id": "68623cda97aca8194",
+        "name": "LW-HN21:147 Nguyễn Văn Lộc, Hà Đông, Hà Nội"
+    },
+    {
+        "id": "665052378be5c0efb",
+        "name": "LW-HP01:Aeon Hải Phòng"
+    },
+    {
+        "id": "66bd7648090168f33",
+        "name": "LW-HP02:Vincom Hải Phòng, Ngô Quyền, Hải Phòng"
+    },
+    {
+        "id": "65488d55e40b72271",
+        "name": "LW-SG01:816 Sư Vạn Hạnh P12 Q10"
+    },
+    {
+        "id": "65b700f660a1e1c35",
+        "name": "LW-SG02:Crescent Mall, Quận 7"
+    },
+    {
+        "id": "6621cb3a337e919d9",
+        "name": "LW-SG03:488 Nguyễn Thị Minh Khai, P.2"
+    },
+    {
+        "id": "6621cc2d8b10692fc",
+        "name": "LW-SG04:11 Phạm Ngọc Thạch"
+    },
+    {
+        "id": "66558e83b97312f0a",
+        "name": "LW-SG05:Vincom 3/2"
+    },
+    {
+        "id": "664ffaf26798d4b70",
+        "name": "LW-SG06:Trung tâm TM VinCom"
+    },
+    {
+        "id": "66cc07fd85e35068f",
+        "name": "LW-SG07:Tầng 5 - Parc Mall, 547-549 Tạ Quang Bửu"
+    },
+    {
+        "id": "67c923c2cf094f9b9",
+        "name": "LW-SG08:31-33 Nguyễn Thị Thập, KDC Him Lam, Phường Tân Hưng,"
+    },
+    {
+        "id": "67c9253f364f87e06",
+        "name": "LW-SG09:01 Quang Trung, Phường 10"
+    },
+    {
+        "id": "67c926f1af27beb04",
+        "name": "LW-SG10:299-301-303 Tân Sơn Nhì, Phường Tân Sơn Nhì"
+    },
+    {
+        "id": "67e66dd8defe35071",
+        "name": "LW-SG11:Vincom Đồng Khởi, Quận 1, Hồ Chí Minh"
+    },
+    {
+        "id": "6805c6ea715562610",
+        "name": "LW-SG12:Vincom Thảo Điền"
+    },
+    {
+        "id": "6833dc8035be46b51",
+        "name": "LW-SG13:CityLand, Gò Vấp, Hồ Chí Minh"
+    },
+    {
+        "id": "6858d85c2bfc38c85",
+        "name": "LW-SG14:Phổ Quang, Tân Bình, HCM"
+    },
+    {
+        "id": "6858f4caa0c57f346",
+        "name": "LW-SG15:183 Lê Văn Sỹ, Phú Nhuận, HCM"
+    },
+    {
+        "id": "657f46700d99bf11c",
+        "name": "BTQM-HN01:102 Thái Thịnh, Đống Đa, Hà Nội"
+    },
+    {
+        "id": "657f4bdbee5b472f7",
+        "name": "BTQM-HN02:D17 Làng Quốc tế Thăng Long- ngõ 76 Nguyễn Phong Sắc, Cầu Giấy, Hà Nội"
+    },
+    {
+        "id": "657f4c3fa033943d1",
+        "name": "BTQM-HN03:B52 Nguyễn Thị Định, Thanh Xuân, Hà Nội"
+    },
+    {
+        "id": "657f5124ea1dec2f7",
+        "name": "BTQM-HN04:Số 2 Hoa Lư, Hai Bà Trưng, Hà Nội"
+    },
+    {
+        "id": "657f5182b0f6aecc2",
+        "name": "BTQM-HN05:88 Tố Hữu, Ngã tư Vạn Phúc"
+    },
+    {
+        "id": "657f51bc8b4341f5b",
+        "name": "BTQM-HN06:47 Nguyên Hồng, Đống Đa, Hà Nội"
+    },
+    {
+        "id": "657f522c093e56bfa",
+        "name": "BTQM-HN07:14 BT7 KĐT Văn Quán,"
+    },
+    {
+        "id": "657f526b7be9374d8",
+        "name": "BTQM-HN08:02 Đặng Dung"
+    },
+    {
+        "id": "657f52b2dcf94a2e4",
+        "name": "BTQM-HN09:Số 1A Tăng Bạt Hổ"
+    },
+    {
+        "id": "657f52f1789eaec07",
+        "name": "BTQM-HN10:B2BT5 Lưu Hữu Phước"
+    },
+    {
+        "id": "657f532d3407c3e50",
+        "name": "BTQM-HN11:84 Ngọc Khánh, Ba Đình, Hà Nội"
+    },
+    {
+        "id": "6576ae09a7c6a9480",
+        "name": "BTQM-HN12:PT2.TV-07, PT1.TV-08, PT1.TV-10 - Mega Grand World"
+    },
+    {
+        "id": "6709dbf599ac849e5",
+        "name": "BTQM-HN15:Aeon Mall Hà Đông"
+    },
+    {
+        "id": "67f9d400a7831f0a8",
+        "name": "BTQM-HN16:Aeon Mall Long Biên"
+    },
+    {
+        "id": "65852cd23ac9e916e",
+        "name": "BTQM-SG01:43-45 Nguyễn Thị Thập, P.Tân Hưng, Khu dân cư Him Lam"
+    },
+    {
+        "id": "65852d55571b2b5c9",
+        "name": "BTQM-SG02:486 Nguyễn Thị Minh Khai, P2"
+    },
+    {
+        "id": "640b574236b8aaf5d",
+        "name": "BTQM-SG03:111A Gò Dầu, phường Tân Quý, quận Tân Phú, TP.HCM"
+    },
+    {
+        "id": "6438ae856a564f154",
+        "name": "BTQM-SG04:206-210 Trần Văn Giàu, phường Bình Trị Đông, quận Bình Tân, TP HCM"
+    },
+    {
+        "id": "657fa6089520cd67c",
+        "name": "BTQM-SG05:Số O/1 đường Trường Sơn, Cư Xá Bắc Hải"
+    },
+    {
+        "id": "657fa7e1dccbf35b0",
+        "name": "BTQM-SG06:"
+    },
+    {
+        "id": "657fa86c798a83d17",
+        "name": "BTQM-SG07:101 Võ Oanh, Phường 25"
+    },
+    {
+        "id": "67354e7f13c7d117c",
+        "name": "BTQM-SG08:Tầng 5, TTTM Gigamall, Thành phố thủ đức"
+    },
+    {
+        "id": "688439c3cb2d64b93",
+        "name": "BTQM-TT01:Aeon Mall Huế"
+    },
+    {
+        "id": "66037396376597bdb",
+        "name": "AP-SG01:Số 9 Thoại Ngọc Hầu, P. Hòa Thạnh"
+    },
+    {
+        "id": "68030fc20230a5707",
+        "name": "AV-HN01:Vincom Phạm Ngọc Thạch"
+    },
+    {
+        "id": "6824144029a482cb3",
+        "name": "AV-HU01:Aeon Huế - 08 Võ Nguyên Giáp, An Đông"
+    },
+     {
+        "id": "6747f0b69adb5f0b1",
+        "name": "TL-HN01:Trần Thái Tông"
+    },
+    {
+        "id": "674d581fd7a12ea2d",
+        "name": "TL-HN02:VinCom Phạm Ngọc Thạch"
+    },
+    {
+        "id": "67f9dcffc8eac8e8b",
+        "name": "TL-HN03:Times City"
+    },
+    {
+        "id": "6833e63435fb63828",
+        "name": "TL-HN04:Vincom Bà Triệu, Hai Bà Trưng, Hà Nội"
+    },
+    {
+        "id": "687f144f19859fb93",
+        "name": "TL-HN06:36 Nguyễn Thị Định"
+    },
+    {
+        "id": "67ff7af4580126132",
+        "name": "TL-HP01:Vincom Hải Phòng, Ngô Quyền, Hải Phòng"
+    },
+    {
+        "id": "68842fd546da82a39",
+        "name": "TL-HP02:Aeon Mall Hải Phòng"
+    },
+    {
+        "id": "682417e279a7b07e2",
+        "name": "TL-HU01:Aeon Huế - 08 Võ Nguyên Giáp, An Đông"
+    },
+    {
+        "id": "68356603a57df6adf",
+        "name": "TL-SG01:VinCom Thảo Điền, Hồ Chí Minh"
+    },
+    {
+        "id": "6858f6ec9ca8d67d6",
+        "name": "TL-SG02:183 Lê Văn Sỹ, Phú Nhuận, HCM"
+    },
+    {
+        "id": "686245e82b8e607f1",
+        "name": "TL-SG04:541 Nguyễn Thị Thập, Quận 7, Hồ Chí Minh"
+    },
+    {
+        "id": "689ac6a18b26b30d4",
+        "name": "TL-SG05:Vincom Đồng Khởi, 72 Lê Thánh Tôn, Quận 1, Hồ Chí Minh"
+    },
+        {
+        "id": "6756578d103499d38",
+        "name": "CNHS-HN01:111 K1 Giảng Võ, P. Ô Chợ Dừa"
+    },
+    {
+        "id": "683d1ccea75ca5c17",
+        "name": "CNHS-HN02:VinCom Bà Triệu, Hai Bà Trưng, Hà Nội"
+    },
+    {
+        "id": "686244f148796731a",
+        "name": "CNHS-HP01:Aeon Hải Phòng"
+    },
+    {
+        "id": "6854c97f29df6b35f",
+        "name": "CNHS-SG01:Aeon Mall Tân Phú - HCN"
+    }
+]

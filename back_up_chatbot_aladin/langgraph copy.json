@@ -1,0 +1,16 @@
+{
+  "dependencies": [
+    "."
+  ],
+  "graphs": {
+    "agent": "./tests/test_add_memory.py:graph"
+  },
+  "env": ".env",
+  "image_distro": "wolfi",
+  "story": {
+    "index": {
+      "dims": 1536,
+      "embed": "gemini-embedding-exp-03-07"
+    }
+  }
+}

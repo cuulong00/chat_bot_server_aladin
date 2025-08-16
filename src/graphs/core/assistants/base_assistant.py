@@ -26,15 +26,26 @@ class BaseAssistant:
                 running_summary = summary_obj.summary
                 logging.debug(f"Running summary found for prompt: {running_summary[:100]}...")
 
-        user_data = state.get("user", {})
-        if not user_data:
-            logging.warning("No user data found in state, using defaults.")
-            user_data = {"user_info": {"user_id": "unknown"}, "user_profile": {}}
+        # FIXED: Tương thích với code cũ - state.user chứa user_info và user_profile
+        user_data = state.get("user")
+        if user_data and hasattr(user_data, 'user_info') and hasattr(user_data, 'user_profile'):
+            # Code cũ - user là User object với user_info và user_profile attributes
+            user_info = user_data.user_info if hasattr(user_data.user_info, '__dict__') else user_data.user_info.__dict__ if user_data.user_info else {"user_id": "unknown"}
+            user_profile = user_data.user_profile if hasattr(user_data.user_profile, '__dict__') else user_data.user_profile.__dict__ if user_data.user_profile else {}
+            logging.debug(f"BaseAssistant: Using User object format - user_info: {user_info}, user_profile: {user_profile}")
+        elif user_data and isinstance(user_data, dict):
+            # Code mới - user là dict với user_info và user_profile keys
+            user_info = user_data.get("user_info", {"user_id": "unknown"})
+            user_profile = user_data.get("user_profile", {})
+            logging.debug(f"BaseAssistant: Using dict format - user_info: {user_info}, user_profile: {user_profile}")
+        else:
+            # Fallback - không có user data hoặc user_id trực tiếp từ config
+            logging.warning("No user data found in state, creating defaults from user_id")
+            user_id = state.get("user_id", "unknown")
+            user_info = {"user_id": user_id, "name": "anh/chị"}
+            user_profile = {}
 
-        user_info = user_data.get("user_info", {"user_id": "unknown"})
-        user_profile = user_data.get("user_profile", {})
         image_contexts = state.get("image_contexts", [])
-
         if image_contexts:
             logging.info(f"🖼️ Binding prompt with {len(image_contexts)} image contexts.")
         
@@ -64,9 +75,20 @@ class BaseAssistant:
         """Executes the assistant's runnable."""
         logging.debug(f"🔍 BaseAssistant.__call__ - START")
         try:
-            user_data = state.get("user", {})
-            user_info = user_data.get("user_info", {}) if user_data else {}
-            user_id = user_info.get("user_id", "unknown") if user_info else "unknown"
+            # FIXED: Tương thích với cả User object và dict format
+            user_data = state.get("user")
+            if user_data and hasattr(user_data, 'user_info'):
+                # User object format (code cũ)
+                user_info = user_data.user_info if hasattr(user_data.user_info, '__dict__') else user_data.user_info.__dict__ if user_data.user_info else {}
+                user_id = user_info.get("user_id", "unknown") if isinstance(user_info, dict) else getattr(user_info, "user_id", "unknown")
+            elif user_data and isinstance(user_data, dict):
+                # Dict format (code mới)
+                user_info = user_data.get("user_info", {})
+                user_id = user_info.get("user_id", "unknown") if user_info else "unknown"
+            else:
+                # Fallback
+                user_id = state.get("user_id", "unknown")
+                
             logging.debug(f"🔍 BaseAssistant.__call__ - user_id: {user_id}")
 
             if "configurable" not in config:
@@ -109,7 +131,17 @@ class BaseAssistant:
                 return fallback
 
         except Exception as e:
-            user_id = state.get("user", {}).get("user_info", {}).get("user_id", "unknown")
+            # FIXED: Tương thích với cả User object và dict format 
+            user_data = state.get("user")
+            if user_data and hasattr(user_data, 'user_info'):
+                user_info = user_data.user_info if hasattr(user_data.user_info, '__dict__') else user_data.user_info.__dict__ if user_data.user_info else {}
+                user_id = user_info.get("user_id", "unknown") if isinstance(user_info, dict) else getattr(user_info, "user_id", "unknown")
+            elif user_data and isinstance(user_data, dict):
+                user_info = user_data.get("user_info", {})
+                user_id = user_info.get("user_id", "unknown") if user_info else "unknown"
+            else:
+                user_id = state.get("user_id", "unknown")
+                
             logging.error(f"❌ BaseAssistant.__call__ - Exception: {type(e).__name__}: {str(e)}")
             log_exception_details(
                 exception=e,
@@ -155,8 +187,22 @@ class BaseAssistant:
 
     def _create_fallback_response(self, state: RagState) -> AIMessage:
         """Creates a graceful fallback AIMessage."""
-        user_info = state.get("user", {}).get("user_info", {})
-        user_name = user_info.get("name", "anh/chị")
+        # FIXED: Tương thích với cả User object và dict format
+        user_data = state.get("user")
+        if user_data and hasattr(user_data, 'user_info'):
+            # User object format (code cũ)
+            user_info = user_data.user_info if hasattr(user_data.user_info, '__dict__') else user_data.user_info.__dict__ if user_data.user_info else {}
+            user_name = user_info.get("name", "anh/chị") if isinstance(user_info, dict) else getattr(user_info, "name", "anh/chị")
+            user_id_for_log = user_info.get("user_id", "unknown") if isinstance(user_info, dict) else getattr(user_info, "user_id", "unknown")
+        elif user_data and isinstance(user_data, dict):
+            # Dict format (code mới)
+            user_info = user_data.get("user_info", {})
+            user_name = user_info.get("name", "anh/chị")
+            user_id_for_log = user_info.get("user_id", "unknown")
+        else:
+            # Fallback
+            user_name = "anh/chị"
+            user_id_for_log = "unknown"
         
         fallback_content = (
             f"Xin lỗi {user_name}, em đang gặp vấn đề kỹ thuật tạm thời. "
@@ -164,7 +210,7 @@ class BaseAssistant:
             f"Em rất xin lỗi vì sự bất tiện này! 🙏"
         )
         
-        logging.info(f"Providing fallback response for user: {user_info.get('user_id', 'unknown')}")
+        logging.info(f"Providing fallback response for user: {user_id_for_log}")
         
         return AIMessage(
             content=fallback_content,

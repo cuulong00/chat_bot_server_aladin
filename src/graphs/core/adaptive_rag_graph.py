@@ -45,6 +45,42 @@ from src.graphs.core.assistants.hallucination_grader_assistant import Hallucinat
 from src.graphs.core.assistants.direct_answer_assistant import DirectAnswerAssistant
 from src.graphs.core.assistants.document_processing_assistant import DocumentProcessingAssistant
 
+# Import từ nodes.py như code cũ
+from src.nodes.nodes import user_info
+
+"""Adaptive RAG graph with optional short-term memory (langmem).
+
+If langmem is not installed or incompatible with the installed langgraph version,
+we fall back to a lightweight no-op summarization node so the app still starts.
+"""
+
+# Optional langmem import (may fail if version mismatch with langgraph)
+try:  # pragma: no cover - defensive import
+    from langmem.short_term import SummarizationNode, RunningSummary  # type: ignore
+    _LANGMEM_AVAILABLE = True
+except Exception as _langmem_err:  # noqa: BLE001
+    _LANGMEM_AVAILABLE = False
+    logging.warning(
+        "LangMem unavailable (%s). Running without short-term summarization."
+        " Install a compatible 'langmem' & 'langgraph' to enable it.",
+        _langmem_err,
+    )
+
+    class RunningSummary:  # minimal stub
+        def __init__(self, max_tokens: int = 1200):
+            self.max_tokens = max_tokens
+            self.summary = ""  # kept for attribute compatibility
+
+        def append(self, _text: str):  # no-op
+            return None
+
+    class SummarizationNode:  # stub that returns empty update
+        def __init__(self, *_, **__):
+            pass
+
+        def __call__(self, state: RagState, config: RunnableConfig):  # returns nothing so graph continues
+            return {}
+
 
 # --- State Reset and Management Functions ---
 def get_current_user_question(state: RagState) -> str:
@@ -1216,18 +1252,18 @@ Hãy phân tích một cách chi tiết và toàn diện để thông tin này c
     # --- Build the Graph ---
     graph = StateGraph(RagState)
 
-    # TODO: Fix SummarizationNode import issue
-    # summarization_node = SummarizationNode(
-    #     token_counter=count_tokens_approximately,
-    #     model=llm_summarizer,
-    #     max_tokens=1200,
-    #     max_tokens_before_summary=1000,
-    #     max_summary_tokens=800,
-    # )
+    # Restore summarization node như code cũ
+    summarization_node = SummarizationNode(
+        token_counter=count_tokens_approximately,
+        model=llm_summarizer,
+        max_tokens=1200,
+        max_tokens_before_summary=1000,
+        max_summary_tokens=800,
+    )
 
-    # TODO: Fix user_info function definition
-    # graph.add_node("user_info", user_info)
-    # graph.add_node("summarizer", summarization_node)
+    # Restore user_info và summarizer nodes
+    graph.add_node("user_info", user_info)
+    graph.add_node("summarizer", summarization_node)
    
     graph.add_node("router", route_question)
     graph.add_node("retrieve", retrieve)
@@ -1243,23 +1279,16 @@ Hãy phân tích một cách chi tiết và toàn diện để thông tin này c
     graph.add_node("direct_tools", ToolNode(tools=memory_tools + tools + image_context_tools))
 
     # --- Define Graph Flow ---
-    # TODO: Fix user_info and summarizer functionality
-    graph.set_entry_point("router")
+    # Restore entry point như code cũ
+    graph.set_entry_point("user_info")
 
-    # graph.add_conditional_edges(
-    #     "user_info",
-    #     should_summarize,
-    #     {"summarize": "summarizer", "continue": "contextualize_question"},
-    # )
-    # graph.add_edge("summarizer", "contextualize_question")
-    # FIXED: Conditional summarization - only summarize when needed
-    # Add conditional edge from user_info to decide whether to summarize or go directly to router
-    # graph.add_conditional_edges(
-    #     "user_info",
-    #     lambda state: "summarize" if should_summarize_conversation(state) else "continue",
-    #     {"summarize": "summarizer", "continue": "router"},
-    # )
-    # graph.add_edge("summarizer", "router")
+    # Restore flow từ user_info như code cũ
+    graph.add_conditional_edges(
+        "user_info",
+        lambda state: "summarize" if should_summarize_conversation(state) else "continue",
+        {"summarize": "summarizer", "continue": "router"},
+    )
+    graph.add_edge("summarizer", "router")
     graph.add_conditional_edges(
         "router",
         decide_entry,
