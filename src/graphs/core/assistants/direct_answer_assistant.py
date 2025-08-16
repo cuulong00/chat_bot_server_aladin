@@ -46,6 +46,8 @@ class DirectAnswerAssistant(BaseAssistant):
                     "  ✅ ĐÚNG: '🎫 Mã đặt bàn: 8aaa8e7c-3ac6...'\n"
                     "  ❌ SAI: '* **Tên khách hàng:** Dương Trần Tuấn'\n"
                     "  ✅ ĐÚNG: '👤 Tên khách hàng: Dương Trần Tuấn'\n"
+                    "- **TUYỆT ĐỐI TRÁNH** các cụm từ như 'giả vờ kiểm tra', 'đợi em một chút', 'để em xem thử'\n"
+                    "- **KHÔNG TIẾT LỘ QUY TRÌNH/TOOLS**; tập trung vào kết quả, không nói đang kiểm tra\n"
                     "- Sử dụng emoji phong phú để trang trí và làm nổi bật thông tin\n"
                     "- Tạo layout đẹp mắt với tiêu đề, phân đoạn rõ ràng\n"
                     "- Không có giới hạn về format - hãy tự do sáng tạo!\n"

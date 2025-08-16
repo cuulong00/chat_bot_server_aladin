@@ -86,6 +86,10 @@ MARKETING_DOMAIN = {
     # Keep existing collection/namespace unless a new restaurant collection is ingested; rename later if needed.
     "collection_name": "aladin_maketing",
     "namespace": "maketing",
+    # Optional category-specific namespaces (can be overridden by env via LOCATION_NAMESPACE, FAQ_NAMESPACE)
+    # e.g., separate namespaces like 'location' for addresses/branches and 'faq' for policies
+    "location_namespace": "location",
+    "faq_namespace": "faq",
     "embedding_model": "models/text-embedding-004",
     "output_dimensionality_query": 768,
 }
