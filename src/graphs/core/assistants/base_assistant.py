@@ -33,6 +33,9 @@ class BaseAssistant:
         user_profile = user_data.get("user_profile", {})
         
         print(f"------------user_data:{user_data}")
+        print(f"------------user_info:{user_info}")
+        print(f"------------user_profile:{user_profile}")
+
         logging.debug(f"✅ BaseAssistant: Direct access - user_info: {user_info}, user_profile: {user_profile}")
 
         image_contexts = state.get("image_contexts", [])
@@ -50,8 +53,7 @@ class BaseAssistant:
             "conversation_summary": running_summary,
             "image_contexts": image_contexts,
             # Add default values for common template variables
-            "current_date": datetime.now().strftime("%d/%m/%Y"),
-            "domain_context": "Nhà hàng lẩu bò tươi Tian Long",
+           
         }
         
         if not prompt.get("messages"):
