@@ -73,7 +73,24 @@ class DocGraderAssistant(BaseAssistant):
         try:
             # Call parent implementation and log every step
             logging.info(f"🔍 DocGraderAssistant.__call__ - calling super().__call__")
+            
+            # DETAILED LOGGING for DocGrader input analysis - BEFORE calling super()
+            logging.info(f"📋 DOCGRADER PRE-EXECUTION INPUT ANALYSIS:")
+            logging.info(f"   📄 Document in state: {state.get('document', 'MISSING')[:200] if state.get('document') else 'MISSING'}...")
+            logging.info(f"   ❓ Messages in state: {state.get('messages', 'MISSING')}")
+            logging.info(f"   👤 User in state: {state.get('user', 'MISSING')}")
+            logging.info(f"   📊 All state keys: {list(state.keys())}")
+            
             result = super().__call__(state, config)
+            
+            # Log the EXACT decision made by LLM
+            logging.info(f"🤖 DOCGRADER FINAL DECISION ANALYSIS:")
+            logging.info(f"   📊 Result type: {type(result)}")
+            logging.info(f"   ⚖️ Binary score: {getattr(result, 'binary_score', 'MISSING')}")
+            if hasattr(result, 'binary_score'):
+                logging.info(f"   📝 Decision summary: Document {'RELEVANT' if result.binary_score == 'yes' else 'NOT RELEVANT'}")
+            logging.info(f"   📄 Document that was evaluated: {state.get('document', 'MISSING')[:150] if state.get('document') else 'MISSING'}...")
+            logging.info(f"   ❓ Question that was evaluated: {state.get('messages', 'MISSING')}")
             
             logging.info(f"🔍 DocGraderAssistant.__call__ - super().__call__ returned type: {type(result)}")
             logging.info(f"🔍 DocGraderAssistant.__call__ - super().__call__ returned content: {result}")

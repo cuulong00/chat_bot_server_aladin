@@ -17,6 +17,8 @@ class BaseAssistant:
 
     def binding_prompt(self, state: RagState) -> dict[str, Any]:
         """Binds state to the prompt, adding necessary context."""
+        logging.debug(f"🔍 BaseAssistant.binding_prompt - START with state keys: {list(state.keys())}")
+        
         running_summary = ""
         if state.get("context") and isinstance(state["context"], dict):
             summary_obj = state["context"].get("running_summary")
@@ -36,76 +38,120 @@ class BaseAssistant:
         if image_contexts:
             logging.info(f"🖼️ Binding prompt with {len(image_contexts)} image contexts.")
         
+        # CRITICAL: Log state data extraction for DocGrader
+        if "document" in state:
+            logging.debug(f"🔍 BaseAssistant.binding_prompt - found document in state: {state['document'][:100] if state['document'] else 'EMPTY'}...")
+        
         prompt = {
             **state,
             "user_info": user_info,
             "user_profile": user_profile,
             "conversation_summary": running_summary,
-            "image_contexts": image_contexts
-            
+            "image_contexts": image_contexts,
+            # Add default values for common template variables
+            "current_date": datetime.now().strftime("%d/%m/%Y"),
+            "domain_context": "Nhà hàng lẩu bò tươi Tian Long",
         }
         
         if not prompt.get("messages"):
             logging.error("No messages found in prompt data during binding.")
             prompt["messages"] = [] # Ensure messages is always a list
 
+        logging.debug(f"🔍 BaseAssistant.binding_prompt - FINAL prompt keys: {list(prompt.keys())}")
         return prompt
 
     def __call__(self, state: RagState, config: RunnableConfig) -> dict[str, Any]:
         """Executes the assistant's runnable."""
+        logging.debug(f"🔍 BaseAssistant.__call__ - START")
         try:
             user_data = state.get("user", {})
             user_info = user_data.get("user_info", {}) if user_data else {}
             user_id = user_info.get("user_id", "unknown") if user_info else "unknown"
+            logging.debug(f"🔍 BaseAssistant.__call__ - user_id: {user_id}")
 
             if "configurable" not in config:
                 config["configurable"] = {}
             config["configurable"]["user_id"] = user_id
 
+            logging.debug(f"🔍 BaseAssistant.__call__ - calling binding_prompt")
             prompt = self.binding_prompt(state)
             
+            # CRITICAL: Log the exact prompt data being sent to LLM for DocGrader analysis
+            if "DocGrader" in str(type(self)):
+                logging.info(f"🔬 DOCGRADER PROMPT DATA TO LLM:")
+                logging.info(f"   📄 document: {prompt.get('document', 'MISSING')[:200] if prompt.get('document') else 'MISSING'}...")
+                logging.info(f"   ❓ messages: {prompt.get('messages', 'MISSING')}")
+                logging.info(f"   📝 conversation_summary: {prompt.get('conversation_summary', 'MISSING')[:100] if prompt.get('conversation_summary') else 'MISSING'}...")
+                logging.info(f"   🏢 domain_context: {prompt.get('domain_context', 'MISSING')}")
+                logging.info(f"   📅 current_date: {prompt.get('current_date', 'MISSING')}")
+                logging.info(f"   👤 user_info: {prompt.get('user_info', 'MISSING')}")
+                logging.info(f"   📋 user_profile: {prompt.get('user_profile', 'MISSING')}")
+                
+            logging.debug(f"🔍 BaseAssistant.__call__ - prompt keys: {list(prompt.keys()) if prompt else 'None'}")
+            
             if not prompt or not prompt.get("messages"):
-                logging.error("Aborting LLM call due to empty or invalid prompt data.")
+                logging.error("❌ BaseAssistant: Aborting LLM call due to empty or invalid prompt data.")
                 raise ValueError("Prompt data is empty or missing required 'messages' field.")
 
+            logging.debug(f"🔍 BaseAssistant.__call__ - invoking runnable")
             result = self.runnable.invoke(prompt, config)
+            logging.debug(f"🔍 BaseAssistant.__call__ - runnable returned type: {type(result)}")
+            logging.debug(f"🔍 BaseAssistant.__call__ - runnable returned content: {result}")
 
+            logging.debug(f"🔍 BaseAssistant.__call__ - checking if response is valid")
             if self._is_valid_response(result):
-                logging.debug("Assistant returned a valid response.")
+                logging.debug("✅ BaseAssistant: Assistant returned a valid response.")
                 return result
             else:
-                logging.warning("Assistant returned an invalid or empty response. Providing fallback.")
-                return self._create_fallback_response(state)
+                logging.warning("⚠️ BaseAssistant: Assistant returned an invalid or empty response. Providing fallback.")
+                fallback = self._create_fallback_response(state)
+                logging.debug(f"🔍 BaseAssistant.__call__ - fallback response: {fallback}")
+                return fallback
 
         except Exception as e:
             user_id = state.get("user", {}).get("user_info", {}).get("user_id", "unknown")
+            logging.error(f"❌ BaseAssistant.__call__ - Exception: {type(e).__name__}: {str(e)}")
             log_exception_details(
                 exception=e,
                 context="Assistant LLM call failed",
                 user_id=user_id
             )
-            logging.error(f"Assistant exception, providing fallback: {e}")
-            return self._create_fallback_response(state)
+            logging.error(f"❌ BaseAssistant: Assistant exception, providing fallback: {e}")
+            fallback = self._create_fallback_response(state)
+            logging.debug(f"🔍 BaseAssistant.__call__ - exception fallback: {fallback}")
+            return fallback
 
     def _is_valid_response(self, result: Any) -> bool:
         """Checks if the LLM response is meaningful."""
+        logging.debug(f"🔍 BaseAssistant._is_valid_response - checking result type: {type(result)}")
+        
         if hasattr(result, "tool_calls") and result.tool_calls:
+            logging.debug(f"✅ BaseAssistant._is_valid_response - has tool_calls: {len(result.tool_calls)}")
             return True
         
         content = getattr(result, "content", None)
+        logging.debug(f"🔍 BaseAssistant._is_valid_response - content: {content}")
+        
         if not content:
+            logging.debug(f"❌ BaseAssistant._is_valid_response - no content")
             return False
         
         if isinstance(content, str):
-            return content.strip() != ""
+            is_valid = content.strip() != ""
+            logging.debug(f"🔍 BaseAssistant._is_valid_response - string content valid: {is_valid}")
+            return is_valid
         
         if isinstance(content, list):
-            return any(
+            is_valid = any(
                 isinstance(item, dict) and item.get("text", "").strip()
                 for item in content
             )
+            logging.debug(f"🔍 BaseAssistant._is_valid_response - list content valid: {is_valid}")
+            return is_valid
         
-        return bool(content)
+        is_valid = bool(content)
+        logging.debug(f"🔍 BaseAssistant._is_valid_response - general content valid: {is_valid}")
+        return is_valid
 
     def _create_fallback_response(self, state: RagState) -> AIMessage:
         """Creates a graceful fallback AIMessage."""
