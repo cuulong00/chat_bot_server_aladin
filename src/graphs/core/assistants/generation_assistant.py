@@ -62,11 +62,7 @@ class GenerationAssistant(BaseAssistant):
             """
             # DETAILED LOGGING for GenerationAssistant context creation
             import logging
-            logging.info(f"🔬 GENERATION_ASSISTANT CONTEXT CREATION:")
-            logging.info(f"   📊 Context keys available: {list(ctx.keys())}")
-            logging.info(f"   📄 Documents count in ctx: {len(ctx.get('documents', []))}")
-            logging.info(f"   📝 Existing context: {ctx.get('context', 'MISSING')[:200] if ctx.get('context') else 'MISSING'}...")
-            
+                        
             # ALWAYS create context from documents (ignore existing context)
             documents = ctx.get("documents", [])
             print(f"get_combined_context->documents:{documents}")
