@@ -62,32 +62,19 @@ If langmem is not installed or incompatible with the installed langgraph version
 we fall back to a lightweight no-op summarization node so the app still starts.
 """
 
-# Optional langmem import (may fail if version mismatch with langgraph)
-try:  # pragma: no cover - defensive import
+# Import langmem SummarizationNode - required for short-term summarization
+try:
     from langmem.short_term import SummarizationNode, RunningSummary  # type: ignore
     _LANGMEM_AVAILABLE = True
-except Exception as _langmem_err:  # noqa: BLE001
+    logging.info("✅ LangMem SummarizationNode imported successfully")
+except ImportError as _langmem_err:
     _LANGMEM_AVAILABLE = False
-    logging.warning(
-        "LangMem unavailable (%s). Running without short-term summarization."
-        " Install a compatible 'langmem' & 'langgraph' to enable it.",
-        _langmem_err,
+    SummarizationNode = None
+    RunningSummary = None
+    logging.error(
+        f"❌ LangMem unavailable ({_langmem_err}). Short-term summarization disabled."
+        " Please install compatible 'langmem' & 'langgraph' versions."
     )
-
-    class RunningSummary:  # minimal stub
-        def __init__(self, max_tokens: int = 1200):
-            self.max_tokens = max_tokens
-            self.summary = ""  # kept for attribute compatibility
-
-        def append(self, _text: str):  # no-op
-            return None
-
-    class SummarizationNode:  # stub that returns empty update
-        def __init__(self, *_, **__):
-            pass
-
-        def __call__(self, state: RagState, config: RunnableConfig):  # returns nothing so graph continues
-            return {}
 
 
 # --- State Reset and Management Functions ---
@@ -1170,7 +1157,8 @@ Hãy phân tích một cách chi tiết và toàn diện để thông tin này c
     # --- Build the Graph ---
     graph = StateGraph(RagState)
 
-    # Restore summarization node như code cũ
+    # Create summarization node only if LangMem is available
+   
     summarization_node = SummarizationNode(
         token_counter=count_tokens_approximately,
         model=llm_summarizer,
@@ -1179,7 +1167,8 @@ Hãy phân tích một cách chi tiết và toàn diện để thông tin này c
         max_summary_tokens=800,
     )
 
-    # Restore user_info và summarizer nodes
+
+    # Add nodes to graph
     graph.add_node("user_info", user_info)
     graph.add_node("summarizer", summarization_node)
    
