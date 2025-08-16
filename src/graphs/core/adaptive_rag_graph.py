@@ -566,6 +566,17 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
         
         # Include remaining documents without grading to ensure we have enough content
         filtered_docs.extend(remaining_docs)
+        
+        # DETAILED LOGGING for documents passed to next node
+        logging.info(f"📋 GRADE_DOCUMENTS OUTPUT ANALYSIS:")
+        for i, doc in enumerate(filtered_docs):
+            if isinstance(doc, tuple) and len(doc) > 1 and isinstance(doc[1], dict):
+                doc_content = doc[1].get("content", "")[:200]
+                logging.info(f"   📄 Final Doc {i+1}: {doc_content}...")
+                
+                # Check if this is the branch info document
+                if "chi nhánh" in doc_content.lower() or "branch" in doc_content.lower():
+                    logging.info(f"   🎯 BRANCH INFO FOUND in Final Doc {i+1}!")
 
         logging.info(
             f"Finished grading. {len(filtered_docs)} total documents ({len(filtered_docs) - len(remaining_docs)} graded, {len(remaining_docs)} auto-included)."
@@ -660,6 +671,26 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
         documents_count = len(state.get("documents", []))
         logging.debug(f"generate->current_question -> {current_question}")
         logging.debug(f"generate->documents_count -> {documents_count}")
+        
+        # DETAILED LOGGING for GENERATE node input analysis
+        logging.info(f"📋 GENERATE PRE-EXECUTION INPUT ANALYSIS:")
+        logging.info(f"   ❓ Current question: {current_question}")
+        logging.info(f"   📄 Documents count: {documents_count}")
+        logging.info(f"   📊 All state keys: {list(state.keys())}")
+        
+        # Log documents details that GENERATE will receive
+        documents = state.get("documents", [])
+        if documents:
+            logging.info(f"📄 GENERATE DOCUMENTS DETAILED ANALYSIS:")
+            for i, doc in enumerate(documents):
+                doc_content = str(doc)[:200] if doc else "EMPTY"
+                logging.info(f"   📄 Generate Doc {i+1}: {doc_content}...")
+                
+                # Check if this is the branch info document
+                if "chi nhánh" in str(doc).lower() or "branch" in str(doc).lower():
+                    logging.info(f"   🎯 BRANCH INFO FOUND in Generate Doc {i+1}!")
+        else:
+            logging.warning(f"   ⚠️ NO DOCUMENTS found for GENERATE node!")
         
         try:
             generation = generation_assistant(state, config)

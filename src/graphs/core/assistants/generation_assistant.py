@@ -257,6 +257,47 @@ class GenerationAssistant(BaseAssistant):
             Combines document context from different sources.
             Image contexts are handled separately in the binding prompt.
             """
+            # DETAILED LOGGING for GenerationAssistant context creation
+            import logging
+            logging.info(f"🔬 GENERATION_ASSISTANT CONTEXT CREATION:")
+            logging.info(f"   📊 Context keys available: {list(ctx.keys())}")
+            logging.info(f"   📄 Documents count in ctx: {len(ctx.get('documents', []))}")
+            logging.info(f"   📝 Existing context: {ctx.get('context', 'MISSING')[:200] if ctx.get('context') else 'MISSING'}...")
+            
+            # Check if documents exist and need to be converted to context
+            documents = ctx.get("documents", [])
+            if documents:
+                logging.info(f"📄 GENERATION DOCUMENTS ANALYSIS:")
+                for i, doc in enumerate(documents[:3]):  # Only log first 3 docs
+                    if isinstance(doc, tuple) and len(doc) > 1 and isinstance(doc[1], dict):
+                        doc_content = doc[1].get("content", "")[:200]
+                        logging.info(f"   📄 Generation Context Doc {i+1}: {doc_content}...")
+                        
+                        # Check for branch info
+                        if "chi nhánh" in doc_content.lower() or "branch" in doc_content.lower():
+                            logging.info(f"   🎯 BRANCH INFO FOUND in Generation Context Doc {i+1}!")
+                    else:
+                        logging.info(f"   📄 Generation Context Doc {i+1}: Invalid format - {type(doc)}")
+                
+                # If no existing context, create from documents
+                existing_context = ctx.get("context", "")
+                if not existing_context:
+                    logging.info(f"   🔧 Creating context from {len(documents)} documents...")
+                    context_parts = []
+                    for doc in documents:
+                        if isinstance(doc, tuple) and len(doc) > 1 and isinstance(doc[1], dict):
+                            content = doc[1].get("content", "")
+                            if content:
+                                context_parts.append(content)
+                    
+                    new_context = "\n\n".join(context_parts)
+                    logging.info(f"   ✅ Generated context length: {len(new_context)}")
+                    return new_context
+                else:
+                    logging.info(f"   ♻️ Using existing context, length: {len(existing_context)}")
+            else:
+                logging.warning(f"   ⚠️ No documents found for context generation!")
+            
             # This function is a placeholder for the original logic.
             # In the refactored version, the context is assembled before calling the assistant.
             return ctx.get("context", "")
