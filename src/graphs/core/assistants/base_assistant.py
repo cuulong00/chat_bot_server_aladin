@@ -36,7 +36,7 @@ class BaseAssistant:
         print(f"------------user_info:{user_info}")
         print(f"------------user_profile:{user_profile}")
 
-        logging.debug(f"✅ BaseAssistant: Direct access - user_info: {user_info}, user_profile: {user_profile}")
+        logging.info(f"✅ BaseAssistant: Direct access - user_info: {user_info}, user_profile: {user_profile}")
 
         image_contexts = state.get("image_contexts", [])
         if image_contexts:
@@ -60,6 +60,8 @@ class BaseAssistant:
             logging.error("No messages found in prompt data during binding.")
             prompt["messages"] = [] # Ensure messages is always a list
 
+        logging.info(f"🔍 BaseAssistant.binding_prompt - FINAL prompt user_info: {prompt.get('user_info')}")
+        logging.info(f"🔍 BaseAssistant.binding_prompt - FINAL prompt user_profile: {prompt.get('user_profile')}")
         logging.debug(f"🔍 BaseAssistant.binding_prompt - FINAL prompt keys: {list(prompt.keys())}")
         return prompt
 

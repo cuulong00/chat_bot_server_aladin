@@ -216,7 +216,9 @@ class DirectAnswerAssistant(BaseAssistant):
         
         # Debug logging to verify variables are added
         import logging
-        logging.debug(f"DirectAnswerAssistant binding_prompt keys: {list(prompt_data.keys())}")
+        logging.info(f"🔍 DirectAnswerAssistant binding_prompt keys: {list(prompt_data.keys())}")
+        logging.info(f"🔍 DirectAnswerAssistant user_info: {prompt_data.get('user_info', 'MISSING')}")
+        logging.info(f"🔍 DirectAnswerAssistant user_profile: {prompt_data.get('user_profile', 'MISSING')}")
         logging.debug(f"domain_context: {prompt_data.get('domain_context', 'MISSING')}")
         logging.debug(f"current_date: {prompt_data.get('current_date', 'MISSING')}")
         
