@@ -145,13 +145,13 @@ class QdrantStore:
 
     def search(self, namespace: str, query: str, limit: int = 10) -> List[Tuple[str, Dict[str, Any], float]]:
         query_vec = self._get_embedding(query)
-        print(f"search->query_vec:{query_vec}")
+        
         if query_vec is None:
             return []
         try:
             print(f"search->namespace:{namespace}")
             print(f"search->self.collection_name:{self.collection_name}")
-            print(f"search->query_vec:{query_vec}")
+        
 
             search_result = self.qdrant_client.search(
                 collection_name=self.collection_name,

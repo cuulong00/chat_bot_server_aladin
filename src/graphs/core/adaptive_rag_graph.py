@@ -513,13 +513,25 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
             documents = retriever.search(namespace=namespace, query=question, limit=limit)
             logging.info(f"Retrieved {len(documents)} documents.")
             
-            # CRITICAL: Log detailed document content for debugging
-            logging.info(f"🔍 DETAILED RETRIEVED DOCUMENTS DEBUG:")
-            for i, doc in enumerate(documents):
-                content_preview = doc.get('content', str(doc))[:150] if isinstance(doc, dict) else str(doc)[:150]
-                logging.info(f"   📄 Document {i+1}: {content_preview}...")
-                if 'chi nhánh' in content_preview.lower() or 'branch' in content_preview.lower():
-                    logging.info(f"   🎯 FOUND RELEVANT DOC: Document {i+1} contains branch info!")
+            # CRITICAL: Log full text content for each retrieved document (no embeddings)
+            logging.info("🔍 RETRIEVED DOCUMENTS (full text, no embeddings):")
+            for i, d in enumerate(documents):
+                try:
+                    if isinstance(d, tuple) and len(d) >= 3 and isinstance(d[1], dict):
+                        key, value, score = d[0], d[1], d[2]
+                        content = value.get("content") or value.get("text") or ""
+                        if not isinstance(content, str):
+                            content = str(content)
+                        score_str = f"{score:.4f}" if isinstance(score, (int, float)) else str(score)
+                        logging.info(f"\n— Doc {i+1} | key={key} | score={score_str}\n{content}")
+                        # Quick signal for branch/location content
+                        low = content.lower()
+                        if ("chi nhánh" in low) or ("địa chỉ" in low) or ("branch" in low) or ("address" in low):
+                            logging.info(f"   🎯 BRANCH/ADDRESS SIGNAL detected in Doc {i+1}")
+                    else:
+                        logging.info(f"— Doc {i+1} (raw): {str(d)}")
+                except Exception as _e:
+                    logging.debug(f"retrieve logging skipped for doc {i+1}: {_e}")
             
             return {
                 "documents": documents,
