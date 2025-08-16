@@ -148,6 +148,7 @@ class QdrantStore:
         if query_vec is None:
             return []
         try:
+            print(f"search->namespace:{namespace}")
             search_result = self.qdrant_client.search(
                 collection_name=self.collection_name,
                 query_vector=query_vec,
