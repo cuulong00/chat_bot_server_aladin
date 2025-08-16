@@ -1,4 +1,5 @@
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langchain_core.runnables import RunnablePassthrough
 from src.graphs.core.assistants.base_assistant import BaseAssistant
 from src.graphs.state.state import RagState
 from datetime import datetime
@@ -198,26 +199,27 @@ class DirectAnswerAssistant(BaseAssistant):
         ).partial(current_date=datetime.now, domain_context=domain_context)
         llm_with_tools = llm.bind_tools(tools)
         runnable = (
-            prompt
+            RunnablePassthrough()
+            | prompt
             | llm_with_tools
         )
         super().__init__(runnable)
     
-    def binding_prompt(self, state: RagState) -> Dict[str, Any]:
-        """Override binding_prompt to add domain_context and current_date variables."""
-        # Get base prompt data (this will include default values)
-        prompt_data = super().binding_prompt(state)
+    # def binding_prompt(self, state: RagState) -> Dict[str, Any]:
+    #     """Override binding_prompt to add domain_context and current_date variables."""
+    #     # Get base prompt data (this will include default values)
+    #     prompt_data = super().binding_prompt(state)
         
-        # Override domain_context with the specific value from constructor
-        if hasattr(self, 'domain_context') and self.domain_context:
-            prompt_data['domain_context'] = self.domain_context
+    #     # Override domain_context with the specific value from constructor
+    #     if hasattr(self, 'domain_context') and self.domain_context:
+    #         prompt_data['domain_context'] = self.domain_context
         
-        # Debug logging to verify variables are added
-        import logging
-        logging.info(f"🔍 DirectAnswerAssistant binding_prompt keys: {list(prompt_data.keys())}")
-        logging.info(f"🔍 DirectAnswerAssistant user_info: {prompt_data.get('user_info', 'MISSING')}")
-        logging.info(f"🔍 DirectAnswerAssistant user_profile: {prompt_data.get('user_profile', 'MISSING')}")
-        logging.debug(f"domain_context: {prompt_data.get('domain_context', 'MISSING')}")
-        logging.debug(f"current_date: {prompt_data.get('current_date', 'MISSING')}")
+    #     # Debug logging to verify variables are added
+    #     import logging
+    #     logging.info(f"🔍 DirectAnswerAssistant binding_prompt keys: {list(prompt_data.keys())}")
+    #     logging.info(f"🔍 DirectAnswerAssistant user_info: {prompt_data.get('user_info', 'MISSING')}")
+    #     logging.info(f"🔍 DirectAnswerAssistant user_profile: {prompt_data.get('user_profile', 'MISSING')}")
+    #     logging.debug(f"domain_context: {prompt_data.get('domain_context', 'MISSING')}")
+    #     logging.debug(f"current_date: {prompt_data.get('current_date', 'MISSING')}")
         
-        return prompt_data
+    #     return prompt_data
