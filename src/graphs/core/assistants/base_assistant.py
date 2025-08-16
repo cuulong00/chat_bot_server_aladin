@@ -55,10 +55,7 @@ class BaseAssistant:
         if not prompt.get("messages"):
             logging.error("No messages found in prompt data during binding.")
             prompt["messages"] = [] # Ensure messages is always a list
-
-        logging.info(f"🔍 BaseAssistant.binding_prompt - FINAL prompt user_info: {prompt.get('user_info')}")
-        logging.info(f"🔍 BaseAssistant.binding_prompt - FINAL prompt user_profile: {prompt.get('user_profile')}")
-        logging.debug(f"🔍 BaseAssistant.binding_prompt - FINAL prompt keys: {list(prompt.keys())}")
+        print(f"binding->prompt:{prompt}")
         return prompt
 
     def __call__(self, state: RagState, config: RunnableConfig) -> dict[str, Any]:
@@ -96,12 +93,9 @@ class BaseAssistant:
                 logging.error("❌ BaseAssistant: Aborting LLM call due to empty or invalid prompt data.")
                 raise ValueError("Prompt data is empty or missing required 'messages' field.")
 
-            logging.debug(f"🔍 BaseAssistant.__call__ - invoking runnable")
+           
             result = self.runnable.invoke(prompt, config)
-            logging.debug(f"🔍 BaseAssistant.__call__ - runnable returned type: {type(result)}")
-            logging.debug(f"🔍 BaseAssistant.__call__ - runnable returned content: {result}")
-
-            logging.debug(f"🔍 BaseAssistant.__call__ - checking if response is valid")
+           
             if self._is_valid_response(result):
                 logging.debug("✅ BaseAssistant: Assistant returned a valid response.")
                 return result

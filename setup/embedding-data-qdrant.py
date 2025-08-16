@@ -376,6 +376,7 @@ if __name__ == "__main__":
     args = parse_args()
 
     # Default file if none provided
+    #default_file = PROJECT_ROOT / "data" / "FAQ.txt"
     default_file = PROJECT_ROOT / "data" / "maketing_data.txt"
     resolved_files: List[str] = []
     if args.files:

@@ -30,67 +30,6 @@ from src.tools.user_tools import get_user_info, get_latest_thread_id_by_user
 import os
 
 
-# --- Utility Functions for Stream Writer (shared) ---
-def emit_reasoning_step(node_name: str, summary: str, status: str = "processing", details: dict = None, context_question: str = ""):
-    """
-    Utility function to emit reasoning steps using LangGraph's custom stream writer.
-    Shared across all node files for consistent reasoning step emission.
-    
-    Args:
-        node_name: Name of the node (e.g., 'user_info', etc.)
-        summary: Human-readable summary of what the node is doing
-        status: 'processing' or 'completed' 
-        details: Optional dictionary with additional details
-        context_question: User question for context (will be truncated if too long)
-    
-    Returns:
-        bool: True if successfully emitted, False otherwise
-    """
-    try:
-        from langgraph.config import get_stream_writer
-        writer = get_stream_writer()
-        if writer:
-            # Truncate context question for better UX
-            truncated_question = context_question[:50] + '...' if len(context_question) > 50 else context_question
-            
-            writer({
-                "reasoning_step": {
-                    "node": node_name,
-                    "summary": summary,
-                    "status": status,
-                    "details": details or {},
-                    "context_question": truncated_question
-                }
-            })
-            return True
-        else:
-            logging.warning(f"Stream writer not available for node: {node_name}")
-            return False
-    except Exception as e:
-        # Log error but don't break the flow
-        logging.error(f"Stream writer error in {node_name}: {e}")
-        return False
-
-
-def create_reasoning_step_legacy(node_name: str, summary: str, details: dict = None):
-    """
-    Create reasoning step in legacy format for backward compatibility.
-    This is used in the return statements to maintain existing functionality.
-    
-    Args:
-        node_name: Name of the node
-        summary: Summary description  
-        details: Optional details dictionary
-        
-    Returns:
-        dict: Reasoning step in legacy format
-    """
-    return {
-        "node": node_name,
-        "summary": summary,
-        "details": details or {}
-    }
-
 
 def user_info(state: State, config: RunnableConfig):
     """
@@ -144,47 +83,20 @@ def user_info(state: State, config: RunnableConfig):
                     item.get("text", "") for item in last_message.content
                     if isinstance(item, dict) and "text" in item
                 ])
-    
-    # CRITICAL: Reset reasoning steps for new query to prevent accumulation
-    # This is the entry point where we ensure clean state for each new user query
-    logging.info(f"🧹 RESET: Clearing reasoning steps for new query: {question[:50]}{'...' if len(question) > 50 else ''}")
-    
-    # Emit processing reasoning step immediately
-    emit_reasoning_step(
-        node_name="user_info",
-        summary=f"🔍 Initializing user session for query: {question[:50]}{'...' if len(question) > 50 else ''}",
-        status="processing",
-        details={"action": "user_initialization", "user_id": user_id[:8] + "..."},
-        context_question=question
-    )
-    
-    # Create legacy reasoning step for return value (backward compatibility)
-    step = create_reasoning_step_legacy(
-        node_name="user_info",
-        summary=f"🔍 Initializing user session for query: {question[:50]}{'...' if len(question) > 50 else ''}",
-        details={"action": "user_initialization", "user_id": user_id[:8] + "..."}
-    )
-    
+
+   
     user = state.get("user")
     if user:
         print(f"User da ton tai trong state, khong can query lại db")
         if "user_id" not in configurable or configurable["user_id"] != user_id:
             config["configurable"] = {**configurable, "user_id": user_id}
         
-        # Emit completion reasoning step
-        emit_reasoning_step(
-            node_name="user_info",
-            summary=f"🔍 User session already active for: {question[:50]}{'...' if len(question) > 50 else ''}",
-            status="completed",
-            details={"action": "session_reused", "user_id": user_id[:8] + "..."},
-            context_question=question
-        )
-        
+  
         # RESET: Always reset reasoning_steps even when user exists - this is critical!
         # The smart update function in state.py will detect the user_info step and reset appropriately
         # Also reset dialog_state if this appears to be a new conversation
         updates = {
-            "reasoning_steps": [step], 
+           
             "question": question,
             "session_id": session_id,  # Set session_id for image context retrieval
             # Also reset other query-specific state to prevent accumulation
@@ -270,7 +182,7 @@ def user_info(state: State, config: RunnableConfig):
         "user": user, 
         "thread_id": thread_id, 
         "session_id": session_id,  # Set session_id for image context retrieval
-        "reasoning_steps": [step],  # Clean start with only current step - smart update will handle reset
+      
         "question": question,  # Ensure question is set for consistent context
         # Reset other query-specific state to prevent accumulation
         "documents": [],
@@ -289,14 +201,7 @@ def user_info(state: State, config: RunnableConfig):
 
     config["configurable"] = {**configurable, "user_id": user_id}
     
-    # Emit completion reasoning step
-    emit_reasoning_step(
-        node_name="user_info",
-        summary=f"🔍 User session initialized successfully for: {question[:50]}{'...' if len(question) > 50 else ''}",
-        status="completed",
-        details={"action": "session_created", "user_id": user_id[:8] + "...", "thread_id": thread_id[:8] + "..."},
-        context_question=question
-    )
+    
     
     print(f"new_state:{new_state}")
     return new_state
@@ -320,58 +225,26 @@ def route_flight_assistant(
                     item.get("text", "") for item in last_message.content
                     if isinstance(item, dict) and "text" in item
                 ])
-    
-    # Emit routing analysis step
-    emit_reasoning_step(
-        node_name="flight_assistant_router",
-        summary="✈️ Flight Assistant analyzing tool usage and completion status",
-        status="processing",
-        details={"action": "tool_analysis"},
-        context_question=question
-    )
+  
     
     route = tools_condition(state)
     if route == END:
-        emit_reasoning_step(
-            node_name="flight_assistant_router",
-            summary="✅ Flight assistance completed successfully",
-            status="completed",
-            details={"action": "flight_assistance_complete", "route": "END"},
-            context_question=question
-        )
+       
         return END
         
     tool_calls = state["messages"][-1].tool_calls
     did_cancel = any(tc["name"] == CompleteOrEscalate.__name__ for tc in tool_calls)
     
     if did_cancel:
-        emit_reasoning_step(
-            node_name="flight_assistant_router",
-            summary="🔄 Flight Assistant escalating back to main assistant",
-            status="completed",
-            details={"action": "escalate_to_main", "reason": "user_requested_or_completed"},
-            context_question=question
-        )
+        
         return "leave_skill"
         
     safe_toolnames = [t.name for t in flight_assistant_safe_tools]
     if all(tc["name"] in safe_toolnames for tc in tool_calls):
-        emit_reasoning_step(
-            node_name="flight_assistant_router",
-            summary="🔐 Using safe flight tools (no approval required)",
-            status="completed",
-            details={"action": "use_safe_tools", "tools": [tc["name"] for tc in tool_calls]},
-            context_question=question
-        )
+        
         return "flight_assistant_safe_tools"
     else:
-        emit_reasoning_step(
-            node_name="flight_assistant_router",
-            summary="⚠️ Using sensitive flight tools (requires approval)",
-            status="completed",
-            details={"action": "use_sensitive_tools", "tools": [tc["name"] for tc in tool_calls]},
-            context_question=question
-        )
+        
         return "flight_assistant_sensitive_tools"
 
 
@@ -396,21 +269,6 @@ def pop_dialog_state(state: State) -> dict:
                     if isinstance(item, dict) and "text" in item
                 ])
     
-    # Emit reasoning step for dialog state pop
-    emit_reasoning_step(
-        node_name="dialog_state_manager",
-        summary="🔄 Returning to main assistant from specialized service",
-        status="completed",
-        details={"action": "pop_dialog_state", "returning_to": "primary_assistant"},
-        context_question=question
-    )
-    
-    # Create reasoning step for state update (like adaptive_rag_graph)
-    reasoning_step = create_reasoning_step_legacy(
-        node_name="dialog_state_manager",
-        summary="🔄 Returning to main assistant from specialized service",
-        details={"action": "pop_dialog_state", "returning_to": "primary_assistant"}
-    )
     
     messages = []
     if state["messages"][-1].tool_calls:
@@ -424,7 +282,7 @@ def pop_dialog_state(state: State) -> dict:
     return {
         "dialog_state": "pop",
         "messages": messages,
-        "reasoning_steps": [reasoning_step]  # Add reasoning step like adaptive_rag_graph
+       
     }
 
 
@@ -447,57 +305,26 @@ def route_book_hotel(
                     if isinstance(item, dict) and "text" in item
                 ])
     
-    # Emit routing analysis step
-    emit_reasoning_step(
-        node_name="hotel_assistant_router",
-        summary="🏨 Hotel Assistant analyzing booking requirements and tool usage",
-        status="processing",
-        details={"action": "hotel_tool_analysis"},
-        context_question=question
-    )
+
     
     route = tools_condition(state)
     if route == END:
-        emit_reasoning_step(
-            node_name="hotel_assistant_router",
-            summary="✅ Hotel booking assistance completed successfully",
-            status="completed",
-            details={"action": "hotel_assistance_complete", "route": "END"},
-            context_question=question
-        )
+       
         return END
         
     tool_calls = state["messages"][-1].tool_calls
     did_cancel = any(tc["name"] == CompleteOrEscalate.__name__ for tc in tool_calls)
     
     if did_cancel:
-        emit_reasoning_step(
-            node_name="hotel_assistant_router",
-            summary="🔄 Hotel Assistant escalating back to main assistant",
-            status="completed",
-            details={"action": "escalate_to_main", "reason": "user_requested_or_completed"},
-            context_question=question
-        )
+        
         return "leave_skill"
         
     tool_names = [t.name for t in book_hotel_safe_tools]
     if all(tc["name"] in tool_names for tc in tool_calls):
-        emit_reasoning_step(
-            node_name="hotel_assistant_router",
-            summary="🔐 Using safe hotel booking tools (no approval required)",
-            status="completed",
-            details={"action": "use_safe_tools", "tools": [tc["name"] for tc in tool_calls]},
-            context_question=question
-        )
+        
         return "book_hotel_safe_tools"
     else:
-        emit_reasoning_step(
-            node_name="hotel_assistant_router",
-            summary="⚠️ Using sensitive hotel booking tools (requires approval)",
-            status="completed",
-            details={"action": "use_sensitive_tools", "tools": [tc["name"] for tc in tool_calls]},
-            context_question=question
-        )
+       
         return "book_hotel_sensitive_tools"
 
 
@@ -519,58 +346,25 @@ def route_book_excursion(
                     item.get("text", "") for item in last_message.content
                     if isinstance(item, dict) and "text" in item
                 ])
-    
-    # Emit routing analysis step
-    emit_reasoning_step(
-        node_name="excursion_assistant_router",
-        summary="🗺️ Trip Recommendation Assistant analyzing excursion requirements",
-        status="processing",
-        details={"action": "excursion_tool_analysis"},
-        context_question=question
-    )
+      
     
     route = tools_condition(state)
     if route == END:
-        emit_reasoning_step(
-            node_name="excursion_assistant_router",
-            summary="✅ Trip recommendation assistance completed successfully",
-            status="completed",
-            details={"action": "excursion_assistance_complete", "route": "END"},
-            context_question=question
-        )
         return END
         
     tool_calls = state["messages"][-1].tool_calls
     did_cancel = any(tc["name"] == CompleteOrEscalate.__name__ for tc in tool_calls)
     
     if did_cancel:
-        emit_reasoning_step(
-            node_name="excursion_assistant_router",
-            summary="🔄 Trip Recommendation Assistant escalating back to main assistant",
-            status="completed",
-            details={"action": "escalate_to_main", "reason": "user_requested_or_completed"},
-            context_question=question
-        )
+      
         return "leave_skill"
         
     tool_names = [t.name for t in book_excursion_safe_tools]
     if all(tc["name"] in tool_names for tc in tool_calls):
-        emit_reasoning_step(
-            node_name="excursion_assistant_router",
-            summary="🔐 Using safe trip recommendation tools (no approval required)",
-            status="completed",
-            details={"action": "use_safe_tools", "tools": [tc["name"] for tc in tool_calls]},
-            context_question=question
-        )
+        
         return "book_excursion_safe_tools"
     else:
-        emit_reasoning_step(
-            node_name="excursion_assistant_router",
-            summary="⚠️ Using sensitive trip recommendation tools (requires approval)",
-            status="completed",
-            details={"action": "use_sensitive_tools", "tools": [tc["name"] for tc in tool_calls]},
-            context_question=question
-        )
+       
         return "book_excursion_sensitive_tools"
 
 
@@ -613,57 +407,23 @@ def route_book_car_rental(
                     if isinstance(item, dict) and "text" in item
                 ])
     
-    # Emit routing analysis step
-    emit_reasoning_step(
-        node_name="car_rental_assistant_router",
-        summary="🚗 Car Rental Assistant analyzing booking requirements and tool usage",
-        status="processing",
-        details={"action": "car_rental_tool_analysis"},
-        context_question=question
-    )
-    
+      
     route = tools_condition(state)
     if route == END:
-        emit_reasoning_step(
-            node_name="car_rental_assistant_router",
-            summary="✅ Car rental assistance completed successfully",
-            status="completed",
-            details={"action": "car_rental_assistance_complete", "route": "END"},
-            context_question=question
-        )
         return END
         
     tool_calls = state["messages"][-1].tool_calls
     did_cancel = any(tc["name"] == CompleteOrEscalate.__name__ for tc in tool_calls)
     
     if did_cancel:
-        emit_reasoning_step(
-            node_name="car_rental_assistant_router",
-            summary="🔄 Car Rental Assistant escalating back to main assistant",
-            status="completed",
-            details={"action": "escalate_to_main", "reason": "user_requested_or_completed"},
-            context_question=question
-        )
         return "leave_skill"
         
     safe_toolnames = [t.name for t in book_car_rental_safe_tools]
     if all(tc["name"] in safe_toolnames for tc in tool_calls):
-        emit_reasoning_step(
-            node_name="car_rental_assistant_router",
-            summary="🔐 Using safe car rental tools (no approval required)",
-            status="completed",
-            details={"action": "use_safe_tools", "tools": [tc["name"] for tc in tool_calls]},
-            context_question=question
-        )
+      
         return "book_car_rental_safe_tools"
     else:
-        emit_reasoning_step(
-            node_name="car_rental_assistant_router",
-            summary="⚠️ Using sensitive car rental tools (requires approval)",
-            status="completed",
-            details={"action": "use_sensitive_tools", "tools": [tc["name"] for tc in tool_calls]},
-            context_question=question
-        )
+        
         return "book_car_rental_sensitive_tools"
 
 

@@ -245,95 +245,6 @@ def get_question_from_state(state: RagState) -> str:
     # Use the consistent utility function
     return get_current_user_question(state)
 
-
-# --- Lightweight Output Formatters (Messenger-friendly, no tables/HTML) ---
-def _format_price_inline_list_to_bullets(text: str) -> tuple[str, bool]:
-    """
-    Detect patterns like:
-      "50.000đ/1 lít rượu quê, 100.000đ/1 chai vang, 150.000đ/1 chai rượu nhập khẩu"
-    and turn them into bullet lines for readability:
-      • 1 lít rượu quê — 50.000đ
-      • 1 chai vang — 100.000đ
-      • 1 chai rượu nhập khẩu — 150.000đ
-
-    Returns (new_text, changed)
-    """
-    import re
-
-    currency = r"(?:đ|₫|vnd|vnđ)"
-    amount = rf"\d[\d\.]*\s?{currency}"
-    unit = r"(?:\/[\w\s]+)?"  # optional "/..." part; simplified without \p{L}
-    # One item:  <amount><unit?><space><desc (no comma)>
-    item = rf"{amount}{unit}\s+[^,\.\n]+"
-    # Sequence of at least 2 items separated by commas
-    pattern = re.compile(rf"({item}(?:\s*,\s*{item}){{1,}})", flags=re.IGNORECASE)
-
-    def _split_items(seq: str) -> list[str]:
-        return [p.strip() for p in seq.split(',') if p.strip()]
-
-    def _to_bullet(seg: str) -> str:
-        # Extract price and optional unit first, then the rest is description
-        m = re.match(rf"^({amount})(?:\s*\/\s*([^\,\.\n]+))?\s+(.*)$", seg, flags=re.IGNORECASE)
-        if not m:
-            return f"• {seg}"
-        price = m.group(1).strip()
-        unit_txt = m.group(2).strip() if m.group(2) else ""
-        desc = (m.group(3) or "").strip()
-        if unit_txt:
-            return f"• {desc} — {price} / {unit_txt}"
-        return f"• {desc} — {price}"
-
-    changed = False
-    def _repl(match: re.Match) -> str:
-        nonlocal changed
-        seq = match.group(1)
-        items = _split_items(seq)
-        if len(items) < 2:
-            return match.group(0)
-        bullets = [_to_bullet(it) for it in items]
-        changed = True
-        # Prepend a short header only for readability; avoid Markdown/HTML
-        return "Bảng giá (tham khảo):\n" + "\n".join(bullets)
-
-    new_text = pattern.sub(_repl, text)
-    return new_text, changed
-
-def _format_price_lines(text: str) -> tuple[str, bool]:
-    """Standardize individual lines like 'Tên món - 50.000đ/1 phần' to bullet style."""
-    import re
-
-    lines = text.splitlines()
-    changed = False
-    currency_markers = ("đ", "₫", "vnd", "vnđ")
-    out = []
-    for line in lines:
-        raw = line.strip()
-        if not raw:
-            out.append(line)
-            continue
-        low = raw.lower()
-        if any(c in low for c in currency_markers):
-            # Try split on common separators
-            parts = re.split(r"\s*[:\-–]\s*", raw, maxsplit=1)
-            if len(parts) == 2:
-                name, price = parts[0].strip(), parts[1].strip()
-                out.append(f"• {name} — {price}")
-                changed = True
-                continue
-        out.append(line)
-    return "\n".join(out), changed
-
-def beautify_prices_if_any(text: str) -> str:
-    """Apply a couple of conservative, Messenger-safe beautifications for price lists."""
-    if not text or not isinstance(text, str):
-        return text
-    # First, expand inline comma-separated price lists to bullets
-    text2, changed1 = _format_price_inline_list_to_bullets(text)
-    # Then, normalize any remaining 'name - price' lines
-    text3, changed2 = _format_price_lines(text2)
-    return text3 if (changed1 or changed2) else text
-
-
 # --- Graph Definition Function ---
 def create_adaptive_rag_graph(
     llm: Runnable,
@@ -946,17 +857,6 @@ just reformulate it if needed and otherwise return it as is. Keep the question i
             logging.debug(f"Heuristic tool-call injection skipped: {_e}")
         
         response = direct_answer_assistant(state, config)
-
-        # Beautify simple price lists in direct answers too (no tool-calls)
-        try:
-            content = getattr(response, "content", None)
-            if isinstance(content, str) and (not hasattr(response, "tool_calls") or not response.tool_calls):
-                formatted = beautify_prices_if_any(content)
-                if formatted != content:
-                    from langchain_core.messages import AIMessage
-                    response = AIMessage(content=formatted, additional_kwargs=getattr(response, "additional_kwargs", {}))
-        except Exception as _fmt_err:
-            logging.debug(f"generate_direct post-format skipped: {_fmt_err}")
 
         return {"messages": [response]}
 
