@@ -259,17 +259,28 @@ class SmartMessageAggregator:
         self.metrics['merged_messages'] += 1
         self._update_merge_time(current_time - ctx['created_at'])
 
-        # Reset inactivity timer
+        # Reset inactivity timer với logic ưu tiên hình ảnh
         timer: Optional[asyncio.Task] = ctx.get('timer')
         if timer and not timer.done():
             try:
                 timer.cancel()
             except Exception:
                 pass
-        delay = self.config.inactivity_window
+        
+        # Tăng thời gian chờ nếu có text + attachment để đảm bảo hình ảnh được xử lý trước
+        has_text = bool(ctx.get('text'))
+        has_attachments = len(ctx.get('attachments') or []) > 0
+        
+        if has_text and has_attachments:
+            # Khi có cả text và hình ảnh: tăng thời gian chờ để đảm bảo hình ảnh được xử lý trước
+            delay = self.config.inactivity_window * 2  # 10s thay vì 5s
+            logger.info(f"🔄 Extended inactivity timer due to text+image combo: {delay:.1f}s")
+        else:
+            delay = self.config.inactivity_window
+            
         ctx['timer'] = asyncio.create_task(self._finalize_after_inactivity(key, delay))
         logger.info(
-            f"⏳ Reset inactivity timer for user={user_id} thread={thread_id} to {delay:.1f}s (parts: T={1 if ctx.get('text') else 0}, A={len(ctx.get('attachments') or [])})"
+            f"⏳ Reset inactivity timer for user={user_id} thread={thread_id} to {delay:.1f}s (parts: T={1 if has_text else 0}, A={len(ctx.get('attachments') or [])})"
         )
         return ctx, False
     

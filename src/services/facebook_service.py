@@ -583,21 +583,33 @@ class FacebookMessengerService:
                                 "session_id": session,
                             }
                             
-                            # Process images to get contexts and state
+                            # Process images to get contexts and state - BLOCKING OPERATION
                             logger.info("🔬 Calling agent for image analysis...")
+                            logger.info("⏳ Waiting for image processing to complete before text processing...")
+                            
                             image_result, final_state = await self.call_agent_with_state(app_state, image_inputs)
                             
                             # Extract image_contexts from final state
                             image_contexts = final_state.get("image_contexts", [])
-                            logger.info(f"🔬 Extracted {len(image_contexts)} image contexts from state")
+                            logger.info(f"✅ Image processing completed: {len(image_contexts)} contexts extracted")
                             logger.info(f"🔬 Image contexts: {image_contexts}")
+                        else:
+                            logger.error("❌ No app_state available for image processing")
                             
                 except Exception as e:
                     logger.error(f"❌ Image processing failed: {e}")
             
-            # STEP 3: Xử lý text messages với image_contexts đã có
+            # STEP 3: Xử lý text messages với image_contexts đã có (sau khi images đã xử lý hoàn toàn)
             if text_messages:
                 logger.info("📝 Processing text messages with image contexts...")
+                logger.info(f"📝 Available image contexts: {len(image_contexts)} contexts")
+                
+                # VALIDATION: Đảm bảo đồng bộ hoàn toàn
+                if image_messages and len(image_messages) > 0:
+                    if len(image_contexts) == 0:
+                        logger.error("🚨 SYNC ERROR: Images were processed but no contexts created!")
+                    else:
+                        logger.info("✅ SYNC SUCCESS: Image processing completed, contexts available for text")
                 
                 # Prepare text message cho agent
                 text_content = ""
@@ -609,6 +621,15 @@ class FacebookMessengerService:
                         text_content += f"[{item.get('type', 'ATTACHMENT').upper()}] "
                 
                 text_content = text_content.strip()
+                
+                # Kiểm tra text có tham chiếu đến hình ảnh không
+                image_reference_keywords = ['món này', '2 món này', 'trong ảnh', 'ảnh vừa gửi', 'món đó', 'cái này', 'cái kia', 'hình ảnh']
+                has_image_reference = any(keyword in text_content.lower() for keyword in image_reference_keywords)
+                
+                # Nếu text tham chiếu đến hình ảnh nhưng chưa có image contexts
+                if has_image_reference and not image_contexts:
+                    logger.warning(f"⚠️ Text references image ('{text_content[:50]}...') but no image contexts available")
+                    # Có thể thêm delay hoặc retry logic ở đây nếu cần
                 
                 if text_content:
                     # Store aggregated message in history
