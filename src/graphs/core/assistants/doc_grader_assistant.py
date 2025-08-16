@@ -1,12 +1,17 @@
 from __future__ import annotations
 
 from datetime import datetime
+import logging
+import traceback
+from typing import Any
 
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.runnables import Runnable
+from langchain_core.runnables import Runnable, RunnableConfig
 from pydantic import BaseModel, Field
 
 from src.graphs.core.assistants.base_assistant import BaseAssistant
+from src.graphs.state.state import RagState
+from src.core.logging_config import log_exception_details
 
 
 class GradeDocuments(BaseModel):
@@ -21,6 +26,9 @@ class DocGraderAssistant(BaseAssistant):
     An assistant that grades the relevance of a document to the user's question.
     """
     def __init__(self, llm: Runnable, domain_context: str):
+        logging.info(f"🔍 DocGraderAssistant.__init__ - domain_context: {domain_context}")
+        logging.info(f"🔍 DocGraderAssistant.__init__ - llm type: {type(llm)}")
+        
         prompt = ChatPromptTemplate.from_messages(
             [
                 (
@@ -47,6 +55,58 @@ class DocGraderAssistant(BaseAssistant):
                 ("human", "Document:\n\n{document}\n\nQuestion: {messages}"),
             ]
         ).partial(domain_context=domain_context, current_date=datetime.now())
+        
+        logging.info(f"🔍 DocGraderAssistant.__init__ - prompt created with partial values")
 
         runnable = prompt | llm.with_structured_output(GradeDocuments)
+        logging.info(f"🔍 DocGraderAssistant.__init__ - runnable created with structured output")
+        
         super().__init__(runnable)
+        logging.info(f"🔍 DocGraderAssistant.__init__ - completed")
+
+    def __call__(self, state: RagState, config: RunnableConfig) -> GradeDocuments:
+        """Override to add detailed logging for debugging."""
+        logging.info(f"🔍 DocGraderAssistant.__call__ - START")
+        logging.info(f"🔍 DocGraderAssistant.__call__ - state keys: {list(state.keys())}")
+        logging.info(f"🔍 DocGraderAssistant.__call__ - config: {config}")
+        
+        try:
+            # Call parent implementation and log every step
+            logging.info(f"🔍 DocGraderAssistant.__call__ - calling super().__call__")
+            result = super().__call__(state, config)
+            
+            logging.info(f"🔍 DocGraderAssistant.__call__ - super().__call__ returned type: {type(result)}")
+            logging.info(f"🔍 DocGraderAssistant.__call__ - super().__call__ returned content: {result}")
+            
+            # Check if result has the expected binary_score attribute
+            if hasattr(result, 'binary_score'):
+                logging.info(f"✅ DocGraderAssistant.__call__ - result has binary_score: {result.binary_score}")
+            else:
+                logging.error(f"❌ DocGraderAssistant.__call__ - result missing binary_score attribute")
+                logging.error(f"❌ DocGraderAssistant.__call__ - result attributes: {dir(result) if result else 'None'}")
+                
+            return result
+            
+        except Exception as e:
+            logging.error(f"❌ DocGraderAssistant.__call__ - EXCEPTION occurred:")
+            logging.error(f"   Exception type: {type(e).__name__}")
+            logging.error(f"   Exception message: {str(e)}")
+            logging.error(f"   Full traceback:\n{traceback.format_exc()}")
+            
+            # Re-raise to let parent handle
+            raise e
+
+    def _is_valid_response(self, result: Any) -> bool:
+        """Override to properly validate GradeDocuments structured output."""
+        logging.debug(f"🔍 DocGraderAssistant._is_valid_response - checking result type: {type(result)}")
+        
+        # For structured output (GradeDocuments), check if it has binary_score
+        if isinstance(result, GradeDocuments):
+            is_valid = hasattr(result, 'binary_score') and result.binary_score in ['yes', 'no']
+            logging.debug(f"🔍 DocGraderAssistant._is_valid_response - GradeDocuments valid: {is_valid}, score: {getattr(result, 'binary_score', 'MISSING')}")
+            return is_valid
+        
+        # Fall back to parent validation for other types
+        parent_valid = super()._is_valid_response(result)
+        logging.debug(f"🔍 DocGraderAssistant._is_valid_response - parent validation: {parent_valid}")
+        return parent_valid
