@@ -18,8 +18,7 @@ class BaseAssistant:
     def binding_prompt(self, state: RagState) -> dict[str, Any]:
         """Binds state to the prompt, adding necessary context."""
         logging.debug(f"🔍 BaseAssistant.binding_prompt - START with state keys: {list(state.keys())}")
-        print(f"------------state{state}")
-        
+            
         running_summary = ""
         if state.get("context") and isinstance(state["context"], dict):
             summary_obj = state["context"].get("running_summary")
@@ -31,10 +30,7 @@ class BaseAssistant:
         user_data = state.get("user", {})
         user_info = user_data.get("user_info", {"user_id": "unknown", "name": "anh/chị"})
         user_profile = user_data.get("user_profile", {})
-        
-        print(f"------------user_data:{user_data}")
-        print(f"------------user_info:{user_info}")
-        print(f"------------user_profile:{user_profile}")
+     
 
         logging.info(f"✅ BaseAssistant: Direct access - user_info: {user_info}, user_profile: {user_profile}")
 

@@ -66,9 +66,6 @@ class DocGraderAssistant(BaseAssistant):
 
     def __call__(self, state: RagState, config: RunnableConfig) -> GradeDocuments:
         """Override to add detailed logging for debugging."""
-        logging.info(f"🔍 DocGraderAssistant.__call__ - START")
-        logging.info(f"🔍 DocGraderAssistant.__call__ - state keys: {list(state.keys())}")
-        logging.info(f"🔍 DocGraderAssistant.__call__ - config: {config}")
         
         try:
             # Call parent implementation and log every step
