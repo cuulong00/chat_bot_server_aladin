@@ -1,5 +1,4 @@
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
-from langchain_core.runnables import RunnablePassthrough
 from src.graphs.core.assistants.base_assistant import BaseAssistant
 from src.graphs.state.state import RagState
 from datetime import datetime
@@ -199,8 +198,7 @@ class DirectAnswerAssistant(BaseAssistant):
         ).partial(current_date=datetime.now, domain_context=domain_context)
         llm_with_tools = llm.bind_tools(tools)
         runnable = (
-            RunnablePassthrough()
-            | prompt
+            prompt
             | llm_with_tools
         )
         super().__init__(runnable)
