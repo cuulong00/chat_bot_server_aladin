@@ -54,9 +54,9 @@ class BaseAssistant:
             logging.info(f"🔄 BaseAssistant: user_profile_needs_refresh=True, calling get_user_profile for user_id: {user_info.get('user_id', 'unknown')}")
             try:
                 from src.tools.memory_tools import get_user_profile
-                updated_profile = get_user_profile(user_info.get('user_id', 'unknown'))
-                if updated_profile and updated_profile.get('summary') != 'No personalized information found for this user.':
-                    user_profile = updated_profile
+                updated_profile_str = get_user_profile(user_info.get('user_id', 'unknown'))
+                if updated_profile_str and "No personalized information found" not in updated_profile_str:
+                    user_profile = {"summary": updated_profile_str}
                     logging.info(f"✅ BaseAssistant: Successfully refreshed user_profile: {user_profile}")
                 else:
                     logging.info(f"ℹ️ BaseAssistant: No updated profile found, keeping existing")

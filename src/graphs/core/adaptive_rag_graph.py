@@ -558,6 +558,25 @@ def create_adaptive_rag_graph(
         if filtered_docs:
             filtered_docs.extend(remaining_docs)
         
+        # 🔧 FALLBACK MECHANISM FOR MENU QUERIES
+        # If this is a menu query and we have very few relevant docs, be more lenient
+        menu_keywords = ['danh sách các món', 'những món gì', 'menu', 'thực đơn', 'món có gì', 'món ăn gì', 'đồ ăn', 'thức ăn']
+        is_menu_query = any(keyword in question.lower() for keyword in menu_keywords)
+        
+        if is_menu_query and len(filtered_docs) < 6:  # If menu query has fewer than 6 docs
+            logging.warning(f"🚨 MENU QUERY FALLBACK: Only {len(filtered_docs)} docs for menu query. Adding more documents.")
+            # Add more documents from the original set that might contain food/restaurant info
+            for doc in documents[len(documents_to_grade):]:  # Look at non-graded documents
+                if len(filtered_docs) >= 10:  # Don't exceed reasonable limit
+                    break
+                if isinstance(doc, tuple) and len(doc) > 1 and isinstance(doc[1], dict):
+                    doc_content = doc[1].get("content", "").lower()
+                    # Look for any restaurant/food related content
+                    food_signals = ['lẩu', 'bò', 'thịt', 'món', 'nhà hàng', 'tian long', 'dimsum', 'ăn', 'thực đơn', 'phù hợp']
+                    if any(signal in doc_content for signal in food_signals):
+                        filtered_docs.append(doc)
+                        logging.info(f"🔧 Added food-related document to menu query results")
+        
         # DETAILED LOGGING for documents passed to next node
         logging.info(f"📋 GRADE_DOCUMENTS OUTPUT ANALYSIS:")
         for i, doc in enumerate(filtered_docs):

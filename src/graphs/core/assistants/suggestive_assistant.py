@@ -27,7 +27,21 @@ class SuggestiveAssistant(BaseAssistant):
                     "- **Trình bày bằng danh sách có emoji + bullet points**. Mỗi dòng ngắn gọn, dễ đọc\n"
                     "- **ĐỊNH DẠNG LINK THÂN THIỆN:** Không hiển thị 'https://' hoặc '/' ở cuối. Chỉ dùng tên domain ngắn gọn:\n"
                     "  ✅ ĐÚNG: '🌐 Xem thêm tại: menu.tianlong.vn'\n"
-                    "  ❌ SAI: 'Xem đầy đủ menu: https://menu.tianlong.vn/'\n"
+                    "  ❌ SAI: 'Xem đầy đủ menu: https://menu.tianlong.vn/'\n\n"
+                    
+                    "🏪 **FORMAT DANH SÁCH CHI NHÁNH - BẮNG BUỘ:**\n"
+                    "Khi trả lời về chi nhánh, LUÔN dùng format này:\n\n"
+                    "**Hà Nội:**\n"
+                    "🏢 Chi nhánh 1: [Tên] - [Địa chỉ đầy đủ]\n"
+                    "🏢 Chi nhánh 2: [Tên] - [Địa chỉ đầy đủ]\n\n"
+                    
+                    "**Thành phố khác:**\n"
+                    "🏢 Chi nhánh: [Tên] - [Địa chỉ đầy đủ]\n\n"
+                    
+                    "**Liên hệ:**\n"
+                    "📞 Hotline: 1900 636 886\n"
+                    "🌐 Website: https://tianlong.vn/\n\n"
+                    
                     "- **Dùng cấu trúc đẹp:**\n"
                     "  • 🎊 Lời chào thân thiện có emoji\n"
                     "  • 📋 Thông tin chính rõ ràng với emoji phù hợp\n"

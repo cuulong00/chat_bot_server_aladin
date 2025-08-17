@@ -6,6 +6,7 @@ import google.generativeai as genai
 from google.generativeai import types
 import uuid
 import os
+import logging
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -132,27 +133,52 @@ class UserMemoryStore:
     ):
         """
         Save a user's personalized preference or habit to the vector database.
-
-        This function creates an embedding for the user's preference and stores it in Qdrant,
-        allowing future retrieval for personalization.
+        Now uses intelligent extraction to create clean, structured preferences.
 
         Args:
             user_id: Unique identifier for the user.
             preference_type: The type of preference (e.g., 'dietary_preference', 'travel_style', 'budget_range', 'favorite_destination').
-            content: The detailed content of the preference.
+            content: The raw content of the preference (will be processed).
             context: Optional additional context for the preference.
 
         Returns:
             Confirmation message indicating the preference has been saved.
         """
-        text_to_embed = f"User {user_id} {preference_type}: {content}"
+        
+        # 🧠 INTELLIGENT PREFERENCE EXTRACTION
+        try:
+            from src.tools.user_profile_extractor import get_profile_extractor
+            
+            extractor = get_profile_extractor()
+            logging.info(f"🔍 Raw content to extract: {content[:200]}...")
+            
+            # Extract structured preferences
+            extracted = extractor.extract_preferences(
+                raw_conversation=content,
+                preference_type=preference_type,
+                context_info=context
+            )
+            
+            # Create clean summary for storage
+            clean_summary = extractor.create_clean_summary(extracted)
+            logging.info(f"✅ Cleaned summary: {clean_summary}")
+            
+            # Use clean summary instead of raw content
+            processed_content = clean_summary
+            
+        except Exception as e:
+            logging.error(f"❌ Preference extraction failed, using raw content: {e}")
+            processed_content = content
+        
+        # Create embedding from processed content
+        text_to_embed = f"User {user_id} {preference_type}: {processed_content}"
         if context:
             text_to_embed += f" Context: {context}"
 
         embedding = self._get_embedding(text_to_embed)
         preference_id = str(uuid.uuid4())
 
-        # Store in collection with a namespace tag to isolate user memory
+        # Store in collection with enhanced payload
         point = PointStruct(
             id=preference_id,
             vector=embedding,
@@ -160,25 +186,25 @@ class UserMemoryStore:
                 "namespace": USER_MEMORY_NAMESPACE,
                 "user_id": user_id,
                 "preference_type": preference_type,
-                "content": content,
+                "content": processed_content,  # Store processed, not raw
+                "raw_content": content,       # Keep raw for debugging
                 "context": context,
                 "text_content": text_to_embed,
-                "timestamp": str(uuid.uuid1().time),  # Simple timestamp
+                "timestamp": str(uuid.uuid1().time),
+                "extraction_method": "intelligent" if processed_content != content else "raw",
             },
         )
 
         self.qdrant_client.upsert(collection_name=self.collection_name, points=[point])
 
-        return f"Saved {preference_type} for user {user_id}"
+        return f"Saved {preference_type} for user {user_id}: {processed_content}"
 
     def get_user_profile(
         self, user_id: str, query_context: str = "", k: int = 5
     ) -> str:
         """
         Retrieve a user's personalized profile information from the vector database.
-
-        This function searches for the most relevant preferences or habits for the user,
-        optionally filtered by a query context, and summarizes them for downstream use.
+        Now returns clean, structured summaries from intelligent extraction.
 
         Args:
             user_id: Unique identifier for the user.
@@ -186,7 +212,7 @@ class UserMemoryStore:
             k: The maximum number of preferences to retrieve.
 
         Returns:
-            A summary string of the user's personalized information.
+            A clean, structured summary of the user's personalized information.
             If no information is found, returns a message indicating so.
         """
         search_query = f"User {user_id}"
@@ -212,6 +238,44 @@ class UserMemoryStore:
         if not search_results:
             return "No personalized information found for this user."
 
+        # 🧠 INTELLIGENT PROFILE AGGREGATION
+        try:
+            from src.tools.user_profile_extractor import get_profile_extractor
+            
+            extractor = get_profile_extractor()
+            
+            # Collect all cleaned preferences
+            cleaned_preferences = []
+            for result in search_results:
+                payload = result.payload
+                content = payload.get('content', '')
+                
+                # Prefer cleaned content over raw
+                if payload.get('extraction_method') == 'intelligent':
+                    cleaned_preferences.append(content)
+                else:
+                    # Try to extract from raw content if available
+                    raw_content = payload.get('raw_content', content)
+                    try:
+                        extracted = extractor.extract_preferences(raw_content, payload.get('preference_type', 'general'))
+                        clean_summary = extractor.create_clean_summary(extracted)
+                        cleaned_preferences.append(clean_summary)
+                    except:
+                        # Fallback to original content
+                        cleaned_preferences.append(content)
+            
+            # Merge all preferences into a unified profile
+            if len(cleaned_preferences) == 1:
+                return f"User's personalized information:\n{cleaned_preferences[0]}"
+            elif len(cleaned_preferences) > 1:
+                # Combine multiple preferences intelligently
+                combined_summary = self._merge_preference_summaries(cleaned_preferences)
+                return f"User's personalized information:\n{combined_summary}"
+                
+        except Exception as e:
+            logging.error(f"❌ Profile aggregation failed, using legacy format: {e}")
+            
+        # Fallback to legacy format
         profile_parts = []
         for result in search_results:
             payload = result.payload
@@ -225,6 +289,41 @@ class UserMemoryStore:
             )
 
         return "User's personalized information:\n" + "\n".join(profile_parts)
+    
+    def _merge_preference_summaries(self, summaries: List[str]) -> str:
+        """Merge multiple preference summaries into a unified profile."""
+        
+        # Parse all summaries
+        merged_parts = {}
+        
+        for summary in summaries:
+            if "|" in summary:
+                # Structured format: "Category: value | Category2: value2"
+                parts = summary.split(" | ")
+                for part in parts:
+                    if ":" in part:
+                        key, value = part.split(":", 1)
+                        key = key.strip()
+                        value = value.strip()
+                        
+                        if key in merged_parts:
+                            # Merge values, avoid duplication
+                            existing_values = set(merged_parts[key].split(", "))
+                            new_values = set(value.split(", "))
+                            combined_values = existing_values.union(new_values)
+                            merged_parts[key] = ", ".join(sorted(combined_values))
+                        else:
+                            merged_parts[key] = value
+            else:
+                # Unstructured format, add as general info
+                if "Thông tin chung" not in merged_parts:
+                    merged_parts["Thông tin chung"] = summary
+                else:
+                    merged_parts["Thông tin chung"] += f"; {summary}"
+        
+        # Rebuild unified summary
+        parts = [f"{key}: {value}" for key, value in merged_parts.items() if value.strip()]
+        return " | ".join(parts) if parts else "Chưa có thông tin chi tiết"
 
 
 # Initialize the user memory store

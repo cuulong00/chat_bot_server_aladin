@@ -1,6 +1,5 @@
 from langchain_core.tools import tool
 from typing import Dict, Any
-from src.tools.memory_tools import save_user_preference as original_save_user_preference
 import logging
 
 
@@ -28,18 +27,17 @@ def save_user_preference_with_refresh_flag(
         - When you want to remember user-specific details and ensure immediate availability in subsequent interactions.
     """
     try:
-        # Call the original tool
-        result = original_save_user_preference.invoke({
-            'user_id': user_id,
-            'preference_type': preference_type, 
-            'content': content,
-            'context': context
-        })
+        # Call the original tool directly - get the function, not invoke
+        from src.tools.memory_tools import save_user_preference as original_func
+        result = original_func(user_id, preference_type, content, context)
         
+        logging.info(f"🔄 Enhanced save_user_preference: Original result: {result}")
         logging.info(f"🔄 Enhanced save_user_preference: Set user_profile_needs_refresh=True for user_id: {user_id}")
         
         # Return result with special marker to indicate refresh needed
-        return f"{result} [REFRESH_USER_PROFILE_NEEDED]"
+        enhanced_result = f"{result} [REFRESH_USER_PROFILE_NEEDED]"
+        logging.info(f"🔄 Enhanced save_user_preference: Enhanced result: {enhanced_result}")
+        return enhanced_result
         
     except Exception as e:
         logging.error(f"❌ Enhanced save_user_preference failed: {e}")

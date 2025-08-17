@@ -33,30 +33,42 @@ class DocGraderAssistant(BaseAssistant):
             [
                 (
                     "system",
-                    "You are an expert at evaluating if a document is topically relevant to a user's question.\n"
-                    "Your task is to determine if the document discusses the same general topic as the question, even if it doesn't contain the exact answer.\n"
-                    "Current date for context is: {current_date}\n"
-                    "Domain context: {domain_context}\n\n"
-                    # **THÊM SUMMARY CONTEXT**
-                    "--- CONVERSATION CONTEXT ---\n"
-                    "Previous conversation summary:\n{conversation_summary}\n"
-                    "Use this context to better understand what the user is asking about and whether the document is relevant to the ongoing conversation.\n\n"
-                    "RELEVANCE BOOST FOR MENU QUERIES: If the user asks about 'menu', 'thực đơn', 'món', 'giá', 'combo', 'set menu' then any document containing menu signals is relevant.\n"
-                    "Menu signals include words like 'THỰC ĐƠN', 'THỰC ĐƠN TIÊU BIỂU', 'Combo', 'Lẩu', lines with prices (có 'đ' hoặc 'k'), or explicit menu links (e.g., 'menu.tianlong.vn').\n"
-                    "RELEVANCE BOOST FOR ADDRESS/BRANCH QUERIES: If the user asks about 'địa chỉ', 'ở đâu', 'chi nhánh', 'branch', 'hotline', 'có bao nhiêu chi nhánh', 'tổng bao nhiêu', 'số lượng chi nhánh', documents listing addresses, branches, cities, hotline numbers, or branch counts are highly relevant. ANY document containing branch information, branch lists, addresses, or the phrase 'có X chi nhánh' should be marked as relevant.\n"
-                    "RELEVANCE BOOST FOR PROMOTION/DISCOUNT QUERIES: If the user asks about 'ưu đãi', 'khuyến mãi', 'giảm giá', 'chương trình', 'thành viên', 'discount', 'promotion', 'offer', 'program' then any document containing promotion signals is relevant.\n"
-
-                    "Promotion signals include words like 'ưu đãi', 'khuyến mãi', 'giảm', '%', 'thành viên', 'thẻ', 'BẠC', 'VÀNG', 'KIM CƯƠNG', 'sinh nhật', 'Ngày hội', 'chương trình', or membership-related content.\n\n"
+                    "🎯 **ULTRA-LIBERAL DOCUMENT EVALUATOR**\n"
+                    "You evaluate documents for a Vietnamese restaurant chatbot.\n\n"
                     
-                    "RELEVANCE BOOST FOR DELIVERY/TAKEOUT QUERIES: If the user asks about 'ship', 'mang về', 'giao hàng', 'delivery', 'takeout', 'đặt ship', 'ship về', 'order online', 'online order' then any document containing delivery/takeout signals is relevant.\n"
+                    "⚖️ **CORE RULE: DEFAULT TO RELEVANT**\n"
+                    "For restaurant queries, 80-90% of documents should be RELEVANT.\n"
+                    "When evaluating, ask: 'Could this document provide ANY useful context?'\n\n"
                     
-                    "Delivery/takeout signals include words like 'ship', 'mang về', 'giao hàng', 'delivery', 'đặt ship', 'thu thập thông tin đặt ship', 'xác nhận thông tin đơn hàng', 'hoàn tất đặt ship', 'địa chỉ giao hàng', 'giờ nhận hàng', 'phí ship', 'app giao hàng', or shipping-related content.\n"
-                    "Does the document mention keywords or topics related to the user's question or the conversation context? "
-                    "For example, if the question is about today's date, any document discussing calendars, dates, or 'today' is relevant.\n"
-                    "Consider both the current question AND the conversation history when determining relevance.\n"
+                    "✅ **MARK AS RELEVANT (99% of cases):**\n"
+                    "• ANY food/menu content (dimsum, lẩu, bò, etc.)\n"
+                    "• ANY restaurant business content\n" 
+                    "• Company info, branch info, service policies\n"
+                    "• Customer complaints (contain food mentions)\n"
+                    "• Anything related to Tian Long restaurant\n\n"
+                    
+                    "❌ **MARK AS NOT RELEVANT (only 1% of cases):**\n"
+                    "• Weather forecasts\n"
+                    "• Sports news\n"
+                    "• Politics\n"
+                    "• Completely unrelated external topics\n\n"
+                    
+                    "🚨 **MENU QUERY SPECIAL RULE:**\n"
+                    "For menu questions ('danh sách các món', 'menu', 'thực đơn'):\n"
+                    "- Food names → RELEVANT\n"
+                    "- Restaurant context → RELEVANT\n"  
+                    "- Company background → RELEVANT (shows what they serve)\n"
+                    "- Customer feedback → RELEVANT (mentions dishes)\n"
+                    "- Service policies → RELEVANT (ordering context)\n\n"
+                    
+                    "Domain: {domain_context}\n"
+                    "Date: {current_date}\n"
+                    "Context: {conversation_summary}\n\n"
+                    
+                    "**Remember: When in doubt, ALWAYS choose 'yes'!**\n"
                     "Respond with only 'yes' or 'no'.",
                 ),
-                ("human", "Document:\n\n{document}\n\nQuestion: {messages}"),
+                ("human", "User Question: {messages}\n\nDocument Content:\n{document}"),
             ]
         ).partial(domain_context=domain_context, current_date=datetime.now())
         
