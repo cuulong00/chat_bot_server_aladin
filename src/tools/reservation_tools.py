@@ -405,6 +405,10 @@ def book_table_reservation_test(
     instead of calling the reservation API, appends the booking to a JSON file
     named 'booking.json' at the repository root. The file stores a list of bookings.
     """
+    # 🚨 CRITICAL DEBUG: Log tool được gọi
+    logger.warning("🔥🔥🔥 BOOK_TABLE_RESERVATION_TEST TOOL ĐƯỢC GỌI! 🔥🔥🔥")
+    logger.warning(f"🔍 Tool params: location={restaurant_location}, name={first_name} {last_name}, phone={phone}, date={reservation_date}, time={start_time}, adults={amount_adult}, children={amount_children}, birthday={has_birthday}")
+    
     try:
         # Validate input
         reservation_data = ReservationInput(

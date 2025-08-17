@@ -30,7 +30,7 @@ print("   • List cụ thể: 'thích', 'yêu thích', 'thường', 'hay', 'lu�
 print("   • Thêm '⚠️ BƯỚC 1: TOOL CALL trước, BƯỚC 2: Trả lời sau'")
 
 print("\n📝 CẢI TIẾN FORMAT:")
-print("   • NGẮN GỌN: Tối đa 2-3 câu")
+print("   • NGẮN GỌN: Thẳng vào vấn đề")
 print("   • EMOJI PHONG PHÚ: Thay thế markdown")  
 print("   • TRÁNH MARKDOWN: Không **bold**, ###")
 print("   • CHIA DÒNG THÔNG MINH: Mobile-friendly")

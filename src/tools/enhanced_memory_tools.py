@@ -5,47 +5,45 @@ import logging
 
 @tool
 def save_user_preference_with_refresh_flag(
-    user_id: str, preference_type: str, content: str, context: str = ""
-) -> str:
+    user_id: str,
+    preference_type: str,
+    preference_value: str
+) -> dict:
     """
-    Save a user's preference and indicate that user profile needs refresh.
-
+    Save user preference and set refresh flag for user_profile.
     This is an enhanced version of save_user_preference that also signals
-    the need to refresh user profile in the next binding_prompt call.
-
-    Args:
-        user_id: Unique identifier for the user.
-        preference_type: The type of preference (e.g., 'dietary_preference', 'travel_style', 'budget_range', 'favorite_destination').
-        content: The detailed content of the preference.
-        context: Optional additional context for the preference.
-
-    Returns:
-        A confirmation message with refresh flag indicator.
-
-    When to use:
-        - When the user provides new information about their preferences, habits, or interests.
-        - When you want to remember user-specific details and ensure immediate availability in subsequent interactions.
+    that user profile needs to be refreshed on next retrieval.
     """
+    import logging
+    
+    logging.warning("🔥🔥🔥 SAVE_USER_PREFERENCE_WITH_REFRESH_FLAG ĐƯỢC GỌI! 🔥🔥🔥")
+    logging.warning(f"🎯 User ID: {user_id}")
+    logging.warning(f"🎯 Preference Type: {preference_type}")
+    logging.warning(f"🎯 Preference Value: {preference_value}")
+    
     try:
-        # Import the tool correctly and invoke it
+        # Import the original tool function
         from src.tools.memory_tools import save_user_preference as original_tool
         
-        # Call the tool using invoke with parameters as a dict
-        result = original_tool.invoke({
-            "user_id": user_id,
-            "preference_type": preference_type, 
-            "content": content,
-            "context": context
-        })
+        # Call original tool function using dictionary parameters
+        params = {
+            'user_id': user_id,
+            'preference_type': preference_type,
+            'preference_value': preference_value
+        }
+        
+        # Use tool.invoke() instead of direct function call
+        result = original_tool.invoke(params)
         
         logging.info(f"🔄 Enhanced save_user_preference: Original result: {result}")
         logging.info(f"🔄 Enhanced save_user_preference: Set user_profile_needs_refresh=True for user_id: {user_id}")
         
-        # Return result with special marker to indicate refresh needed
-        enhanced_result = f"{result} [REFRESH_USER_PROFILE_NEEDED]"
-        logging.info(f"🔄 Enhanced save_user_preference: Enhanced result: {enhanced_result}")
-        return enhanced_result
+        # Create enhanced result that includes refresh flag
+        enhanced_result = {**result, 'user_profile_needs_refresh': True}
         
+        logging.info(f"🔄 Enhanced save_user_preference: Enhanced result: {enhanced_result}")
+        
+        return enhanced_result
     except Exception as e:
         logging.error(f"❌ Enhanced save_user_preference failed: {e}")
-        return f"Error saving user information: {e}"
+        return {'error': f'Failed to save preference: {e}', 'user_profile_needs_refresh': False}

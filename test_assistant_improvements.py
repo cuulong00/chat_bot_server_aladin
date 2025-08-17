@@ -34,7 +34,7 @@ def test_prompt_improvements():
     print("\n🎯 CÁC CẢI TIẾN ĐÃ ĐƯỢC ÁP DỤNG:")
     print("-" * 40)
     print("1. 📝 ĐỊNH DẠNG NGẮN GỌN:")
-    print("   • Tối đa 2-3 câu, trực tiếp")
+    print("   • Ngắn gọn, thẳng vào vấn đề")
     print("   • Emoji phong phú, sinh động") 
     print("   • Tránh markdown phức tạp")
     print("   • Chia dòng thông minh cho mobile")
