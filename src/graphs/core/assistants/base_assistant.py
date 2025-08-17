@@ -24,14 +24,22 @@ class BaseAssistant:
         logging.info(f"🔍 CONTEXT DEBUG: context type={type(context_obj)}, value={context_obj}")
         
         if context_obj and isinstance(context_obj, dict):
-            summary_obj = context_obj.get("running_summary")
-            logging.info(f"🔍 RUNNING_SUMMARY DEBUG: summary_obj type={type(summary_obj)}, value={summary_obj}")
+            # Try different possible keys for RunningSummary object
+            summary_obj = None
+            for possible_key in ["running_summary", "summary", context_obj.get("thread_id", "default")]:
+                if possible_key in context_obj:
+                    summary_obj = context_obj[possible_key]
+                    logging.info(f"🔍 FOUND SUMMARY OBJ with key '{possible_key}': type={type(summary_obj)}")
+                    break
             
             if summary_obj and hasattr(summary_obj, "summary"):
-                running_summary = summary_obj.summary
+                running_summary = str(summary_obj.summary)
                 logging.info(f"✅ FOUND RUNNING SUMMARY: {running_summary[:100]}...")
+            elif summary_obj and isinstance(summary_obj, str):
+                running_summary = summary_obj
+                logging.info(f"✅ FOUND STRING SUMMARY: {running_summary[:100]}...")
             else:
-                logging.warning(f"⚠️ No summary attribute found in running_summary object")
+                logging.warning(f"⚠️ No valid summary found in context object: {context_obj}")
         else:
             logging.warning(f"⚠️ No context dict found in state")
 

@@ -140,8 +140,10 @@ except ImportError as _langmem_err:
                     "summary": f"Conversation with {len(messages)} messages, no summarization needed"
                 }
     
-    SummarizationNode = MockSummarizationNode
-    RunningSummary = MockRunningSummary
+    # Only use Mock if LangMem is not available
+    if not _LANGMEM_AVAILABLE:
+        SummarizationNode = MockSummarizationNode
+        RunningSummary = MockRunningSummary
 
 
 # --- State Reset and Management Functions ---
@@ -789,29 +791,63 @@ def create_adaptive_rag_graph(
         messages = state.get("messages", [])
         is_tool_reentry = len(messages) > 0 and isinstance(messages[-1], ToolMessage)
         
-        # Heuristic: if user_profile missing/short and query mentions preferences, proactively request get_user_profile via tool call
+        # Heuristic 1: if user_profile missing/short and query mentions preferences, proactively request get_user_profile via tool call
+        # Heuristic 2: if user reveals new preferences/habits, proactively save them via save_user_preference
         try:
             user_info_ctx = state.get("user", {}).get("user_info", {})
             user_id = user_info_ctx.get("user_id") or state.get("user_id")
             profile_summary = state.get("user", {}).get("user_profile", {}).get("summary", "")
             q_low = (current_question or "").lower()
+            
+            # Preference keywords for both getting and saving
             pref_triggers = [
                 "sở thích", "khẩu vị", "dị ứng", "ăn chay", "thích ", "không thích",
                 "allergy", "diet", "prefer", "preference"
             ]
+            
+            # Keywords that indicate user is REVEALING new preferences (should save)
+            preference_revelation_triggers = [
+                "em thích", "tôi thích", "mình thích", "thích ăn", "không thích",
+                "em không ăn", "tôi không ăn", "mình không ăn", "ăn chay", 
+                "dị ứng", "kiêng", "không dùng", "ghét ăn", "yêu thích",
+                "sở thích của em", "sở thích của tôi", "em hay ăn", "tôi hay ăn",
+                "i like", "i don't like", "i prefer", "my preference", "allergic to"
+            ]
+            
             needs_profile = (not profile_summary) or len(profile_summary) < 10
             mentions_pref = any(t in q_low for t in pref_triggers)
-            if user_id and needs_profile and mentions_pref and not is_tool_reentry:
-                from langchain_core.messages import AIMessage
-                # Craft an assistant message with a tool_call to get_user_profile
-                tool_call = {
-                    "id": "auto_get_user_profile",
-                    "name": "get_user_profile",
-                    "args": {"user_id": user_id, "query_context": current_question or "restaurant"},
-                }
-                ai_msg = AIMessage(content="", tool_calls=[tool_call])
-                logging.info("🔧 Injected get_user_profile tool call (heuristic) before direct answer")
-                return {"messages": [ai_msg]}
+            reveals_new_pref = any(trigger in q_low for trigger in preference_revelation_triggers)
+            
+            if user_id and not is_tool_reentry:
+                # Priority 1: User reveals new preferences -> save them first
+                if reveals_new_pref:
+                    from langchain_core.messages import AIMessage
+                    tool_call = {
+                        "id": "auto_save_user_preference",
+                        "name": "save_user_preference",
+                        "args": {
+                            "user_id": user_id, 
+                            "preference_type": "dietary_preference",
+                            "content": current_question or "user preference", 
+                            "context": "auto_detected_from_conversation"
+                        },
+                    }
+                    ai_msg = AIMessage(content="", tool_calls=[tool_call])
+                    logging.info(f"🔧 Injected save_user_preference tool call (heuristic) - detected new preference: {current_question[:50]}...")
+                    return {"messages": [ai_msg]}
+                
+                # Priority 2: Profile missing and mentions preferences -> get profile
+                elif needs_profile and mentions_pref:
+                    from langchain_core.messages import AIMessage
+                    tool_call = {
+                        "id": "auto_get_user_profile",
+                        "name": "get_user_profile",
+                        "args": {"user_id": user_id, "query_context": current_question or "restaurant"},
+                    }
+                    ai_msg = AIMessage(content="", tool_calls=[tool_call])
+                    logging.info("🔧 Injected get_user_profile tool call (heuristic) before direct answer")
+                    return {"messages": [ai_msg]}
+                    
         except Exception as _e:
             logging.debug(f"Heuristic tool-call injection skipped: {_e}")
         
@@ -1194,7 +1230,7 @@ Hãy phân tích một cách chi tiết và toàn diện để thông tin này c
     # --- Build the Graph ---
     graph = StateGraph(RagState)
 
-    # Create summarization node only if LangMem is available
+    # Create summarization node - simple approach like official example
     if _LANGMEM_AVAILABLE and SummarizationNode is not None:
         summarization_node = SummarizationNode(
             token_counter=count_tokens_approximately,
@@ -1203,12 +1239,11 @@ Hãy phân tích một cách chi tiết và toàn diện để thông tin này c
             max_tokens_before_summary=1000,
             max_summary_tokens=800,
         )
-        logging.info("✅ SummarizationNode created successfully")
+        logging.info("✅ Real SummarizationNode created successfully")
     else:
-        # Fallback: create a simple pass-through node
+        # Simple fallback: pass-through node
         def simple_summarizer_node(state: RagState, config=None):
             logging.warning("🚨 Using fallback summarizer (LangMem unavailable)")
-            # Just pass through without summarization
             return {}
         
         summarization_node = simple_summarizer_node

@@ -1,7 +1,8 @@
-from typing import Annotated, Literal, Optional
+from typing import Annotated, Literal, Optional, List
 from langgraph.graph.message import AnyMessage, add_messages
 from langchain_core.messages import BaseMessage, ToolMessage, HumanMessage, AIMessage
 from typing_extensions import TypedDict
+from pydantic import Field
 """State definitions with optional langmem dependency.
 
 If langmem is not installed or incompatible with current langgraph version,
@@ -140,7 +141,7 @@ def update_reasoning_steps(left: List[ReasoningStep], right: Optional[List[Reaso
         return result
 
 class State(TypedDict):
-    messages: Annotated[list[AnyMessage], add_messages]
+    messages: Annotated[list[BaseMessage], add_messages]
     user: User
     thread_id: str
     session_id: Optional[str]  # Added for image context retrieval, can be None initially
@@ -167,10 +168,10 @@ class RagState(State):
     search_attempts: int
     datasource: str
     question: str
-    messages: Annotated[list[BaseMessage], add_messages]
+    
     hallucination_score: str
     skip_hallucination: bool = False
-    # summarized_messages: list[AnyMessage]  # DEPRECATED: This was redundant with messages
-    context: dict[str, RunningSummary]  # Real conversation summary via LangMem
+    summarized_messages: list[AnyMessage] = Field(default_factory=list)  # Required for SummarizationNode
+    context: dict[str, RunningSummary] = Field(default_factory=dict)  # Real conversation summary via LangMem
     image_contexts: Optional[List[str]]  # Direct image analysis contexts for immediate use 
     
