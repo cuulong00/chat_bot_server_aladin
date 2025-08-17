@@ -27,9 +27,16 @@ def save_user_preference_with_refresh_flag(
         - When you want to remember user-specific details and ensure immediate availability in subsequent interactions.
     """
     try:
-        # Call the original tool directly - get the function, not invoke
-        from src.tools.memory_tools import save_user_preference as original_func
-        result = original_func(user_id, preference_type, content, context)
+        # Import the tool correctly and invoke it
+        from src.tools.memory_tools import save_user_preference as original_tool
+        
+        # Call the tool using invoke with parameters as a dict
+        result = original_tool.invoke({
+            "user_id": user_id,
+            "preference_type": preference_type, 
+            "content": content,
+            "context": context
+        })
         
         logging.info(f"🔄 Enhanced save_user_preference: Original result: {result}")
         logging.info(f"🔄 Enhanced save_user_preference: Set user_profile_needs_refresh=True for user_id: {user_id}")
