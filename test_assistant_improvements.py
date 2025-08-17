@@ -46,16 +46,26 @@ def test_prompt_improvements():
     print("   • Món ăn phù hợp")
     print("   • Không gian gia đình")
     
-    print("\n3. 🧠 MEMORY TOOL:")
-    print("   • Phát hiện sở thích/thói quen")
-    print("   • Nhắc gọi save_user_preference")
-    print("   • Ghi nhớ ước mơ/mong muốn")
+    print("\n3. 🎂 QUAN TÂM SINH NHẬT:")
+    print("   • Hỏi tuổi khi có sinh nhật")
+    print("   • Gợi ý trang trí (bóng bay, bảng gỗ)")
+    print("   • Bánh kem và ưu đãi đặc biệt")
+    print("   • Lưu thông tin sinh nhật vào memory")
+    
+    print("\n4. 🧠 MEMORY TOOL - BẮT BUỘC GỌI:")
+    print("   • Sở thích: thích, yêu thích")
+    print("   • Thói quen: thường, hay, luôn")
+    print("   • Ước mơ: mong muốn, ước, hy vọng") 
+    print("   • Mong muốn: muốn, cần")
+    print("   • Sinh nhật: lưu ngày + sở thích tiệc")
     
     print("\n🚀 READY FOR TESTING!")
     print("Hãy test với các câu như:")
     print("- 'cho anh vào lúc 7h tối, 3 người lớn 3 trẻ em'")
-    print("- 'em thích ăn cay', 'em mong muốn không gian yên tĩnh'")
-    print("- Kiểm tra phản hồi có ngắn gọn và đẹp không")
+    print("- 'hôm nay sinh nhật con trai anh' 🎂")
+    print("- 'em thích ăn cay', 'em thường đến tối thứ 6'")
+    print("- 'em mong muốn không gian yên tĩnh'")
+    print("- Kiểm tra có gọi tool khi nhắc sở thích không")
 
 if __name__ == "__main__":
     test_prompt_improvements()
