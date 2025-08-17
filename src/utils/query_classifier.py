@@ -35,7 +35,7 @@ class QueryClassifier:
 
     def classify_query(self, query: str) -> Dict[str, any]:
         """
-        Classify a query and return classification results.
+        Enhanced query classification with confidence scoring and namespace recommendations.
         """
         if not query:
             return self._default_classification()
@@ -47,19 +47,32 @@ class QueryClassifier:
         is_location_query = any(keyword in query_lower for keyword in self.location_keywords)
         is_promotion_query = any(keyword in query_lower for keyword in self.promotion_keywords)
         is_faq_query = any(keyword in query_lower for keyword in self.faq_keywords)
-        # Heuristic: VAT/tax questions are typical FAQ policy
-        if not is_faq_query and any(k in query_lower for k in ["vat", "hóa đơn", "hoa don", "thuế", "thue", "invoice"]):
+        
+        # Enhanced heuristics for better FAQ detection
+        faq_indicators = [
+            any(k in query_lower for k in ["vat", "hóa đơn", "hoa don", "thuế", "thue", "invoice"]),
+            any(k in query_lower for k in ["quy định", "chính sách", "policy", "rule"]),
+            any(k in query_lower for k in ["làm sao", "how to", "cách nào", "thế nào"]),
+            any(k in query_lower for k in ["có được", "được không", "can i", "is it"]),
+        ]
+        if not is_faq_query and any(faq_indicators):
             is_faq_query = True
 
+        # Calculate confidence score
+        category_matches = sum([is_menu_query, is_location_query, is_promotion_query, is_faq_query])
+        confidence = self._calculate_confidence(category_matches, query_lower)
+        
         # Determine primary category
         primary_category = self._get_primary_category(
             is_menu_query, is_location_query, is_promotion_query, is_faq_query
         )
+        
+        # Determine search strategy
+        search_strategy = self._get_search_strategy(confidence, category_matches, primary_category)
+        namespace_priority = self._get_namespace_priority(primary_category, confidence)
 
-        # Determine retrieval limit
-        retrieval_limit = 8 if is_faq_query else (
-            12 if (is_menu_query or is_location_query or is_promotion_query) else 5
-        )
+        # Determine retrieval limit based on strategy
+        retrieval_limit = self._get_retrieval_limit(search_strategy, is_faq_query)
 
         # Get relevant keywords for query expansion
         expansion_keywords = self._get_expansion_keywords(primary_category)
@@ -70,6 +83,9 @@ class QueryClassifier:
             "is_location_query": is_location_query,
             "is_promotion_query": is_promotion_query,
             "is_faq_query": is_faq_query,
+            "confidence": confidence,
+            "search_strategy": search_strategy,
+            "namespace_priority": namespace_priority,
             "retrieval_limit": retrieval_limit,
             "expansion_keywords": expansion_keywords,
             "signals": self._get_relevant_signals(primary_category),
@@ -139,10 +155,51 @@ class QueryClassifier:
             "is_menu_query": False,
             "is_location_query": False,
             "is_promotion_query": False,
-            "retrieval_limit": 5,
+            "is_faq_query": False,
+            "confidence": 0.0,
+            "search_strategy": "comprehensive",
+            "namespace_priority": ["maketing", "faq"],
+            "retrieval_limit": 8,
             "expansion_keywords": [],
             "signals": [],
         }
+    
+    def _calculate_confidence(self, category_matches: int, query_lower: str) -> float:
+        """Calculate confidence score for classification."""
+        if category_matches == 0:
+            return 0.0
+        elif category_matches == 1:
+            return 0.9  # High confidence - single clear category
+        else:
+            return 0.5  # Medium confidence - multiple categories
+    
+    def _get_search_strategy(self, confidence: float, category_matches: int, primary_category: str) -> str:
+        """Determine the best search strategy based on classification confidence."""
+        if confidence >= 0.8 and primary_category != "general":
+            return "primary_only"
+        elif confidence >= 0.5:
+            return "fallback"
+        else:
+            return "comprehensive"
+    
+    def _get_namespace_priority(self, primary_category: str, confidence: float) -> List[str]:
+        """Get prioritized list of namespaces to search."""
+        if primary_category == "faq" and confidence > 0.7:
+            return ["faq", "maketing"]
+        elif primary_category in ["menu", "location", "promotion"] and confidence > 0.7:
+            return ["maketing", "faq"] 
+        else:
+            # For uncertain cases, search both with equal priority
+            return ["maketing", "faq"]
+    
+    def _get_retrieval_limit(self, search_strategy: str, is_faq_query: bool) -> int:
+        """Get retrieval limit based on search strategy."""
+        if search_strategy == "comprehensive":
+            return 16  # More results when searching everything
+        elif search_strategy == "fallback":
+            return 12  # Medium results with fallback
+        else:
+            return 8 if is_faq_query else 10  # Focused search
 
 
 def generate_dynamic_prompt_sections(classification: Dict[str, any]) -> Dict[str, str]:

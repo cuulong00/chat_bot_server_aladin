@@ -87,8 +87,16 @@ class QdrantStore:
     # --- Public API -------------------------------------------------------
     def put(self, namespace: str, key: str, value: Dict[str, Any]) -> None:
         pre_vec = value.get("embedding") if isinstance(value, dict) else None
+        
+        # Use actual content for embedding instead of full JSON dump
+        if isinstance(value, dict) and "content" in value:
+            content_for_embedding = value["content"]
+        else:
+            content_for_embedding = str(value)
+            
+        # Keep full text_content for payload storage but don't use for embedding
         text_content = f"namespace: {namespace}, key: {key}, value: {json.dumps(value, ensure_ascii=False)}"
-        embedding = pre_vec if isinstance(pre_vec, list) else self._get_embedding(text_content)
+        embedding = pre_vec if isinstance(pre_vec, list) else self._get_embedding(content_for_embedding)
         point_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, f"{namespace}:{key}"))
         point = PointStruct(
             id=point_id,

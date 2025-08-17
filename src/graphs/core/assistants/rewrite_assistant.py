@@ -15,21 +15,36 @@ class RewriteAssistant(BaseAssistant):
             [
                 (
                     "system",
-                    "You are a domain expert at rewriting user questions to optimize for document retrieval.\n"
-                    "Domain context: {domain_context}\n"
-                    "--- CONVERSATION CONTEXT ---\n"
-                    "Previous conversation summary:\n{conversation_summary}\n"
-                    "Use this context to understand what has been discussed before and rewrite the question to include relevant context that will help with document retrieval.\n\n"
-                    "Rewrite this question to be more specific and include relevant context from the conversation history that would help find better documents. "
-                    "If the question is about menu/dishes/prices, append helpful retrieval keywords such as 'THỰC ĐƠN', 'Combo', 'giá', 'set menu', 'Loại lẩu', and 'Tian Long'. "
-                    "If the question is about locations/addresses/branches/hotline, append keywords such as 'địa chỉ', 'chi nhánh', 'branch', 'Hotline', 'Hà Nội', 'Hải Phòng', 'TP. Hồ Chí Minh', 'Times City', 'Vincom', 'Lê Văn Sỹ', and 'Tian Long'. "
-                    "If the question is about promotions/discounts/offers/membership, append keywords such as 'ưu đãi', 'khuyến mãi', 'giảm giá', 'chương trình thành viên', 'thẻ thành viên', 'BẠC', 'VÀNG', 'KIM CƯƠNG', 'sinh nhật', 'Ngày hội thành viên', 'giảm %', and 'Tian Long'. "
-                    "Make sure the rewritten question is clear and contains keywords that would match relevant documents.",
+                    "🔄 **BẠN LÀ CHUYÊN GIA VIẾT LẠI CÂU HỎI ĐỂ TỐI ƯU HOÁ TÌM KIẾM TÀI LIỆU**\n\n"
+                    "**NHIỆM VỤ:** Chuyển đổi câu hỏi thành dạng tối ưu cho vector search semantic similarity.\n\n"
+                    "**CHIẾN LƯỢC VIẾT LẠI:**\n\n"
+                    "1️⃣ **BRAND FORMALIZATION:**\n"
+                    "• 'bên mình', 'quán mình', 'ở đây' → 'Tian Long'\n"
+                    "• 'nhà hàng này' → 'nhà hàng Tian Long'\n"
+                    "• Luôn thêm tên thương hiệu vào context\n\n"
+                    "2️⃣ **KEYWORD ENHANCEMENT theo chủ đề:**\n"
+                    "• **Chi nhánh/Địa chỉ:** → 'Tian Long có bao nhiêu chi nhánh', 'địa chỉ chi nhánh Tian Long', 'cơ sở Tian Long ở đâu'\n"
+                    "• **Menu/Món ăn:** → 'thực đơn Tian Long', 'combo lẩu bò', 'giá món ăn Tian Long'\n" 
+                    "• **Khuyến mãi:** → 'ưu đãi Tian Long', 'chương trình khuyến mãi', 'giảm giá sinh nhật'\n"
+                    "• **Dịch vụ:** → 'dịch vụ Tian Long', 'đặt bàn', 'giao hàng'\n\n"
+                    "3️⃣ **SEMANTIC MATCHING:**\n"
+                    "• Thay thế từ thân mật bằng từ chính thức\n"
+                    "• Thêm từ đồng nghĩa và từ khóa liên quan\n"
+                    "• Sử dụng cấu trúc câu giống tài liệu gốc\n\n"
+                    "4️⃣ **CONTEXT ENRICHMENT:**\n"
+                    "Domain: {domain_context}\n"
+                    "Conversation: {conversation_summary}\n\n"
+                    "**VÍ DỤ CHUYỂN ĐỔI:**\n"
+                    "• 'cho anh hỏi bên mình có bao nhiêu chi nhánh' → 'Tian Long có bao nhiêu chi nhánh và ở đâu'\n"
+                    "• 'quán có những món gì' → 'thực đơn món ăn Tian Long có gì'\n"
+                    "• 'có ưu đãi gì không' → 'chương trình khuyến mãi ưu đãi Tian Long'\n\n"
+                    "**YÊU CẦU:** Viết lại để tăng semantic similarity với tài liệu trong database."
                 ),
                 (
                     "human",
-                    "Original question: {question}\n"
-                    "Please rewrite it as a concise, retrieval-friendly query in the SAME language.",
+                    "**CÂU HỎI GỐC:** {question}\n\n"
+                    "**YÊU CẦU:** Viết lại thành một câu hỏi duy nhất, ngắn gọn, tối ưu cho tìm kiếm semantic (CÙNG NGÔN NGỮ với câu gốc).\n\n"
+                    "**CHỈ TRẢ LỜI MỘT CÂU DUY NHẤT - KHÔNG GIẢI THÍCH:**"
                 ),
             ]
         ).partial(domain_context=domain_context)

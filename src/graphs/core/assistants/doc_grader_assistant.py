@@ -32,43 +32,36 @@ class DocGraderAssistant(BaseAssistant):
         prompt = ChatPromptTemplate.from_messages(
             [
                 (
-                    "system",
-                    "🎯 **ULTRA-LIBERAL DOCUMENT EVALUATOR**\n"
-                    "You evaluate documents for a Vietnamese restaurant chatbot.\n\n"
-                    
-                    "⚖️ **CORE RULE: DEFAULT TO RELEVANT**\n"
-                    "For restaurant queries, 80-90% of documents should be RELEVANT.\n"
-                    "When evaluating, ask: 'Could this document provide ANY useful context?'\n\n"
-                    
-                    "✅ **MARK AS RELEVANT (99% of cases):**\n"
-                    "• ANY food/menu content (dimsum, lẩu, bò, etc.)\n"
-                    "• ANY restaurant business content\n" 
-                    "• Company info, branch info, service policies\n"
-                    "• Customer complaints (contain food mentions)\n"
-                    "• Anything related to Tian Long restaurant\n\n"
-                    
-                    "❌ **MARK AS NOT RELEVANT (only 1% of cases):**\n"
-                    "• Weather forecasts\n"
-                    "• Sports news\n"
-                    "• Politics\n"
-                    "• Completely unrelated external topics\n\n"
-                    
-                    "🚨 **MENU QUERY SPECIAL RULE:**\n"
-                    "For menu questions ('danh sách các món', 'menu', 'thực đơn'):\n"
-                    "- Food names → RELEVANT\n"
-                    "- Restaurant context → RELEVANT\n"  
-                    "- Company background → RELEVANT (shows what they serve)\n"
-                    "- Customer feedback → RELEVANT (mentions dishes)\n"
-                    "- Service policies → RELEVANT (ordering context)\n\n"
-                    
-                    "Domain: {domain_context}\n"
-                    "Date: {current_date}\n"
-                    "Context: {conversation_summary}\n\n"
-                    
-                    "**Remember: When in doubt, ALWAYS choose 'yes'!**\n"
-                    "Respond with only 'yes' or 'no'.",
-                ),
-                ("human", "User Question: {messages}\n\nDocument Content:\n{document}"),
+                "system",
+                "🔍 **BẠN LÀ CHUYÊN GIA ĐÁNH GIÁ MỨC ĐỘ LIÊN QUAN CỦA TÀI LIỆU**\n\n"
+                "**NHIỆM VỤ CHÍNH:** Đánh giá xem tài liệu có liên quan đến câu hỏi của người dùng hay không.\n\n"
+                "**TIÊU CHÍ ĐÁNH GIÁ NGHIÊM NGẶT:**\n"
+                "✅ **TRẢ LỜI 'yes' KHI:**\n"
+                "• Tài liệu chứa thông tin trực tiếp trả lời câu hỏi\n"
+                "• Tài liệu đề cập đến cùng chủ đề/khái niệm chính với câu hỏi\n"
+                "• Tài liệu có từ khóa quan trọng liên quan đến câu hỏi\n"
+                "• Tài liệu cung cấp bối cảnh hữu ích cho cuộc hội thoại\n\n"
+                "❌ **TRẢ LỜI 'no' KHI:**\n"
+                "• Tài liệu hoàn toàn không liên quan đến câu hỏi\n"
+                "• Tài liệu chỉ có sự trùng lặp từ ngẫu nhiên\n"
+                "• Tài liệu về chủ đề khác hoàn toàn\n"
+                "• Không thể tìm thấy bất kỳ mối liên hệ nào\n\n"
+                "**NGUYÊN TẮC ĐÁNH GIÁ CÔNG TÂME:**\n"
+                "• Đánh giá khách quan, không thiên vị\n"
+                "• Ưu tiên độ chính xác hơn là tỷ lệ pass/fail\n"
+                "• Nếu có nghi ngờ và tài liệu THỰC SỰ không liên quan → chọn 'no'\n"
+                "• Nếu có mối liên hệ hợp lý → chọn 'yes'\n\n"
+                "**BỐI CẢNH HIỆN TẠI:**\n"
+                "• Ngày: {current_date}\n"
+                "• Domain: {domain_context}\n"
+                "• Cuộc hội thoại: {conversation_summary}\n\n"
+                "**CHỈ TRẢ LỜI:** 'yes' hoặc 'no'"
+            ),
+            ("human", 
+             "**TÀI LIỆU CẦN ĐÁNH GIÁ:**\n{document}\n\n"
+             "**CÂU HỎI CỦA NGƯỜI DÙNG:**\n{messages}\n\n"
+             "**YÊU CẦU:** Đánh giá tài liệu có liên quan đến câu hỏi không? (yes/no)"
+            ),
             ]
         ).partial(domain_context=domain_context, current_date=datetime.now())
         

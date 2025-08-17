@@ -36,8 +36,6 @@ from pydantic import BaseModel, Field
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.runnables import Runnable, RunnableConfig, RunnablePassthrough
 
-from src.utils.query_classifier import QueryClassifier
-
 from src.tools.memory_tools import get_user_profile
 from src.tools.enhanced_memory_tools import save_user_preference_with_refresh_flag
 from src.graphs.core.nodes.tool_result_processor import process_tool_results_and_set_flags
@@ -430,7 +428,13 @@ def create_adaptive_rag_graph(
         return {"datasource": datasource}
 
     def retrieve(state: RagState, config: RunnableConfig):
-        logging.info("---NODE: RETRIEVE---")
+        """
+        Enhanced retrieve node with intelligent multi-namespace search strategy.
+        Searches across all available namespaces with smart fallback and fusion.
+        """
+        from src.utils.multi_namespace_retriever import MultiNamespaceRetriever
+        
+        logging.info("---NODE: RETRIEVE (Multi-Namespace)---")
         question = get_current_user_question(state)
 
         # Ensure question is valid
@@ -442,55 +446,114 @@ def create_adaptive_rag_graph(
             }
 
         try:
-                       
-            # Use QueryClassifier for clean, maintainable query classification
-            classifier = QueryClassifier(domain="restaurant")
-            classification = classifier.classify_query(question)
+            user_id = state.get("user", {}).get("user_info", {}).get("user_id", "unknown")
             
-            # Use dynamic retrieval limit based on classification
-            limit = classification["retrieval_limit"]
+            # Multi-namespace configuration
+            available_namespaces = ["maketing", "faq"]  # All available namespaces
+            default_namespace = DOMAIN.get("namespace", "maketing")
+            
+            # Determine search strategy based on context
+            search_attempts = state.get("search_attempts", 0)
+            rewrite_count = state.get("rewrite_count", 0)
+            
+            # Progressive search strategy: start focused, then expand
+            if search_attempts == 0 and rewrite_count == 0:
+                # First attempt: use fallback strategy (primary + backup)
+                search_strategy = "fallback"
+                limit = 12
+            else:
+                # Later attempts or rewrites: cast wider net
+                search_strategy = "comprehensive"
+                limit = 16
+            
+            logging.info(f"🎯 Multi-namespace search strategy: {search_strategy}")
+            logging.info(f"   Available namespaces: {available_namespaces}")
+            logging.info(f"   Search attempts: {search_attempts}, Rewrites: {rewrite_count}")
+            
+            # Initialize multi-namespace retriever
+            multi_retriever = MultiNamespaceRetriever(
+                qdrant_store=retriever,
+                namespaces=available_namespaces,
+                default_namespace=default_namespace
+            )
 
-            # Determine namespace: default to domain namespace, switch to 'faq' for FAQ queries
-            default_namespace = DOMAIN.get("namespace", "default")
-            namespace = "faq" if classification.get("primary_category") == "faq" else default_namespace
-            logging.info(f"Vector search namespace selected: {namespace} (default={default_namespace}, primary={classification.get('primary_category')})")
+            # Execute search based on strategy
+            if search_strategy == "comprehensive":
+                # Search ALL namespaces for maximum coverage
+                limit_per_ns = max(6, limit // len(available_namespaces))
+                documents = multi_retriever.search_all_namespaces(
+                    query=question, 
+                    limit_per_namespace=limit_per_ns
+                )
+                logging.info(f"🌐 Comprehensive search: {len(documents)} results from all namespaces")
+                
+            else:  # fallback strategy
+                # Smart primary selection with fallback
+                documents = multi_retriever.search_with_fallback(
+                    query=question,
+                    primary_namespace=default_namespace,
+                    limit=limit,
+                    fallback_threshold=0.65,  # Aggressive fallback for better coverage
+                    min_primary_results=4
+                )
+                logging.info(f"🔄 Fallback search: {len(documents)} results with smart fallback")
 
-            # Detailed logging for retrieval parameters
+            # Log detailed retrieval stats
+            namespace_stats = {}
+            for _, doc_dict, _ in documents:
+                ns = doc_dict.get('domain', 'unknown')
+                namespace_stats[ns] = namespace_stats.get(ns, 0) + 1
+            
+            logging.info(f"📊 Namespace distribution: {namespace_stats}")
+            
+            # Log collection info for debugging
             try:
                 collection_name = getattr(retriever, "collection_name", "<unknown>")
             except Exception:
                 collection_name = "<unknown>"
+            
             logging.info(
-                "Vector search params: collection=%s, namespace=%s, limit=%s, query=%.120s",
+                "🔍 Multi-namespace search params: collection=%s, strategy=%s, limit=%s, query=%.120s",
                 collection_name,
-                namespace,
+                search_strategy,
                 limit,
                 question,
             )
 
-            documents = retriever.search(namespace=namespace, query=question, limit=limit)
-            logging.info(f"Retrieved {len(documents)} documents.")
+            logging.info(f"✅ Retrieved {len(documents)} documents using multi-namespace strategy")
             
             # Clean documents: remove embedding vectors to save memory and reduce token usage
             cleaned_documents = clean_documents_remove_embeddings(documents)
-            print(f"Cleaned documents: {cleaned_documents}")
+            
             return {
                 "documents": cleaned_documents,
                 "search_attempts": state.get("search_attempts", 0) + 1,
             }
+            
         except Exception as e:
-            user_id = state.get("user", {}).get("user_info", {}).get("user_id", "unknown")
             log_exception_details(
                 exception=e,
-                context=f"Retrieve node failure for question: {question[:100]}",
+                context=f"Multi-namespace retrieve failure for question: {question[:100]}",
                 user_id=user_id
             )
             
-            # Return empty results on error
-            return {
-                "documents": [],
-                "search_attempts": state.get("search_attempts", 0) + 1,
-            }
+            # Fallback to basic single-namespace search on error
+            try:
+                logging.warning(f"⚠️ Falling back to basic search in default namespace")
+                default_namespace = DOMAIN.get("namespace", "maketing")
+                documents = retriever.search(namespace=default_namespace, query=question, limit=10)
+                cleaned_documents = clean_documents_remove_embeddings(documents)
+                
+                return {
+                    "documents": cleaned_documents,
+                    "search_attempts": state.get("search_attempts", 0) + 1,
+                }
+            except Exception as fallback_e:
+                logging.error(f"❌ Fallback search also failed: {fallback_e}")
+                return {
+                    "documents": [],
+                    "search_attempts": state.get("search_attempts", 0) + 1,
+                }
 
     def grade_documents_node(state: RagState, config: RunnableConfig):
         logging.info("---NODE: GRADE DOCUMENTS---")
@@ -558,35 +621,12 @@ def create_adaptive_rag_graph(
         if filtered_docs:
             filtered_docs.extend(remaining_docs)
         
-        # 🔧 FALLBACK MECHANISM FOR MENU QUERIES
-        # If this is a menu query and we have very few relevant docs, be more lenient
-        menu_keywords = ['danh sách các món', 'những món gì', 'menu', 'thực đơn', 'món có gì', 'món ăn gì', 'đồ ăn', 'thức ăn']
-        is_menu_query = any(keyword in question.lower() for keyword in menu_keywords)
-        
-        if is_menu_query and len(filtered_docs) < 6:  # If menu query has fewer than 6 docs
-            logging.warning(f"🚨 MENU QUERY FALLBACK: Only {len(filtered_docs)} docs for menu query. Adding more documents.")
-            # Add more documents from the original set that might contain food/restaurant info
-            for doc in documents[len(documents_to_grade):]:  # Look at non-graded documents
-                if len(filtered_docs) >= 10:  # Don't exceed reasonable limit
-                    break
-                if isinstance(doc, tuple) and len(doc) > 1 and isinstance(doc[1], dict):
-                    doc_content = doc[1].get("content", "").lower()
-                    # Look for any restaurant/food related content
-                    food_signals = ['lẩu', 'bò', 'thịt', 'món', 'nhà hàng', 'tian long', 'dimsum', 'ăn', 'thực đơn', 'phù hợp']
-                    if any(signal in doc_content for signal in food_signals):
-                        filtered_docs.append(doc)
-                        logging.info(f"🔧 Added food-related document to menu query results")
-        
         # DETAILED LOGGING for documents passed to next node
         logging.info(f"📋 GRADE_DOCUMENTS OUTPUT ANALYSIS:")
         for i, doc in enumerate(filtered_docs):
             if isinstance(doc, tuple) and len(doc) > 1 and isinstance(doc[1], dict):
                 doc_content = doc[1].get("content", "")[:200]
                 logging.info(f"   📄 Final Doc {i+1}: {doc_content}...")
-                
-                # Check if this is the branch info document
-                if "chi nhánh" in doc_content.lower() or "branch" in doc_content.lower():
-                    logging.info(f"   🎯 BRANCH INFO FOUND in Final Doc {i+1}!")
 
         logging.info(
             f"Finished grading. {len(filtered_docs)} total documents ({len(filtered_docs) - len(remaining_docs)} graded, {len(remaining_docs) if filtered_docs else 0} auto-included)."
@@ -695,53 +735,8 @@ def create_adaptive_rag_graph(
             for i, doc in enumerate(documents):
                 doc_content = str(doc)[:200] if doc else "EMPTY"
                 logging.info(f"   📄 Generate Doc {i+1}: {doc_content}...")
-                
-                # Check if this is the branch info document
-                if "chi nhánh" in str(doc).lower() or "branch" in str(doc).lower():
-                    logging.info(f"   🎯 BRANCH INFO FOUND in Generate Doc {i+1}!")
         else:
             logging.warning(f"   ⚠️ NO DOCUMENTS found for GENERATE node!")
-        
-        # Check if this is a re-entry from tools (to avoid duplicate reasoning steps)
-        messages = state.get("messages", [])
-        is_tool_reentry = len(messages) > 0 and isinstance(messages[-1], ToolMessage)
-        
-        # Heuristic: Detect and save user preferences before generating response
-        # This ensures preferences are captured in both direct_answer and vectorstore paths
-        try:
-            user_info_ctx = state.get("user", {}).get("user_info", {})
-            user_id = user_info_ctx.get("user_id") or state.get("user_id")
-            q_low = (current_question or "").lower()
-            
-            # Keywords that indicate user is REVEALING new preferences (should save)
-            preference_revelation_triggers = [
-                "em thích", "tôi thích", "mình thích", "thích ăn", "không thích",
-                "em không ăn", "tôi không ăn", "mình không ăn", "ăn chay", 
-                "dị ứng", "kiêng", "không dùng", "ghét ăn", "yêu thích",
-                "sở thích của em", "sở thích của tôi", "em hay ăn", "tôi hay ăn",
-                "i like", "i don't like", "i prefer", "my preference", "allergic to"
-            ]
-            
-            reveals_new_pref = any(trigger in q_low for trigger in preference_revelation_triggers)
-            
-            if user_id and reveals_new_pref and not is_tool_reentry:
-                from langchain_core.messages import AIMessage
-                tool_call = {
-                    "id": "auto_save_user_preference_generate",
-                    "name": "save_user_preference_with_refresh_flag",
-                    "args": {
-                        "user_id": user_id, 
-                        "preference_type": "dietary_preference",
-                        "content": current_question or "user preference", 
-                        "context": "auto_detected_from_vectorstore_conversation"
-                    },
-                }
-                ai_msg = AIMessage(content="", tool_calls=[tool_call])
-                logging.info(f"🔧 GENERATE: Injected save_user_preference tool call - detected preference: {current_question[:50]}...")
-                return {"messages": [ai_msg]}
-                
-        except Exception as _e:
-            logging.debug(f"Generate heuristic tool-call injection skipped: {_e}")
         
         try:
             generation = generation_assistant(state, config)
@@ -849,70 +844,6 @@ def create_adaptive_rag_graph(
         logging.info(f"🔍 GENERATE_DIRECT DEBUG - image_contexts: {image_contexts}")
         logging.info(f"🔍 GENERATE_DIRECT DEBUG - state keys: {list(state.keys())}")
         
-        # Check if this is a re-entry from tools (to avoid duplicate reasoning steps)
-        messages = state.get("messages", [])
-        is_tool_reentry = len(messages) > 0 and isinstance(messages[-1], ToolMessage)
-        
-        # Heuristic 1: if user_profile missing/short and query mentions preferences, proactively request get_user_profile via tool call
-        # Heuristic 2: if user reveals new preferences/habits, proactively save them via save_user_preference
-        try:
-            user_info_ctx = state.get("user", {}).get("user_info", {})
-            user_id = user_info_ctx.get("user_id") or state.get("user_id")
-            profile_summary = state.get("user", {}).get("user_profile", {}).get("summary", "")
-            q_low = (current_question or "").lower()
-            
-            # Preference keywords for both getting and saving
-            pref_triggers = [
-                "sở thích", "khẩu vị", "dị ứng", "ăn chay", "thích ", "không thích",
-                "allergy", "diet", "prefer", "preference"
-            ]
-            
-            # Keywords that indicate user is REVEALING new preferences (should save)
-            preference_revelation_triggers = [
-                "em thích", "tôi thích", "mình thích", "thích ăn", "không thích",
-                "em không ăn", "tôi không ăn", "mình không ăn", "ăn chay", 
-                "dị ứng", "kiêng", "không dùng", "ghét ăn", "yêu thích",
-                "sở thích của em", "sở thích của tôi", "em hay ăn", "tôi hay ăn",
-                "i like", "i don't like", "i prefer", "my preference", "allergic to"
-            ]
-            
-            needs_profile = (not profile_summary) or len(profile_summary) < 10
-            mentions_pref = any(t in q_low for t in pref_triggers)
-            reveals_new_pref = any(trigger in q_low for trigger in preference_revelation_triggers)
-            
-            if user_id and not is_tool_reentry:
-                # Priority 1: User reveals new preferences -> save them first
-                if reveals_new_pref:
-                    from langchain_core.messages import AIMessage
-                    tool_call = {
-                        "id": "auto_save_user_preference",
-                        "name": "save_user_preference_with_refresh_flag",
-                        "args": {
-                            "user_id": user_id, 
-                            "preference_type": "dietary_preference",
-                            "content": current_question or "user preference", 
-                            "context": "auto_detected_from_conversation"
-                        },
-                    }
-                    ai_msg = AIMessage(content="", tool_calls=[tool_call])
-                    logging.info(f"🔧 Injected save_user_preference tool call (heuristic) - detected new preference: {current_question[:50]}...")
-                    return {"messages": [ai_msg]}
-                
-                # Priority 2: Profile missing and mentions preferences -> get profile
-                elif needs_profile and mentions_pref:
-                    from langchain_core.messages import AIMessage
-                    tool_call = {
-                        "id": "auto_get_user_profile",
-                        "name": "get_user_profile",
-                        "args": {"user_id": user_id, "query_context": current_question or "restaurant"},
-                    }
-                    ai_msg = AIMessage(content="", tool_calls=[tool_call])
-                    logging.info("🔧 Injected get_user_profile tool call (heuristic) before direct answer")
-                    return {"messages": [ai_msg]}
-                    
-        except Exception as _e:
-            logging.debug(f"Heuristic tool-call injection skipped: {_e}")
-        
         response = direct_answer_assistant(state, config)
 
         return {"messages": [response]}
@@ -964,11 +895,6 @@ def create_adaptive_rag_graph(
             # Extract session/thread info for context storage
             session_id = state.get("session_id", "")
             thread_id = session_id.replace("facebook_session_", "") if session_id.startswith("facebook_session_") else session_id
-            
-            # Check if this is a re-entry from tools (consistent with other nodes)
-            is_tool_reentry = len(messages) > 0 and isinstance(messages[-1], ToolMessage)
-            if is_tool_reentry:
-                logging.debug("process_document_node: Tool re-entry detected")
             
             # Extract image URLs from message content
             import re
@@ -1194,15 +1120,30 @@ Hãy phân tích một cách chi tiết và toàn diện để thông tin này c
     def decide_after_grade(
         state: RagState,
     ) -> Literal["rewrite", "generate", "force_suggest"]:
-        if state["documents"]:
+        documents = state.get("documents", [])
+        search_attempts = state.get("search_attempts", 0)
+        rewrite_count = state.get("rewrite_count", 0)
+        
+        # Log decision factors for debugging
+        logging.info(f"🔀 DECIDE_AFTER_GRADE: docs={len(documents)}, search_attempts={search_attempts}, rewrite_count={rewrite_count}")
+        
+        # If we have relevant documents after grading, proceed to generate
+        if documents and len(documents) > 0:
+            logging.info(f"🔀 → GENERATE (found {len(documents)} relevant documents)")
             return "generate"
-        if (
-            state.get("search_attempts", 0) >= 2
-            and len(state.get("documents", [])) == 0
-        ):
+        
+        # If no documents and we've tried multiple searches, suggest fallback
+        if search_attempts >= 2 and len(documents) == 0:
+            logging.info(f"🔀 → FORCE_SUGGEST (max search attempts reached)")
             return "force_suggest"
-        if state.get("rewrite_count", 0) < 1:
+        
+        # If no documents but haven't tried rewrite yet, try rewriting the query
+        if len(documents) == 0 and rewrite_count < 1:
+            logging.info(f"🔀 → REWRITE (no relevant documents found, trying query rewrite)")
             return "rewrite"
+        
+        # Fallback: generate with whatever we have
+        logging.info(f"🔀 → GENERATE (fallback)")
         return "generate"
 
     def decide_after_hallucination(
