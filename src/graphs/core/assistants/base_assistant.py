@@ -47,6 +47,21 @@ class BaseAssistant:
         user_data = state.get("user", {})
         user_info = user_data.get("user_info", {"user_id": "unknown", "name": "anh/chị"})
         user_profile = user_data.get("user_profile", {})
+        
+        # CHECK USER_PROFILE_NEEDS_REFRESH FLAG
+        user_profile_needs_refresh = state.get("user_profile_needs_refresh", False)
+        if user_profile_needs_refresh:
+            logging.info(f"🔄 BaseAssistant: user_profile_needs_refresh=True, calling get_user_profile for user_id: {user_info.get('user_id', 'unknown')}")
+            try:
+                from src.tools.memory_tools import get_user_profile
+                updated_profile = get_user_profile(user_info.get('user_id', 'unknown'))
+                if updated_profile and updated_profile.get('summary') != 'No personalized information found for this user.':
+                    user_profile = updated_profile
+                    logging.info(f"✅ BaseAssistant: Successfully refreshed user_profile: {user_profile}")
+                else:
+                    logging.info(f"ℹ️ BaseAssistant: No updated profile found, keeping existing")
+            except Exception as e:
+                logging.error(f"❌ BaseAssistant: Failed to refresh user_profile: {e}")
      
 
         logging.info(f"✅ BaseAssistant: Direct access - user_info: {user_info}, user_profile: {user_profile}")
@@ -65,6 +80,7 @@ class BaseAssistant:
             "user_profile": user_profile,
             "conversation_summary": running_summary,
             "image_contexts": image_contexts,
+            "user_profile_needs_refresh": False,  # Reset flag after using
             # Add default values for common template variables
            
         }

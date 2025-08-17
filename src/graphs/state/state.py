@@ -2,7 +2,9 @@ from typing import Annotated, Literal, Optional, List
 from langgraph.graph.message import AnyMessage, add_messages
 from langchain_core.messages import BaseMessage, ToolMessage, HumanMessage, AIMessage
 from typing_extensions import TypedDict
+from langgraph.graph import MessagesState
 from pydantic import Field
+from typing import Any, TypedDict
 """State definitions with optional langmem dependency.
 
 If langmem is not installed or incompatible with current langgraph version,
@@ -140,6 +142,9 @@ def update_reasoning_steps(left: List[ReasoningStep], right: Optional[List[Reaso
         logging.info(f"📝 REASONING APPEND RESULT: {len(result)} steps with nodes={[s.get('node') for s in result]}")
         return result
 
+class GlobalState(MessagesState):
+    context: dict[str, Any]
+
 class State(TypedDict):
     messages: Annotated[list[BaseMessage], add_messages]
     user: User
@@ -171,6 +176,7 @@ class RagState(State):
     
     hallucination_score: str
     skip_hallucination: bool = False
+    user_profile_needs_refresh: bool = False  # Flag to trigger user profile refresh in binding_prompt
     summarized_messages: list[AnyMessage] = Field(default_factory=list)  # Required for SummarizationNode
     context: dict[str, RunningSummary] = Field(default_factory=dict)  # Real conversation summary via LangMem
     image_contexts: Optional[List[str]]  # Direct image analysis contexts for immediate use 

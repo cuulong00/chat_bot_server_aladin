@@ -38,7 +38,9 @@ from langchain_core.runnables import Runnable, RunnableConfig, RunnablePassthrou
 
 from src.utils.query_classifier import QueryClassifier
 
-from src.tools.memory_tools import save_user_preference, get_user_profile
+from src.tools.memory_tools import get_user_profile
+from src.tools.enhanced_memory_tools import save_user_preference_with_refresh_flag
+from src.graphs.core.nodes.tool_result_processor import process_tool_results_and_set_flags
 from src.tools.image_context_tools import save_image_context, clear_image_context
 from src.tools.image_analysis_tool import analyze_image
 from src.tools.booking_validation_tool import validate_booking_info
@@ -335,7 +337,7 @@ def create_adaptive_rag_graph(
     domain_examples = "\n".join(DOMAIN["domain_examples"])
 
     web_search_tool = TavilySearch(max_results=5)
-    memory_tools = [get_user_profile, save_user_preference]
+    memory_tools = [get_user_profile, save_user_preference_with_refresh_flag]
     image_context_tools = [save_image_context, clear_image_context]
     validation_tools = [validate_booking_info]
     
@@ -707,7 +709,7 @@ def create_adaptive_rag_graph(
                 from langchain_core.messages import AIMessage
                 tool_call = {
                     "id": "auto_save_user_preference_generate",
-                    "name": "save_user_preference",
+                    "name": "save_user_preference_with_refresh_flag",
                     "args": {
                         "user_id": user_id, 
                         "preference_type": "dietary_preference",
@@ -865,7 +867,7 @@ def create_adaptive_rag_graph(
                     from langchain_core.messages import AIMessage
                     tool_call = {
                         "id": "auto_save_user_preference",
-                        "name": "save_user_preference",
+                        "name": "save_user_preference_with_refresh_flag",
                         "args": {
                             "user_id": user_id, 
                             "preference_type": "dietary_preference",
@@ -1307,6 +1309,7 @@ Hãy phân tích một cách chi tiết và toàn diện để thông tin này c
     graph.add_node("process_document", process_document_node)
     graph.add_node("tools", ToolNode(tools=all_tools))
     graph.add_node("direct_tools", ToolNode(tools=memory_tools + tools + image_context_tools + validation_tools))
+    graph.add_node("tool_result_processor", process_tool_results_and_set_flags)
 
     # --- Define Graph Flow ---
     # Restore entry point như code cũ
@@ -1357,7 +1360,8 @@ Hãy phân tích một cách chi tiết và toàn diện để thông tin này c
         decide_after_hallucination,
         {"rewrite": "rewrite", "tools": "tools", "end": END, "generate": "generate"},
     )
-    graph.add_edge("tools", "generate")
+    graph.add_edge("tools", "tool_result_processor")
+    graph.add_edge("tool_result_processor", "generate")
 
     graph.add_conditional_edges(
         "generate_direct",

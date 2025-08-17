@@ -43,7 +43,7 @@ class DocGraderAssistant(BaseAssistant):
                     "Use this context to better understand what the user is asking about and whether the document is relevant to the ongoing conversation.\n\n"
                     "RELEVANCE BOOST FOR MENU QUERIES: If the user asks about 'menu', 'thực đơn', 'món', 'giá', 'combo', 'set menu' then any document containing menu signals is relevant.\n"
                     "Menu signals include words like 'THỰC ĐƠN', 'THỰC ĐƠN TIÊU BIỂU', 'Combo', 'Lẩu', lines with prices (có 'đ' hoặc 'k'), or explicit menu links (e.g., 'menu.tianlong.vn').\n"
-                    "RELEVANCE BOOST FOR ADDRESS QUERIES: If the user asks about 'địa chỉ', 'ở đâu', 'chi nhánh', 'branch', 'hotline', documents listing addresses, branches, cities, or hotline numbers are relevant. Lines that start with branch names or include street names/cities should be considered relevant.\n"
+                    "RELEVANCE BOOST FOR ADDRESS/BRANCH QUERIES: If the user asks about 'địa chỉ', 'ở đâu', 'chi nhánh', 'branch', 'hotline', 'có bao nhiêu chi nhánh', 'tổng bao nhiêu', 'số lượng chi nhánh', documents listing addresses, branches, cities, hotline numbers, or branch counts are highly relevant. ANY document containing branch information, branch lists, addresses, or the phrase 'có X chi nhánh' should be marked as relevant.\n"
                     "RELEVANCE BOOST FOR PROMOTION/DISCOUNT QUERIES: If the user asks about 'ưu đãi', 'khuyến mãi', 'giảm giá', 'chương trình', 'thành viên', 'discount', 'promotion', 'offer', 'program' then any document containing promotion signals is relevant.\n"
 
                     "Promotion signals include words like 'ưu đãi', 'khuyến mãi', 'giảm', '%', 'thành viên', 'thẻ', 'BẠC', 'VÀNG', 'KIM CƯƠNG', 'sinh nhật', 'Ngày hội', 'chương trình', or membership-related content.\n\n"
@@ -77,7 +77,14 @@ class DocGraderAssistant(BaseAssistant):
             
             # DETAILED LOGGING for DocGrader input analysis - BEFORE calling super()
             logging.info(f"📋 DOCGRADER PRE-EXECUTION INPUT ANALYSIS:")
-            logging.info(f"   📄 Document in state: {state.get('document', 'MISSING')[:200] if state.get('document') else 'MISSING'}...")
+            
+            doc = state.get('document', 'MISSING')
+            if doc and doc != 'MISSING':
+                doc_content = doc.get('content', '') if isinstance(doc, dict) else str(doc)
+                logging.info(f"   📄 Document in state: {doc_content[:200]}...")
+            else:
+                logging.info(f"   📄 Document in state: MISSING")
+                
             logging.info(f"   ❓ Messages in state: {state.get('messages', 'MISSING')}")
             logging.info(f"   👤 User in state: {state.get('user', 'MISSING')}")
             logging.info(f"   📊 All state keys: {list(state.keys())}")
