@@ -681,6 +681,47 @@ def create_adaptive_rag_graph(
         else:
             logging.warning(f"   ⚠️ NO DOCUMENTS found for GENERATE node!")
         
+        # Check if this is a re-entry from tools (to avoid duplicate reasoning steps)
+        messages = state.get("messages", [])
+        is_tool_reentry = len(messages) > 0 and isinstance(messages[-1], ToolMessage)
+        
+        # Heuristic: Detect and save user preferences before generating response
+        # This ensures preferences are captured in both direct_answer and vectorstore paths
+        try:
+            user_info_ctx = state.get("user", {}).get("user_info", {})
+            user_id = user_info_ctx.get("user_id") or state.get("user_id")
+            q_low = (current_question or "").lower()
+            
+            # Keywords that indicate user is REVEALING new preferences (should save)
+            preference_revelation_triggers = [
+                "em thích", "tôi thích", "mình thích", "thích ăn", "không thích",
+                "em không ăn", "tôi không ăn", "mình không ăn", "ăn chay", 
+                "dị ứng", "kiêng", "không dùng", "ghét ăn", "yêu thích",
+                "sở thích của em", "sở thích của tôi", "em hay ăn", "tôi hay ăn",
+                "i like", "i don't like", "i prefer", "my preference", "allergic to"
+            ]
+            
+            reveals_new_pref = any(trigger in q_low for trigger in preference_revelation_triggers)
+            
+            if user_id and reveals_new_pref and not is_tool_reentry:
+                from langchain_core.messages import AIMessage
+                tool_call = {
+                    "id": "auto_save_user_preference_generate",
+                    "name": "save_user_preference",
+                    "args": {
+                        "user_id": user_id, 
+                        "preference_type": "dietary_preference",
+                        "content": current_question or "user preference", 
+                        "context": "auto_detected_from_vectorstore_conversation"
+                    },
+                }
+                ai_msg = AIMessage(content="", tool_calls=[tool_call])
+                logging.info(f"🔧 GENERATE: Injected save_user_preference tool call - detected preference: {current_question[:50]}...")
+                return {"messages": [ai_msg]}
+                
+        except Exception as _e:
+            logging.debug(f"Generate heuristic tool-call injection skipped: {_e}")
+        
         try:
             generation = generation_assistant(state, config)
         except Exception as e:
