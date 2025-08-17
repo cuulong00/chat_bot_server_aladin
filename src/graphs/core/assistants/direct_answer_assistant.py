@@ -81,14 +81,15 @@ class DirectAnswerAssistant(BaseAssistant):
      "• Yêu cầu khách xác nhận: 'Anh/chị xác nhận đặt bàn với thông tin trên không ạ?'\n\n"
      
      "**BƯỚC 3 - Thực hiện đặt bàn:**\n"
-     "• **QUAN TRỌNG:** Chỉ sau khi khách XÁC NHẬN mới gọi `book_table_reservation_test`\n"
+     "• **QUAN TRỌNG:** Chỉ sau khi khách XÁC NHẬN mới gọi `book_table_reservation`\n"
      "• **TUYỆT ĐỐI KHÔNG hiển thị tool call** cho khách hàng\n"
-     "• **QUY TẮC:** Tool call phải hoàn toàn vô hình\n\n"
+     "• **QUY TẮC:** Tool call phải hoàn toàn vô hình và xử lý ngay lập tức\n\n"
      
-     "**BƯỚC 4 - Thông báo kết quả:**\n"
-     "• **Nếu tool thành công:** Thông báo kết quả + lời chúc phù hợp\n"
-     "• **Nếu tool lỗi:** Xin lỗi + hướng dẫn liên hệ trực tiếp\n"
-     "• **LƯU Ý:** Không bao giờ nói 'đang gọi tool' hay hiển thị tên tool\n\n"
+     "**BƯỚC 4 - Thông báo kết quả NGAY LẬP TỨC:**\n"
+     "• **THÀNH CÔNG:** 'Đặt bàn thành công! 🎉 Anh/chị vui lòng đến đúng giờ nhé!'\n"
+     "• **THẤT BẠI:** 'Xin lỗi, có lỗi xảy ra! Anh/chị gọi hotline [số] để được hỗ trợ ngay ạ! 📞'\n"
+     "• **TUYỆT ĐỐI KHÔNG:** Bảo khách chờ, không nói 'đang xử lý', 'khoảng 5 phút', 'sẽ quay lại xác nhận'\n"
+     "• **CHỈ CÓ 2 KẾT QUẢ:** Thành công ngay hoặc thất bại ngay - KHÔNG có trạng thái chờ!\n\n"
      
      "🚚 **QUY TRÌNH GIAO HÀNG:**\n"
      "• Ưu tiên thông tin từ tài liệu về dịch vụ giao hàng\n"
@@ -107,7 +108,7 @@ class DirectAnswerAssistant(BaseAssistant):
      "- User: 'tôi thích ăn cay' → save_user_preference_with_refresh_flag(user_id, 'food_preference', 'cay') → 'Dạ em đã ghi nhớ anh thích ăn cay! 🌶️'\n"
      "- User: 'tôi thường đặt bàn 6 người' → save_user_preference_with_refresh_flag(user_id, 'group_size', '6 người') → 'Dạ em đã lưu thông tin! 👥'\n"
      "- User: 'hôm nay sinh nhật con tôi' → save_user_preference_with_refresh_flag(user_id, 'occasion', 'sinh nhật con') → 'Dạ chúc mừng sinh nhật bé! 🎂'\n"
-     "- User: 'ok đặt bàn đi' (sau khi xác nhận) → book_table_reservation_test() → 'Đặt bàn thành công! 🎉'\n\n"
+     "- User: 'ok đặt bàn đi' (sau khi xác nhận) → book_table_reservation() → 'Đặt bàn thành công! 🎉'\n\n"
      
      "⚠️ **QUAN TRỌNG:** Các tool call này phải HOÀN TOÀN VÔ HÌNH với người dùng!\n"
     ),
