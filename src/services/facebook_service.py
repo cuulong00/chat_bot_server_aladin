@@ -664,11 +664,18 @@ class FacebookMessengerService:
             
             logger.info(f"📋 Message classification: {len(image_messages)} images, {len(text_messages)} text items")
             
-            # STEP 2: Xử lý images trước để tạo image_contexts
+            # STEP 2: Xử lý images để tạo image_contexts (conditional response)
             image_contexts = []
             
             if image_messages:
-                logger.info("🖼️ Processing images first to create image contexts...")
+                # CRITICAL: Nếu có cả image và text, chỉ xử lý image để lưu context (không gửi response)
+                # Nếu chỉ có image, xử lý bình thường và gửi response
+                process_image_silently = bool(text_messages)
+                
+                if process_image_silently:
+                    logger.info("🖼️ Processing images SILENTLY (image+text combo detected) - no immediate response sent")
+                else:
+                    logger.info("🖼️ Processing images with response (image-only message)")
                 
                 try:
                     # Prepare image message for process_document_node
@@ -694,14 +701,30 @@ class FacebookMessengerService:
                             
                             # Process images to get contexts and state - BLOCKING OPERATION
                             logger.info("🔬 Calling agent for image analysis...")
-                            logger.info("⏳ Waiting for image processing to complete before text processing...")
+                            
+                            if process_image_silently:
+                                logger.info("⚡ Silent mode: Image context will be saved but no response sent")
+                            else:
+                                logger.info("📢 Normal mode: Image will be processed and response sent")
                             
                             image_result, final_state = await self.call_agent_with_state(app_state, image_inputs)
                             
                             # Extract image_contexts from final state
                             image_contexts = final_state.get("image_contexts", [])
                             logger.info(f"✅ Image processing completed: {len(image_contexts)} contexts extracted")
-                            logger.info(f"🔬 Image contexts: {image_contexts}")
+                            
+                            # Only send image response if this is image-only message
+                            if not process_image_silently and image_result:
+                                await self.send_message(user_id, image_result)
+                                self.message_history.store_message(
+                                    user_id=user_id,
+                                    message_id=f"bot_image_only_{user_id}_{int(time.time())}",
+                                    content=image_result,
+                                    is_from_user=False
+                                )
+                                logger.info("📤 Image-only response sent to user")
+                            else:
+                                logger.info("🔇 Silent processing - no immediate response sent")
                         else:
                             logger.error("❌ No app_state available for image processing")
                             
@@ -732,13 +755,50 @@ class FacebookMessengerService:
                 text_content = text_content.strip()
                 
                 # Kiểm tra text có tham chiếu đến hình ảnh không
-                image_reference_keywords = ['món này', '2 món này', 'trong ảnh', 'ảnh vừa gửi', 'món đó', 'cái này', 'cái kia', 'hình ảnh']
+                image_reference_keywords = ['món này', '2 món này', 'trong ảnh', 'ảnh vừa gửi', 'món đó', 'cái này', 'cái kia', 'hình ảnh', 'combo này', 'đặt combo này']
                 has_image_reference = any(keyword in text_content.lower() for keyword in image_reference_keywords)
                 
-                # Nếu text tham chiếu đến hình ảnh nhưng chưa có image contexts
-                if has_image_reference and not image_contexts:
-                    logger.warning(f"⚠️ Text references image ('{text_content[:50]}...') but no image contexts available")
-                    # Có thể thêm delay hoặc retry logic ở đây nếu cần
+                # CRITICAL FIX: Nếu text tham chiếu đến hình ảnh, retrieve context từ Qdrant
+                retrieved_image_context = []
+                if has_image_reference or (image_messages and len(image_messages) > 0):
+                    logger.info(f"🔍 Text references image or images were just processed - retrieving saved context from Qdrant")
+                    try:
+                        # Import and use image context tools
+                        from src.tools.image_context_tools import retrieve_image_context
+                        
+                        # Get thread_id for this conversation
+                        thread_id = f"facebook_session_{user_id}"
+                        
+                        # Retrieve image context
+                        context_result = retrieve_image_context(user_id, thread_id, text_content, limit=5)
+                        
+                        if context_result and not context_result.startswith("❌") and "Không tìm thấy" not in context_result:
+                            retrieved_image_context.append(context_result)
+                            logger.info(f"✅ Retrieved image context from Qdrant: {len(context_result)} characters")
+                        else:
+                            logger.warning(f"⚠️ No image context found in Qdrant: {context_result}")
+                            
+                    except Exception as ctx_error:
+                        logger.error(f"❌ Failed to retrieve image context: {ctx_error}")
+                
+                # Nếu text tham chiếu đến hình ảnh nhưng chưa có context
+                if has_image_reference and not image_contexts and not retrieved_image_context:
+                    logger.warning(f"⚠️ Text references image ('{text_content[:50]}...') but no image contexts available from any source")
+                    # Thêm delay nhỏ và thử retrieve lại
+                    await asyncio.sleep(1)
+                    try:
+                        from src.tools.image_context_tools import retrieve_image_context
+                        thread_id = f"facebook_session_{user_id}"
+                        retry_context = retrieve_image_context(user_id, thread_id, text_content, limit=5)
+                        if retry_context and not retry_context.startswith("❌") and "Không tìm thấy" not in retry_context:
+                            retrieved_image_context.append(retry_context)
+                            logger.info("✅ Retry successful - found image context")
+                    except Exception as retry_error:
+                        logger.error(f"❌ Retry failed: {retry_error}")
+                        
+                # Combine all available contexts
+                all_image_contexts = image_contexts + retrieved_image_context
+                logger.info(f"📋 Total image contexts available: {len(all_image_contexts)} (from state: {len(image_contexts)}, from Qdrant: {len(retrieved_image_context)})")
                 
                 if text_content:
                     # Store aggregated message in history
@@ -766,11 +826,13 @@ class FacebookMessengerService:
                             "session_id": session,
                         }
                         
-                        # If we have image contexts, include them in the initial state
+                        # If we have image contexts from any source, include them in the initial state
                         initial_state = {"messages": [{"role": "user", "content": text_content, "additional_kwargs": {"session_id": session, "user_id": user_id}}]}
-                        if image_contexts:
-                            initial_state["image_contexts"] = image_contexts
-                            logger.info(f"🖼️ Including {len(image_contexts)} image contexts in text processing")
+                        if all_image_contexts:
+                            initial_state["image_contexts"] = all_image_contexts
+                            logger.info(f"🖼️ Including {len(all_image_contexts)} image contexts in text processing")
+                        else:
+                            logger.info("📝 No image contexts available - processing text only")
                         
                         # Call agent with enhanced inputs
                         config = {"configurable": {"thread_id": session, "user_id": user_id}}
@@ -814,9 +876,9 @@ class FacebookMessengerService:
                         logger.error(f"❌ Agent error for text processing {user_id}: {e}")
                         await self.send_message(user_id, "Xin lỗi, có lỗi xảy ra. Vui lòng thử lại sau.")
             
-            # If only images (no text), the image processing already handled the response
+            # Image-only messages are handled in STEP 2 above
             elif image_messages and not text_messages:
-                logger.info("📋 Only images processed - no additional text response needed")
+                logger.info("📋 Image-only processing completed in STEP 2 - no additional action needed")
                 
         except Exception as e:
             logger.error(f"❌ Context processing error for {user_id}: {e}")
