@@ -450,7 +450,7 @@ def create_adaptive_rag_graph(
             user_id = state.get("user", {}).get("user_info", {}).get("user_id", "unknown")
             
             # Multi-namespace configuration
-            available_namespaces = ["maketing", "faq"]  # All available namespaces
+            available_namespaces = ["maketing", "faq","images"]  # All available namespaces
             default_namespace = DOMAIN.get("namespace", "maketing")
             
             # Determine search strategy based on context

@@ -32,6 +32,7 @@ from dotenv import load_dotenv
 import logging
 from typing import List, Optional, Dict, Any, Callable
 import argparse
+import json
 import google.generativeai as genai
 from langchain_community.document_loaders import (
     WebBaseLoader,
@@ -63,6 +64,47 @@ EMBEDDING_MODELS: Dict[str, Callable[[], Any]] = {
     # "openai": lambda: OpenAIEmbeddings(...),
     # "nomic": lambda: NomicEmbeddings(...),
 }
+
+# --- JSON loader for menu combos ---
+def _load_menu_json(file_path: str) -> List[Document]:
+    """Load JSON file with menu combos format and convert to documents."""
+    try:
+        with open(file_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        
+        documents = []
+        if isinstance(data, list):
+            for item in data:
+                if isinstance(item, dict) and "embedding_text" in item:
+                    # Sử dụng embedding_text làm nội dung chính
+                    content = item["embedding_text"]
+                    
+                    # Tạo metadata từ các field khác
+                    metadata = {
+                        "source": file_path,
+                        "id": item.get("id", ""),
+                        "title": item.get("title", ""),
+                        "price_vnd": item.get("price_vnd", 0),
+                        "currency": item.get("currency", "VND"),
+                        "guests": item.get("guests", 1),
+                        "image_url": item.get("image_url", ""),
+                        "type": "menu_combo"
+                    }
+                    
+                    # Thêm thông tin giảm giá nếu có
+                    if item.get("discount_info"):
+                        metadata["discount_info"] = item["discount_info"]
+                        metadata["original_price_vnd"] = item.get("original_price_vnd", 0)
+                    
+                    documents.append(Document(page_content=content, metadata=metadata))
+        
+        logger.info(f"Loaded {len(documents)} menu combo documents from {file_path}")
+        return documents
+        
+    except Exception as e:
+        logger.error(f"Failed to load JSON file {file_path}: {e}")
+        return []
+
 
 # --- Robust text loader with encoding fallbacks ---
 def _safe_load_text(file_path: str) -> List[Document]:
@@ -102,6 +144,7 @@ LOADER_REGISTRY: Dict[str, Callable[[str], Any]] = {
     ".pdf": lambda f: PyPDFLoader(f).load(),
     ".docx": lambda f: Docx2txtLoader(f).load(),
     ".txt": _safe_load_text,
+    ".json": _load_menu_json,
 }
 
 
