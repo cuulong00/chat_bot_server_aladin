@@ -8,9 +8,9 @@ if (-not (Test-Path ".git")) {
     exit 1
 }
 
-# Check current branch and switch to tool-calling-improvements if needed
+# Check current branch and switch to feature/tool-calling-improvements if needed
 $currentBranch = git branch --show-current
-$targetBranch = "tool-calling-improvements"
+$targetBranch = "feature/tool-calling-improvements"
 
 if ($currentBranch -ne $targetBranch) {
     Write-Host "Current branch: $currentBranch"

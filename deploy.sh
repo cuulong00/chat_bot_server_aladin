@@ -36,15 +36,15 @@ fi
 
 # Clone repository if not exists
 if [ ! -d "chat_bot_server" ]; then
-    print_status "Cloning repository (tool-calling-improvements)..."
-    git clone -b tool-calling-improvements https://github.com/cuulong00/chat_bot_server.git
+    print_status "Cloning repository (feature/tool-calling-improvements)..."
+    git clone -b feature/tool-calling-improvements https://github.com/cuulong00/chat_bot_server.git
     cd chat_bot_server
 else
-    print_status "Repository already exists, updating to tool-calling-improvements..."
+    print_status "Repository already exists, updating to feature/tool-calling-improvements..."
     cd chat_bot_server
     git fetch origin
-    git checkout tool-calling-improvements
-    git pull origin tool-calling-improvements
+    git checkout feature/tool-calling-improvements
+    git pull origin feature/tool-calling-improvements
 fi
 
 # Setup environment file

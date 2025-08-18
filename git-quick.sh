@@ -37,7 +37,7 @@ fi
 
 # Check if we're on the correct branch
 current_branch=$(git branch --show-current)
-target_branch="tool-calling-improvements"
+target_branch="feature/tool-calling-improvements"
 
 if [ "$current_branch" != "$target_branch" ]; then
   echo "Current branch: $current_branch"
