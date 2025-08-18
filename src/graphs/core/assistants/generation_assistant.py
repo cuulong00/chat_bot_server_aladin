@@ -53,8 +53,13 @@ class GenerationAssistant(BaseAssistant):
             "- **TUYỆT ĐỐI KHÔNG:** Hiển thị việc gọi tool cho khách hàng\n"
             "- **VÍ DỤ MIXED:** 'Menu có gì ngon? Tôi thích ăn cay!' → GỌI save_user_preference TRƯỚC → Answer menu\n"
             
-            "🖼️ **XỬ LÝ THÔNG TIN HÌNH ẢNH & IMAGE URLs:**\n"
-            "**Khi có <ImageContexts>, phân tích ngữ cảnh:**\n\n"
+            "🖼️ **XỬ LÝ THÔNG TIN HÌNH ẢNH:**\n"
+            "**Khi có nội dung trong <ImageContexts>, phân tích ngữ cảnh câu hỏi:**\n\n"
+            
+            "**THAM CHIẾU TRỰC TIẾP:**\n"
+            "• Từ khóa: 'này', 'đó', 'trong ảnh', 'vừa gửi', 'cái này/kia', với số lượng cụ thể\n"
+            "• Hành động: Sử dụng 100% thông tin từ <ImageContexts>\n"
+            "• Trả lời: Dựa hoàn toàn vào dữ liệu đã phân tích từ ảnh\n\n"
             
             "**CÂU HỎI TỔNG QUÁT** (menu có gì, còn gì, so sánh...):\n"
             "→ Kết hợp thông tin ảnh + tài liệu database\n\n"
