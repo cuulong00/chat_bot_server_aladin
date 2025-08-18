@@ -151,7 +151,7 @@ class QdrantStore:
             print(f"Error listing from namespace {namespace}: {e}")
             return []
 
-    def search(self, namespace: str, query: str, limit: int = 10) -> List[Tuple[str, Dict[str, Any], float]]:
+    def search(self, namespace: Optional[str], query: str, limit: int = 10) -> List[Tuple[str, Dict[str, Any], float]]:
         query_vec = self._get_embedding(query)
         
         if query_vec is None:
@@ -160,15 +160,21 @@ class QdrantStore:
             print(f"search->namespace:{namespace}")
             print(f"search->self.collection_name:{self.collection_name}")
         
+            # Build query filter based on namespace parameter
+            query_filter = None
+            if namespace is not None:
+                # Filter by specific namespace
+                query_filter = Filter(
+                    must=[FieldCondition(key="namespace", match=MatchValue(value=namespace))]
+                )
+            # If namespace is None, search entire collection without filter
 
             search_result = self.qdrant_client.search(
                 collection_name=self.collection_name,
                 query_vector=query_vec,
                 limit=limit,
                 with_payload=True,
-                query_filter=Filter(
-                    must=[FieldCondition(key="namespace", match=MatchValue(value=namespace))]
-                ),
+                query_filter=query_filter,
             )
             # Print concise summary of results without embeddings or full payloads
             try:

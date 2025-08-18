@@ -152,6 +152,29 @@ class FacebookMessengerService:
     async def send_message(self, recipient_psid: str, text: str) -> Dict[str, Any]:
         url = f"{self.GRAPH_API_BASE}/{self.api_version}/me/messages"
         params = {"access_token": self.page_access_token}
+        
+        # Kiểm tra xem message có image URLs không để gửi dưới dạng image attachment
+        image_urls = self._extract_image_urls(text)
+        
+        if image_urls:
+            # Gửi text trước (nếu có text không phải URL)
+            clean_text = self._remove_image_urls_from_text(text)
+            if clean_text.strip():
+                await self._send_text_message(recipient_psid, clean_text)
+            
+            # Gửi từng ảnh dưới dạng attachment
+            for image_url in image_urls:
+                await self._send_image_attachment(recipient_psid, image_url)
+            
+            return {"ok": True, "images_sent": len(image_urls)}
+        else:
+            # Gửi text message bình thường
+            return await self._send_text_message(recipient_psid, text)
+
+    async def _send_text_message(self, recipient_psid: str, text: str) -> Dict[str, Any]:
+        """Gửi tin nhắn text thông thường"""
+        url = f"{self.GRAPH_API_BASE}/{self.api_version}/me/messages"
+        params = {"access_token": self.page_access_token}
         payload = {
             "recipient": {"id": recipient_psid},
             "messaging_type": "RESPONSE",
@@ -171,6 +194,91 @@ class FacebookMessengerService:
                 await self._sleep(backoff)
                 backoff *= 2
         return {"ok": False, "error": "failed_to_send"}
+    
+    async def _send_image_attachment(self, recipient_psid: str, image_url: str) -> Dict[str, Any]:
+        """Gửi hình ảnh dưới dạng attachment trực tiếp trong Facebook Messenger"""
+        url = f"{self.GRAPH_API_BASE}/{self.api_version}/me/messages"
+        params = {"access_token": self.page_access_token}
+        payload = {
+            "recipient": {"id": recipient_psid},
+            "messaging_type": "RESPONSE",
+            "message": {
+                "attachment": {
+                    "type": "image",
+                    "payload": {
+                        "url": image_url,
+                        "is_reusable": True
+                    }
+                }
+            }
+        }
+
+        backoff = 0.5
+        async with httpx.AsyncClient(timeout=15) as client:
+            for attempt in range(3):
+                try:
+                    resp = await client.post(url, params=params, json=payload)
+                    if resp.is_success:
+                        logger.info(f"✅ Image sent successfully: {image_url}")
+                        return resp.json()
+                    logger.error("Facebook send_image_attachment failed (attempt %d): %s", attempt + 1, resp.text)
+                except Exception as e:  # noqa: BLE001
+                    logger.exception("Facebook send_image_attachment exception (attempt %d): %s", attempt + 1, e)
+                await self._sleep(backoff)
+                backoff *= 2
+        
+        logger.error(f"❌ Failed to send image after 3 attempts: {image_url}")
+        return {"ok": False, "error": "failed_to_send_image"}
+    
+    def _extract_image_urls(self, text: str) -> list[str]:
+        """Trích xuất image URLs từ text"""
+        import re
+        # Pattern để tìm URLs ảnh (postimg.cc, imgur.com, etc.)
+        url_patterns = [
+            r'https?://[^\s]*\.(?:jpg|jpeg|png|gif|webp)',
+            r'https?://i\.postimg\.cc/[^\s]*',
+            r'https?://imgur\.com/[^\s]*',
+            r'https?://[^\s]*postimg[^\s]*'
+        ]
+        
+        urls = []
+        for pattern in url_patterns:
+            found_urls = re.findall(pattern, text, re.IGNORECASE)
+            urls.extend(found_urls)
+        
+        # Remove duplicates while preserving order
+        seen = set()
+        unique_urls = []
+        for url in urls:
+            if url not in seen:
+                seen.add(url)
+                unique_urls.append(url)
+        
+        return unique_urls
+    
+    def _remove_image_urls_from_text(self, text: str) -> str:
+        """Xóa image URLs khỏi text để lấy phần text thuần túy"""
+        import re
+        
+        # Remove common image URL patterns
+        patterns_to_remove = [
+            r'https?://[^\s]*\.(?:jpg|jpeg|png|gif|webp)',
+            r'https?://i\.postimg\.cc/[^\s]*',
+            r'https?://imgur\.com/[^\s]*',
+            r'https?://[^\s]*postimg[^\s]*',
+            r'📸[^\n]*https?://[^\s]*',  # Remove emoji + URL lines
+            r'\n\s*https?://[^\s]*\.\w+\s*\n',  # Remove standalone URL lines
+        ]
+        
+        clean_text = text
+        for pattern in patterns_to_remove:
+            clean_text = re.sub(pattern, '', clean_text, flags=re.IGNORECASE)
+        
+        # Clean up extra whitespace and newlines
+        clean_text = re.sub(r'\n\s*\n', '\n', clean_text)  # Multiple newlines to single
+        clean_text = re.sub(r'^\s+|\s+$', '', clean_text)   # Trim start/end whitespace
+        
+        return clean_text
 
     async def send_sender_action(self, recipient_psid: str, action: str = "typing_on") -> None:
         """Send a sender_action (e.g., typing_on) to Messenger; best-effort, no raise."""

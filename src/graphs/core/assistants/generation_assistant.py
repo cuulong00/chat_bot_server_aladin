@@ -53,11 +53,22 @@ class GenerationAssistant(BaseAssistant):
             "- **TUYỆT ĐỐI KHÔNG:** Hiển thị việc gọi tool cho khách hàng\n"
             "- **VÍ DỤ MIXED:** 'Menu có gì ngon? Tôi thích ăn cay!' → GỌI save_user_preference TRƯỚC → Answer menu\n"
             
-            "🖼️ **XỬ LÝ THÔNG TIN HÌNH ẢNH:**\n"
+            "🖼️ **XỬ LÝ THÔNG TIN HÌNH ẢNH & IMAGE URLs:**\n"
             "**Khi có <ImageContexts>, phân tích ngữ cảnh:**\n\n"
             
             "**CÂU HỎI TỔNG QUÁT** (menu có gì, còn gì, so sánh...):\n"
             "→ Kết hợp thông tin ảnh + tài liệu database\n\n"
+            
+            "🔍 **QUAN TRỌNG - TRÍCH XUẤT IMAGE URLs TỪ TÀI LIỆU:**\n"
+            "• **KHI KHÁCH YÊU CẦU ẢNH** ('gửi ảnh', 'cho xem ảnh', 'có ảnh không'):\n"
+            "  - Tìm kiếm trong tài liệu những URL có pattern: postimg.cc, imgur.com, etc.\n"
+            "  - Trích xuất và hiển thị image URLs cho khách hàng\n"
+            "  - Format: 'Đây là ảnh [tên món/combo]: [URL]'\n"
+            "• **VÍ DỤ TRÍCH XUẤT:**\n"
+            "  - Từ document: 'COMBO TIAN LONG 1... image_url: https://i.postimg.cc/cCKSpcj2/Menu-Tian-Long-25.png'\n"
+            "  - Trả lời: '📸 COMBO TIAN LONG 1: https://i.postimg.cc/cCKSpcj2/Menu-Tian-Long-25.png'\n"
+            "• **KHI CÓ NHIỀU ẢNH:** Liệt kê từng ảnh với tên rõ ràng\n"
+            "• **KHI KHÔNG CÓ ẢNH:** 'Xin lỗi, hiện tại em chưa có ảnh cho [món này]'\n\n"
             
             "📝 **ĐỊNH DẠNG TIN NHẮN - NGẮN GỌN & ĐẸP:**\n"
             "• **ĐẸP MẮT VÀ THÂN THIỆN:** Thẳng vào vấn đề, không dài dòng, nhưng phải đủ thông tin\n"
@@ -137,10 +148,53 @@ class GenerationAssistant(BaseAssistant):
                         logging.info(f"   🖼️ Generation Image Context {i+1}: {img_context[:200]}...")
                 logging.info(f"   ✅ Added {len(image_contexts)} image contexts")
             
-            # Xử lý documents
+            # Xử lý documents và trích xuất image URLs
             if documents:
                 logging.info("📄 GENERATION DOCUMENTS ANALYSIS:")
                 
+                # Debug: Check document structure
+                logging.info(f"   📊 Total documents: {len(documents)}")
+                for i, doc in enumerate(documents[:3]):
+                    logging.info(f"   📄 Doc {i+1} type: {type(doc)}")
+                    if isinstance(doc, tuple):
+                        logging.info(f"   📄 Doc {i+1} tuple length: {len(doc)}")
+                        if len(doc) > 0:
+                            logging.info(f"   📄 Doc {i+1}[0] type: {type(doc[0])}")
+                            logging.info(f"   📄 Doc {i+1}[0] value: {doc[0]}")
+                        if len(doc) > 1:
+                            logging.info(f"   📄 Doc {i+1}[1] type: {type(doc[1])}")
+                            if isinstance(doc[1], dict):
+                                keys = list(doc[1].keys())
+                                logging.info(f"   📄 Doc {i+1}[1] keys: {keys}")
+                                if 'content' in doc[1]:
+                                    content_preview = doc[1]['content'][:100] + "..." if len(doc[1]['content']) > 100 else doc[1]['content']
+                                    logging.info(f"   📄 Doc {i+1} content preview: {content_preview}")
+                
+                # Extract image URLs from document metadata for display
+                image_urls_found = []
+                for i, doc in enumerate(documents[:10]):
+                    if isinstance(doc, tuple) and len(doc) > 1 and isinstance(doc[1], dict):
+                        doc_dict = doc[1]
+                        
+                        # Get image_url from metadata or direct from doc_dict
+                        image_url = None
+                        if "image_url" in doc_dict:
+                            image_url = doc_dict["image_url"]
+                        elif "metadata" in doc_dict and isinstance(doc_dict["metadata"], dict):
+                            image_url = doc_dict["metadata"].get("image_url")
+                        
+                        if image_url:
+                            # Get combo name from content or metadata
+                            combo_name = doc_dict.get("combo_name") or doc_dict.get("metadata", {}).get("title", "Combo")
+                            image_urls_found.append(f"📸 {combo_name}: {image_url}")
+                            logging.info(f"   🖼️ Found image URL: {combo_name} -> {image_url}")
+                
+                # Add image URLs section if found
+                if image_urls_found:
+                    context_parts.append("**CÁC ẢNH COMBO HIỆN CÓ:**\n" + "\n".join(image_urls_found))
+                    logging.info(f"   ✅ Added {len(image_urls_found)} image URLs to context")
+                
+                # Add document content
                 for i, doc in enumerate(documents[:10]):
                     if isinstance(doc, tuple) and len(doc) > 1 and isinstance(doc[1], dict):
                         doc_content = doc[1].get("content", "")

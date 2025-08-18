@@ -430,12 +430,10 @@ def create_adaptive_rag_graph(
 
     def retrieve(state: RagState, config: RunnableConfig):
         """
-        Enhanced retrieve node with intelligent multi-namespace search strategy.
-        Searches across all available namespaces with smart fallback and fusion.
+        Enhanced retrieve node with collection-wide search.
+        Searches across entire collection without namespace filtering to get all relevant documents.
         """
-        from src.utils.multi_namespace_retriever import MultiNamespaceRetriever
-        
-        logging.info("---NODE: RETRIEVE (Multi-Namespace)---")
+        logging.info("---NODE: RETRIEVE (Collection-Wide Search)---")
         question = get_current_user_question(state)
 
         # Ensure question is valid
@@ -449,63 +447,45 @@ def create_adaptive_rag_graph(
         try:
             user_id = state.get("user", {}).get("user_info", {}).get("user_id", "unknown")
             
-            # Multi-namespace configuration
-            available_namespaces = ["maketing", "faq","images"]  # All available namespaces
-            default_namespace = DOMAIN.get("namespace", "maketing")
-            
-            # Determine search strategy based on context
+            # Determine search params based on context
             search_attempts = state.get("search_attempts", 0)
             rewrite_count = state.get("rewrite_count", 0)
             
             # Progressive search strategy: start focused, then expand
             if search_attempts == 0 and rewrite_count == 0:
-                # First attempt: use fallback strategy (primary + backup)
-                search_strategy = "fallback"
-                limit = 12
+                # First attempt: use higher limit to ensure combo documents are included
+                limit = 20  # Increased from 12 to capture combo documents
             else:
-                # Later attempts or rewrites: cast wider net
-                search_strategy = "comprehensive"
-                limit = 16
+                # Later attempts or rewrites: cast even wider net
+                limit = 24  # Increased to ensure comprehensive coverage
             
-            logging.info(f"🎯 Multi-namespace search strategy: {search_strategy}")
-            logging.info(f"   Available namespaces: {available_namespaces}")
+            logging.info(f"🎯 Collection-wide search strategy")
             logging.info(f"   Search attempts: {search_attempts}, Rewrites: {rewrite_count}")
+            logging.info(f"   Search limit: {limit}")
             
-            # Initialize multi-namespace retriever
-            multi_retriever = MultiNamespaceRetriever(
-                qdrant_store=retriever,
-                namespaces=available_namespaces,
-                default_namespace=default_namespace
+            # Direct search in collection without namespace filter
+            # This allows finding documents from all namespaces (maketing, faq, images)
+            documents = retriever.search(
+                query=question,
+                limit=limit,
+                namespace=None  # No namespace filter - search entire collection
             )
+            
+            logging.info(f"🌐 Collection search: {len(documents)} results found")
 
-            # Execute search based on strategy
-            if search_strategy == "comprehensive":
-                # Search ALL namespaces for maximum coverage
-                limit_per_ns = max(6, limit // len(available_namespaces))
-                documents = multi_retriever.search_all_namespaces(
-                    query=question, 
-                    limit_per_namespace=limit_per_ns
-                )
-                logging.info(f"🌐 Comprehensive search: {len(documents)} results from all namespaces")
-                
-            else:  # fallback strategy
-                # Smart primary selection with fallback
-                documents = multi_retriever.search_with_fallback(
-                    query=question,
-                    primary_namespace=default_namespace,
-                    limit=limit,
-                    fallback_threshold=0.65,  # Aggressive fallback for better coverage
-                    min_primary_results=4
-                )
-                logging.info(f"🔄 Fallback search: {len(documents)} results with smart fallback")
-
-            # Log detailed retrieval stats
+            # Log detailed retrieval stats by analyzing domains
             namespace_stats = {}
-            for _, doc_dict, _ in documents:
+            image_documents = 0
+            for chunk_id, doc_dict, score in documents:
                 ns = doc_dict.get('domain', 'unknown')
                 namespace_stats[ns] = namespace_stats.get(ns, 0) + 1
+                
+                # Count documents with image URLs
+                if doc_dict.get('image_url'):
+                    image_documents += 1
             
-            logging.info(f"📊 Namespace distribution: {namespace_stats}")
+            logging.info(f"📊 Domain distribution: {namespace_stats}")
+            logging.info(f"🖼️  Documents with images: {image_documents}")
             
             # Log collection info for debugging
             try:
@@ -514,14 +494,13 @@ def create_adaptive_rag_graph(
                 collection_name = "<unknown>"
             
             logging.info(
-                "🔍 Multi-namespace search params: collection=%s, strategy=%s, limit=%s, query=%.120s",
+                "🔍 Collection search params: collection=%s, limit=%s, query=%.120s",
                 collection_name,
-                search_strategy,
                 limit,
                 question,
             )
 
-            logging.info(f"✅ Retrieved {len(documents)} documents using multi-namespace strategy")
+            logging.info(f"✅ Retrieved {len(documents)} documents using collection-wide search")
             
             # Clean documents: remove embedding vectors to save memory and reduce token usage
             cleaned_documents = clean_documents_remove_embeddings(documents)
@@ -583,6 +562,24 @@ def create_adaptive_rag_graph(
         logging.info(f"Grading {len(documents_to_grade)} documents, including {len(remaining_docs)} without grading")
 
         filtered_docs = []
+        combo_docs_found = []
+        
+        # First pass: Identify combo documents in all documents
+        for d in documents:
+            if isinstance(d, tuple) and len(d) > 1 and isinstance(d[1], dict):
+                doc_content = d[1].get("content", "")
+                if ('combo' in doc_content.lower() and 
+                    ('tian long' in doc_content.lower() or 'menu' in doc_content.lower()) and
+                    ('441,000' in doc_content or '668,000' in doc_content or 'image_url' in str(d[1]))):
+                    combo_docs_found.append(d)
+                    logging.info(f"   🎯 COMBO DOCUMENT IDENTIFIED: {doc_content[:100]}...")
+        
+        # Check if query is asking for images/combo
+        query_wants_images = any(keyword in question.lower() for keyword in ['ảnh', 'image', 'photo', 'combo', 'menu'])
+        
+        if query_wants_images and combo_docs_found:
+            logging.info(f"   🚨 IMAGE QUERY DETECTED: Force including {len(combo_docs_found)} combo documents")
+            filtered_docs.extend(combo_docs_found)
         
         # Grade limited number of documents
         for i, d in enumerate(documents_to_grade):
