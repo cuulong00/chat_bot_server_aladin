@@ -14,7 +14,7 @@ class UserFacebookRepository:
     Repository for minimal Facebook users table operations.
     Table schema expected:
         CREATE TABLE user_facebook (
-            user_id VARCHAR(32) PRIMARY KEY NOT NULL,
+            user_id VARCHAR(36) PRIMARY KEY NOT NULL,
             name VARCHAR(255),
             email VARCHAR(255) UNIQUE,
             phone VARCHAR(20)

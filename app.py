@@ -9,6 +9,8 @@ from langgraph.graph import END, StateGraph
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from src.database.qdrant_store import QdrantStore
 from src.tools.accounting_tools import accounting_tools
+from src.tools.enhanced_memory_tools import save_user_preference_with_refresh_flag
+from src.tools.reservation_tools import reservation_tools
 from langchain_openai import ChatOpenAI
 from langchain_google_genai import ChatGoogleGenerativeAI
 from src.database.checkpointer import get_checkpointer
@@ -19,8 +21,10 @@ load_dotenv()
 # Setup logging
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    format='%(asctime)s %(levelname)s %(name)s: %(message)s'
 )
+
+logger = logging.getLogger(__name__)
 
 # Include the full adaptive RAG graph implementation here
 from src.graphs.core.adaptive_rag_graph import create_adaptive_rag_graph
@@ -28,22 +32,25 @@ from src.graphs.core.adaptive_rag_graph import create_adaptive_rag_graph
 
 # Compile the graph with a custom checkpointer
 def compile_graph(checkpointer: BaseCheckpointSaver):
-    accounting_llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+    accounting_llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash-latest", temperature=0)
     llm_grade_documents = ChatGoogleGenerativeAI(
         model="gemini-1.5-flash-latest", temperature=0
     )
     llm_router = ChatGoogleGenerativeAI(model="gemini-1.5-flash-latest", temperature=0)
-    llm_rewrite = ChatOpenAI(model="gpt-4o-mini", temperature=0)
-    llm_generate_direct = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+    llm_rewrite = ChatGoogleGenerativeAI(model="gemini-1.5-flash-latest", temperature=0)
+    llm_generate_direct = ChatGoogleGenerativeAI(model="gemini-1.5-flash-latest", temperature=0)
     llm_hallucination_grader = ChatGoogleGenerativeAI(
         model="gemini-1.5-flash-latest", temperature=0
     )
-    llm_summarizer = ChatOpenAI(model="gpt-4o-mini", temperature=0)
-    llm_contextualize = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+    llm_summarizer = ChatGoogleGenerativeAI(model="gemini-1.5-flash-latest", temperature=0)
+    llm_contextualize = ChatGoogleGenerativeAI(model="gemini-1.5-flash-latest", temperature=0)
     
     retriever = QdrantStore(
-        collection_name="accounting_store", embedding_model="text-embedding-3-small"
+        collection_name="accounting_store", embedding_model=os.getenv("EMBEDDING_MODEL", "models/text-embedding-004")
     )
+    
+    # Combine all tools
+    all_tools = accounting_tools + reservation_tools + [save_user_preference_with_refresh_flag]
     
 
 
@@ -57,7 +64,7 @@ def compile_graph(checkpointer: BaseCheckpointSaver):
         llm_summarizer=llm_summarizer,
         llm_contextualize=llm_contextualize,
         retriever=retriever,
-        tools=accounting_tools,
+        tools=all_tools,
         DOMAIN=MARKETING_DOMAIN,
     )
 
@@ -80,10 +87,50 @@ app.state.graph = adaptive_rag_app
 
 
 @app.post("/invoke")
-async def invoke_graph(inputs: dict):
-    config = {"configurable": {"thread_id": str(uuid.uuid4())}}
-    result = adaptive_rag_app.invoke(inputs, config)
-    return result
+async def invoke_graph(request_data: dict):
+    """
+    Invoke endpoint that properly handles:
+    - LangGraph format: {"input": {...}, "config": {...}}
+    - Direct format: {"messages": [...]} (for Facebook)
+    """
+    # Extract input and config
+    if "input" in request_data and "config" in request_data:
+        # LangGraph format
+        inputs = request_data["input"]
+        config = request_data["config"]
+        
+        # Ensure configurable exists
+        if "configurable" not in config:
+            config["configurable"] = {}
+        
+        # Generate thread_id if not provided
+        if "thread_id" not in config["configurable"]:
+            config["configurable"]["thread_id"] = str(uuid.uuid4())
+            
+    elif "messages" in request_data:
+        # Direct format (Facebook-like)
+        inputs = request_data
+        config = {"configurable": {"thread_id": str(uuid.uuid4())}}
+        
+        # Extract user_id from messages if available
+        messages = request_data.get("messages", [])
+        if messages and isinstance(messages[0], dict):
+            additional_kwargs = messages[0].get("additional_kwargs", {})
+            if "user_id" in additional_kwargs:
+                config["configurable"]["user_id"] = additional_kwargs["user_id"]
+            if "session_id" in additional_kwargs:
+                config["configurable"]["thread_id"] = additional_kwargs["session_id"]
+    else:
+        # Legacy format - just inputs
+        inputs = request_data
+        config = {"configurable": {"thread_id": str(uuid.uuid4())}}
+    
+    try:
+        result = adaptive_rag_app.invoke(inputs, config)
+        return result
+    except Exception as e:
+        logger.error(f"❌ Error invoking graph: {e}")
+        return {"error": str(e), "inputs": inputs, "config": config}
 
 
 @app.get("/state")

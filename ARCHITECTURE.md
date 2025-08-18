@@ -54,3 +54,9 @@ Hệ thống này sử dụng kiến trúc multi-subgraph với LangGraph (Pytho
 ---
 
 **File này dùng để tham khảo nhanh kiến trúc và luồng hoạt động của hệ thống LangGraph multi-subgraph chatbot.**
+
+python3 -m uvicorn app:app --host 0.0.0.0 --port 2024
+
+python3 test_mixed_content_analysis.py
+
+python3 test_mixed_content_api.py

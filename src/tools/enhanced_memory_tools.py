@@ -25,11 +25,12 @@ def save_user_preference_with_refresh_flag(
         # Import the original tool function
         from src.tools.memory_tools import save_user_preference as original_tool
         
-        # Call original tool function using dictionary parameters
+        # Call original tool function using correct parameter names
         params = {
             'user_id': user_id,
             'preference_type': preference_type,
-            'preference_value': preference_value
+            'content': preference_value,  # Map preference_value to content
+            'context': ""
         }
         
         # Use tool.invoke() instead of direct function call
@@ -39,11 +40,18 @@ def save_user_preference_with_refresh_flag(
         logging.info(f"🔄 Enhanced save_user_preference: Set user_profile_needs_refresh=True for user_id: {user_id}")
         
         # Create enhanced result that includes refresh flag
-        enhanced_result = {**result, 'user_profile_needs_refresh': True}
+        # Original tool returns a string, so we create dict format
+        enhanced_result = {
+            'message': result,
+            'user_profile_needs_refresh': True
+        }
         
         logging.info(f"🔄 Enhanced save_user_preference: Enhanced result: {enhanced_result}")
         
         return enhanced_result
     except Exception as e:
         logging.error(f"❌ Enhanced save_user_preference failed: {e}")
-        return {'error': f'Failed to save preference: {e}', 'user_profile_needs_refresh': False}
+        return {
+            'error': f'Failed to save preference: {e}',
+            'user_profile_needs_refresh': False
+        }
