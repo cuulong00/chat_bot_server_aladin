@@ -1020,9 +1020,9 @@ class FacebookMessengerService:
     async def _handle_message_legacy(self, app_state, sender: str, text: str, 
                                    attachment_info: list, message: dict, 
                                    reply_context: str, messaging: dict):
-        """Fallback legacy processing khi Redis không available"""
+        """Enhanced legacy processing khi Redis không available - with proper image+text synchronization"""
         try:
-            # Legacy message merging logic (simplified version of old code)
+            # Legacy message merging với enhanced logic
             message_timestamp = messaging.get("timestamp", time.time() * 1000)
             merge_key = f"{sender}_{int(message_timestamp // 10000)}"  # 10-second window
             
@@ -1038,17 +1038,24 @@ class FacebookMessengerService:
                 if now - pending_messages[key]['created_at'] > 12:
                     del pending_messages[key]
             
+            # ENHANCED: Detect message types for better processing
+            has_images = any(att.get('type') == 'image' for att in attachment_info)
+            has_text = bool(text and text.strip())
+            
+            logger.info(f"🔍 LEGACY MSG TYPE: text={has_text}, images={has_images}, pending_key={merge_key}")
+            
             if merge_key in pending_messages:
                 # Merge with existing pending message
                 pending = pending_messages[merge_key]
                 merged_text = (pending['text'] + ' ' + text).strip()
                 merged_attachments = pending['attachments'] + attachment_info
                 
+                # ENHANCED: Process with aggregated context approach
                 logger.info(f"🔗 LEGACY MERGE for {sender}: text='{merged_text[:50]}...', attachments={len(merged_attachments)}")
                 
-                # Remove from pending and process merged message
+                # Remove from pending and process with enhanced logic
                 del pending_messages[merge_key]
-                await self._process_complete_message(app_state, sender, message, merged_text, merged_attachments, reply_context)
+                await self._process_legacy_aggregated_message(app_state, sender, message, merged_text, merged_attachments, reply_context)
                 
             else:
                 # Store this message part and wait for potential merging
@@ -1060,20 +1067,235 @@ class FacebookMessengerService:
                     'created_at': now
                 }
                 
-                # Smart delay logic 
-                should_wait_for_merge = any(keyword in text.lower() for keyword in [
+                # ENHANCED: Smart delay logic với image priority
+                image_reference_detected = any(keyword in text.lower() for keyword in [
                     'mô tả ảnh', 'xem ảnh', 'ảnh này', 'hình này', 'hình ảnh này',
                     'phân tích ảnh', 'ảnh trên', 'hình trên', 'xem hình',
-                    'describe image', 'analyze image', 'this image', 'this picture'
+                    'describe image', 'analyze image', 'this image', 'this picture',
+                    'món này', 'combo này', 'cái này', 'trong ảnh'
                 ]) and not attachment_info
                 
-                delay_time = 8.0 if should_wait_for_merge else 0.1
-                logger.info(f"{'🕐 LEGACY SMART DELAY' if should_wait_for_merge else '⚡ LEGACY FAST PROCESS'}: {delay_time}s for '{text[:50]}...'")
+                # Images get processed immediately, text waits for potential image
+                if has_images:
+                    delay_time = 0.2  # Quick processing for images
+                    logger.info(f"🖼️ LEGACY IMAGE PRIORITY: Processing image in {delay_time}s")
+                elif image_reference_detected:
+                    delay_time = 8.0  # Wait for potential image
+                    logger.info(f"🕐 LEGACY TEXT WAITING: Text references image, waiting {delay_time}s")
+                else:
+                    delay_time = 0.5  # Normal text processing
+                    logger.info(f"⚡ LEGACY NORMAL TEXT: Processing in {delay_time}s")
                 
                 asyncio.create_task(self._process_after_delay(app_state, sender, merge_key, delay_time))
                 
         except Exception as e:
             logger.error(f"❌ Legacy processing error for {sender}: {e}")
+    
+    async def _process_legacy_aggregated_message(self, app_state, sender: str, message: dict, 
+                                               merged_text: str, merged_attachments: list, reply_context: str):
+        """Process merged message using similar logic to Redis aggregation"""
+        try:
+            # Classify merged message
+            text_messages = []
+            image_messages = []
+            
+            # Process attachments
+            for attachment in merged_attachments:
+                if attachment.get('type') == 'image':
+                    image_messages.append(attachment)
+                else:
+                    text_messages.append(attachment)
+            
+            # Process text
+            if merged_text and merged_text.strip():
+                text_messages.append({'type': 'text', 'content': merged_text})
+            
+            logger.info(f"� LEGACY CLASSIFICATION: {len(image_messages)} images, {len(text_messages)} text items")
+            
+            # Apply the same logic as Redis aggregation
+            if image_messages and text_messages:
+                logger.info("🔄 LEGACY: Image+Text combo detected - processing with context synchronization")
+                await self._process_legacy_image_text_combo(app_state, sender, image_messages, text_messages, reply_context)
+            elif image_messages:
+                logger.info("🖼️ LEGACY: Image-only message - processing normally")
+                await self._process_complete_message(app_state, sender, message, "", merged_attachments, reply_context)
+            else:
+                logger.info("📝 LEGACY: Text-only message - checking for image context")
+                await self._process_legacy_text_with_context(app_state, sender, merged_text, reply_context)
+                
+        except Exception as e:
+            logger.error(f"❌ Legacy aggregated processing error: {e}")
+    
+    async def _process_legacy_image_text_combo(self, app_state, sender: str, image_messages: list, text_messages: list, reply_context: str):
+        """Process image+text combo in legacy mode"""
+        try:
+            # Process images silently first (same as Redis version)
+            logger.info("🖼️ LEGACY: Processing images silently for context")
+            
+            image_message_content = ""
+            for img in image_messages:
+                url = img.get('url', '')
+                if url:
+                    image_message_content += f"[HÌNH ẢNH] URL: {url}\n"
+            
+            image_contexts = []
+            if image_message_content:
+                session = f"facebook_session_{sender}"
+                image_inputs = {
+                    "question": image_message_content.strip(),
+                    "user_id": sender,
+                    "session_id": session,
+                }
+                
+                # Process image but don't send response (silent mode)
+                image_result, final_state = await self.call_agent_with_state(app_state, image_inputs)
+                image_contexts = final_state.get("image_contexts", [])
+                logger.info(f"✅ LEGACY: Image processing completed silently: {len(image_contexts)} contexts")
+            
+            # Process text with image contexts
+            text_content = ""
+            for item in text_messages:
+                if item.get('type') == 'text':
+                    text_content += item.get('content', '') + " "
+                else:
+                    text_content += f"[{item.get('type', 'ATTACHMENT').upper()}] "
+            
+            text_content = text_content.strip()
+            
+            if text_content:
+                # Enhanced text processing with image context retrieval
+                retrieved_contexts = await self._retrieve_image_context_for_text(sender, text_content)
+                all_contexts = image_contexts + retrieved_contexts
+                
+                logger.info(f"📝 LEGACY: Processing text with {len(all_contexts)} total contexts")
+                
+                # Process text with contexts
+                session = f"facebook_session_{sender}"
+                initial_state = {"messages": [{"role": "user", "content": text_content, "additional_kwargs": {"session_id": session, "user_id": sender}}]}
+                if all_contexts:
+                    initial_state["image_contexts"] = all_contexts
+                
+                config = {"configurable": {"thread_id": session, "user_id": sender}}
+                
+                def _run_text_with_context():
+                    try:
+                        final_text = ""
+                        for chunk in app_state.graph.stream(initial_state, config, stream_mode="values"):
+                            try:
+                                messages = chunk.get("messages") if isinstance(chunk, dict) else None
+                                if messages:
+                                    last = messages[-1]
+                                    content = getattr(last, "content", None)
+                                    if isinstance(content, str) and content.strip():
+                                        final_text = content.strip()
+                            except Exception as ie:
+                                logger.debug("Legacy text stream error: %s", ie)
+                                continue
+                        return final_text or "Tôi đã nhận được tin nhắn của bạn."
+                    except Exception as e:
+                        logger.exception("Legacy text processing error: %s", e)
+                        return "Xin lỗi, có lỗi xảy ra."
+                
+                reply = await asyncio.to_thread(_run_text_with_context)
+                
+                if reply:
+                    await self.send_message(sender, reply)
+                    self.message_history.store_message(
+                        user_id=sender,
+                        message_id=f"legacy_bot_{sender}_{int(time.time())}",
+                        content=reply,
+                        is_from_user=False
+                    )
+                    
+        except Exception as e:
+            logger.error(f"❌ Legacy image+text combo error: {e}")
+    
+    async def _process_legacy_text_with_context(self, app_state, sender: str, text: str, reply_context: str):
+        """Process text-only message with potential image context retrieval"""
+        try:
+            # Check if text references images and try to retrieve context
+            image_reference_keywords = ['món này', 'combo này', 'trong ảnh', 'ảnh vừa gửi', 'cái này']
+            has_reference = any(keyword in text.lower() for keyword in image_reference_keywords)
+            
+            retrieved_contexts = []
+            if has_reference:
+                logger.info("🔍 LEGACY: Text references image - retrieving context")
+                retrieved_contexts = await self._retrieve_image_context_for_text(sender, text)
+                
+            if retrieved_contexts:
+                logger.info(f"📄 LEGACY: Processing text with {len(retrieved_contexts)} retrieved contexts")
+                # Process with contexts (same as combo logic)
+                session = f"facebook_session_{sender}"
+                initial_state = {"messages": [{"role": "user", "content": text, "additional_kwargs": {"session_id": session, "user_id": sender}}]}
+                initial_state["image_contexts"] = retrieved_contexts
+                
+                config = {"configurable": {"thread_id": session, "user_id": sender}}
+                
+                def _run_text_with_context():
+                    try:
+                        final_text = ""
+                        for chunk in app_state.graph.stream(initial_state, config, stream_mode="values"):
+                            try:
+                                messages = chunk.get("messages") if isinstance(chunk, dict) else None
+                                if messages:
+                                    last = messages[-1]
+                                    content = getattr(last, "content", None)
+                                    if isinstance(content, str) and content.strip():
+                                        final_text = content.strip()
+                            except Exception as ie:
+                                logger.debug("Legacy context text stream error: %s", ie)
+                                continue
+                        return final_text or "Tôi đã nhận được tin nhắn của bạn."
+                    except Exception as e:
+                        logger.exception("Legacy context text processing error: %s", e)
+                        return "Xin lỗi, có lỗi xảy ra."
+                
+                reply = await asyncio.to_thread(_run_text_with_context)
+                
+                if reply:
+                    await self.send_message(sender, reply)
+                    self.message_history.store_message(
+                        user_id=sender,
+                        message_id=f"legacy_context_bot_{sender}_{int(time.time())}",
+                        content=reply,
+                        is_from_user=False
+                    )
+            else:
+                # Normal text processing
+                logger.info("📝 LEGACY: Normal text processing")
+                full_message = self._prepare_message_for_agent(text, [], reply_context)
+                reply = await self.call_agent(app_state, sender, full_message)
+                
+                if reply:
+                    await self.send_message(sender, reply)
+                    self.message_history.store_message(
+                        user_id=sender,
+                        message_id=f"legacy_normal_bot_{sender}_{int(time.time())}",
+                        content=reply,
+                        is_from_user=False
+                    )
+                    
+        except Exception as e:
+            logger.error(f"❌ Legacy text context processing error: {e}")
+    
+    async def _retrieve_image_context_for_text(self, user_id: str, text: str) -> list:
+        """Retrieve image context from Qdrant for text processing"""
+        try:
+            from src.tools.image_context_tools import retrieve_image_context
+            
+            thread_id = f"facebook_session_{user_id}"
+            context_result = retrieve_image_context(user_id, thread_id, text, limit=5)
+            
+            if context_result and not context_result.startswith("❌") and "Không tìm thấy" not in context_result:
+                logger.info(f"✅ LEGACY: Retrieved image context: {len(context_result)} chars")
+                return [context_result]
+            else:
+                logger.info("📄 LEGACY: No image context found")
+                return []
+                
+        except Exception as e:
+            logger.error(f"❌ Legacy context retrieval error: {e}")
+            return []
     
     async def _process_smart_aggregated_context(self, app_state, sender: str, context: dict):
         """Xử lý aggregated context từ Smart Aggregator"""
