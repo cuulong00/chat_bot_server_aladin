@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Quick test: connect to Redis server at redis://69.197.187.234:6379
+Quick test: connect to Redis server at redis://localhost:6379
 Run with: python -u tests/test_redis_connection.py
 """
 import sys
@@ -15,7 +15,7 @@ if ROOT not in sys.path:
 from src.services.redis_message_queue import RedisMessageQueue, RedisConfig
 
 async def main():
-    url = os.getenv("REDIS_URL", "redis://69.197.187.234:6379")
+    url = os.getenv("REDIS_URL", "redis://localhost:6379")
     cfg = RedisConfig(url=url)
     queue = RedisMessageQueue(config=cfg)
 

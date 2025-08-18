@@ -60,3 +60,16 @@ python3 -m uvicorn app:app --host 0.0.0.0 --port 2024
 python3 test_mixed_content_analysis.py
 
 python3 test_mixed_content_api.py
+
+Note for Windows users:
+- Use `python` instead of `python3` when running commands. For example:
+	- `python -m uvicorn app:app --host 0.0.0.0 --port 2024`
+	- `python test_mixed_content_analysis.py`
+	- `python test_mixed_content_api.py`
+
+
+.\.venv\Scripts\python.exe scripts\console_facebook_chat.py --base http://127.0.0.1:2024 --psid 24769757262629049 --app-secret "3a382791ab377abc0e622367b516e802"
+
+
+
+.\.venv\Scripts\python.exe scripts\console_facebook_chat.py --base http://127.0.0.1:2024 --psid 24769757262629049 --app-secret 3a382791ab377abc0e622367b516e802

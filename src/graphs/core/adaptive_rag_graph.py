@@ -37,7 +37,8 @@ from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.runnables import Runnable, RunnableConfig, RunnablePassthrough
 
 from src.tools.memory_tools import get_user_profile
-from src.tools.enhanced_memory_tools import save_user_preference_with_refresh_flag
+from src.tools.memory_tools import save_user_preference, get_user_profile
+from src.tools.reservation_tools import reservation_tools
 from src.graphs.core.nodes.tool_result_processor import process_tool_results_and_set_flags
 from src.tools.image_context_tools import save_image_context, clear_image_context
 from src.tools.image_analysis_tool import analyze_image
@@ -335,11 +336,11 @@ def create_adaptive_rag_graph(
     domain_examples = "\n".join(DOMAIN["domain_examples"])
 
     web_search_tool = TavilySearch(max_results=5)
-    memory_tools = [get_user_profile, save_user_preference_with_refresh_flag]
+    memory_tools = [get_user_profile, save_user_preference]
     image_context_tools = [save_image_context, clear_image_context]
     validation_tools = [validate_booking_info]
     
-    all_tools = tools + [web_search_tool] + memory_tools + image_context_tools + validation_tools
+    all_tools = tools + [web_search_tool] + memory_tools + validation_tools + reservation_tools
 
 
     # === Assistants and Runnables ===
@@ -363,7 +364,7 @@ def create_adaptive_rag_graph(
     hallucination_grader_assistant = HallucinationGraderAssistant(llm_hallucination_grader, domain_context)
 
     # 7. Direct Answer Assistant
-    direct_answer_assistant = DirectAnswerAssistant(llm_generate_direct, domain_context, memory_tools + tools + image_context_tools + validation_tools)
+    direct_answer_assistant = DirectAnswerAssistant(llm_generate_direct, domain_context, all_tools)
 
     # 8. Document/Image Processing Assistant (Multimodal)
     document_processing_assistant = DocumentProcessingAssistant(llm_generate_direct, image_context_tools, domain_context)

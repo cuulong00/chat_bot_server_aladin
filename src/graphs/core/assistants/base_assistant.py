@@ -88,7 +88,7 @@ class BaseAssistant:
         if not prompt.get("messages"):
             logging.error("No messages found in prompt data during binding.")
             prompt["messages"] = [] # Ensure messages is always a list
-        print(f"binding->prompt:{prompt}")
+        
         return prompt
 
     def __call__(self, state: RagState, config: RunnableConfig) -> dict[str, Any]:

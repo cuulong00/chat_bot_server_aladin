@@ -35,6 +35,29 @@ if ! git rev-parse --git-dir >/dev/null 2>&1; then
   exit 1
 fi
 
+# Check if we're on the correct branch
+current_branch=$(git branch --show-current)
+target_branch="tool-calling-improvements"
+
+if [ "$current_branch" != "$target_branch" ]; then
+  echo "Current branch: $current_branch"
+  echo "Switching to branch: $target_branch"
+  
+  # Check if branch exists locally
+  if git show-ref --verify --quiet refs/heads/$target_branch; then
+    git checkout $target_branch
+  else
+    # Check if branch exists on remote
+    if git ls-remote --heads origin $target_branch | grep -q $target_branch; then
+      echo "Branch exists on remote, checking out..."
+      git checkout -b $target_branch origin/$target_branch
+    else
+      echo "Creating new branch: $target_branch"
+      git checkout -b $target_branch
+    fi
+  fi
+fi
+
 echo "Staging changes..."
 git add .
 
@@ -47,7 +70,12 @@ else
 fi
 
 # Push
-echo "Pushing to remote..."
-git push
+echo "Pushing to branch: $target_branch"
+if git ls-remote --heads origin $target_branch | grep -q $target_branch; then
+  git push origin $target_branch
+else
+  echo "Setting upstream for new branch..."
+  git push -u origin $target_branch
+fi
 
 echo "Done."

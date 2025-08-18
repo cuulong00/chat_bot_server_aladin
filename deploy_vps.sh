@@ -38,7 +38,7 @@ else
   info "Repository exists, pulling latest..."
   cd "$APP_DIR"
   git fetch origin
-  git reset --hard origin/main
+  git reset --hard origin/tool-calling-improvements
   cd - >/dev/null
 fi
 

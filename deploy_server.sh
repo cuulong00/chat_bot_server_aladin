@@ -33,17 +33,17 @@ print_error() {
 
 # Clone repository if not exists
 if [ ! -d "chat_bot_server" ]; then
-    print_status "Cloning repository (feature/subgraph-system)..."
-    git clone -b feature/subgraph-system git@github.com:cuulong00/chat_bot_server.git
+    print_status "Cloning repository (tool-calling-improvements)..."
+    git clone -b tool-calling-improvements git@github.com:cuulong00/chat_bot_server.git
     cd chat_bot_server
 else
-    print_status "Repository already exists, updating to feature/subgraph-system..."
+    print_status "Repository already exists, updating to tool-calling-improvements..."
     cd chat_bot_server
     # Force pull latest code from remote repo (overwrites all local files)
     git remote remove origin 2>/dev/null || true
     git remote add origin git@github.com:cuulong00/chat_bot_server.git
-    git fetch origin feature/subgraph-system
-    git reset --hard origin/feature/subgraph-system
+    git fetch origin tool-calling-improvements
+    git reset --hard origin/tool-calling-improvements
 fi
 
 # Setup environment file

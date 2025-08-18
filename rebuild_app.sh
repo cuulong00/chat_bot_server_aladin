@@ -2,13 +2,13 @@
 
 
 # Pull the latest code from the repository
-#echo "🔄 Pulling the latest code..."
-#git fetch --all
-#git reset --hard origin/main
+echo "🔄 Pulling the latest code from tool-calling-improvements branch..."
+git fetch --all
+git reset --hard origin/tool-calling-improvements
 
 # Replace the entire client directory with the latest version from git to avoid conflicts
-#echo "🧹 Replacing client directory with latest version from git..."
-#git checkout origin/main -- client
+echo "🧹 Replacing client directory with latest version from git..."
+git checkout origin/tool-calling-improvements -- client
 
 # Stop Docker containers
 echo "🛑 Stopping Docker containers..."

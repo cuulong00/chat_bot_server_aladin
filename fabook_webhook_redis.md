@@ -33,7 +33,7 @@ from typing import Dict, List, Optional
 import time
 
 class RedisMessageQueue:
-    def __init__(self, redis_url: str = "redis://69.197.187.234:6379"):
+    def __init__(self, redis_url: str = "redis://localhost:6379"):
         self.redis = redis.from_url(redis_url, decode_responses=True)
         self.stream_name = "messenger:events"
         self.consumer_group = "chatbot-processors"
@@ -413,7 +413,7 @@ async def health_check():
     """Health check for message processing system"""
     try:
         # Check Redis connection
-        redis_client = redis.from_url("redis://69.197.187.234:6379")
+        redis_client = redis.from_url("redis://localhost:6379")
         redis_client.ping()
         
         # Check pending message counts
@@ -442,7 +442,7 @@ from dataclasses import dataclass
 
 @dataclass
 class RedisConfig:
-    url: str = os.getenv("REDIS_URL", "redis://69.197.187.234:6379")
+    url: str = os.getenv("REDIS_URL", "redis://localhost:6379")
     stream_name: str = "messenger:events"
     consumer_group: str = "chatbot-processors"
     max_pending_contexts: int = int(os.getenv("MAX_PENDING_CONTEXTS", "1000"))
@@ -457,7 +457,7 @@ class MessageProcessingConfig:
 
 # Environment variables to set
 REQUIRED_ENV_VARS = """
-REDIS_URL=redis://69.197.187.234:6379
+REDIS_URL=redis://localhost:6379
 SMART_DELAY_ENABLED=true
 MAX_CONTEXT_TTL=12
 DEFAULT_ATTACHMENT_WAIT=3.0
@@ -475,7 +475,7 @@ MAX_PENDING_CONTEXTS=1000
 ```python
 # Connection configuration for your application
 REDIS_CONFIG = {
-    "url": "redis://69.197.187.234:6379",  # Internal connection
+    "url": "redis://localhost:6379",  # Internal connection
     "socket_connect_timeout": 5,
     "socket_timeout": 5,
     "retry_on_timeout": True,
@@ -525,7 +525,7 @@ from redis.asyncio import ConnectionPool
 
 # Create connection pool
 pool = ConnectionPool.from_url(
-    "redis://69.197.187.234:6379",
+    "redis://localhost:6379",
     max_connections=20,
     socket_connect_timeout=5,
     socket_timeout=5,

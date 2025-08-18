@@ -9,7 +9,7 @@ from langgraph.graph import END, StateGraph
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from src.database.qdrant_store import QdrantStore
 from src.tools.accounting_tools import accounting_tools
-from src.tools.enhanced_memory_tools import save_user_preference_with_refresh_flag
+from src.tools.memory_tools import save_user_preference, get_user_profile
 from src.tools.reservation_tools import reservation_tools
 from langchain_openai import ChatOpenAI
 from langchain_google_genai import ChatGoogleGenerativeAI
@@ -18,11 +18,12 @@ from src.api.facebook import router as facebook_router
 from src.domain_configs.domain_configs import MARKETING_DOMAIN
 load_dotenv()
 
-# Setup logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s %(levelname)s %(name)s: %(message)s'
-)
+# Setup centralized logging early so node logs are visible
+from src.core.logging_config import setup_advanced_logging
+
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
+setup_advanced_logging(log_level=LOG_LEVEL)
+logging.getLogger(__name__).info(f"Logging initialized with LOG_LEVEL={LOG_LEVEL}")
 
 logger = logging.getLogger(__name__)
 
@@ -46,11 +47,12 @@ def compile_graph(checkpointer: BaseCheckpointSaver):
     llm_contextualize = ChatGoogleGenerativeAI(model="gemini-1.5-flash-latest", temperature=0)
     
     retriever = QdrantStore(
-        collection_name="accounting_store", embedding_model=os.getenv("EMBEDDING_MODEL", "models/text-embedding-004")
+        collection_name=MARKETING_DOMAIN["collection_name"], 
+        embedding_model=MARKETING_DOMAIN["embedding_model"]
     )
     
     # Combine all tools
-    all_tools = accounting_tools + reservation_tools + [save_user_preference_with_refresh_flag]
+    all_tools = accounting_tools + reservation_tools + [save_user_preference]
     
 
 

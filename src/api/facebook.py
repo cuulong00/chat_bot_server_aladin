@@ -7,6 +7,7 @@ import os
 from fastapi.responses import PlainTextResponse
 
 from src.services.facebook_service import FacebookMessengerService
+from src.services.message_history_service import get_message_history_service
 
 logger = logging.getLogger(__name__)
 
@@ -84,3 +85,31 @@ async def debug_get_user_profile(
     if not profile:
         raise HTTPException(status_code=404, detail="Profile not found or not accessible")
     return profile
+
+
+@router.get("/debug/conversation")
+async def debug_get_conversation(
+    psid: str = Query(..., description="Facebook Page-scoped User ID (PSID)"),
+    limit: int = Query(10, ge=1, le=100, description="Number of recent messages to return"),
+):
+    """Return recent conversation history for a PSID (debug only).
+
+    Enabled only when ALLOW_FB_DEBUG=1 in environment.
+    This reads in-memory MessageHistoryService used by the Facebook service.
+    """
+    if os.getenv("ALLOW_FB_DEBUG", "0") != "1":
+        raise HTTPException(status_code=403, detail="Debug conversation is disabled")
+
+    try:
+        svc = get_message_history_service()
+        history = svc.get_user_history(psid, limit=limit)
+        # Ensure JSON-serializable output
+        for msg in history:
+            # cast timestamp to float with limited precision for readability
+            ts = msg.get("timestamp")
+            if isinstance(ts, float):
+                msg["timestamp"] = float(f"{ts:.3f}")
+        return {"psid": psid, "messages": history}
+    except Exception as e:
+        logger.exception("Failed to fetch debug conversation: %s", e)
+        raise HTTPException(status_code=500, detail="Failed to fetch conversation")

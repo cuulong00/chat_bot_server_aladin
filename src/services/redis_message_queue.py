@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class RedisConfig:
     """Cấu hình Redis connection"""
-    url: str = os.getenv("REDIS_URL", "redis://69.197.187.234:6379")
+    url: str = os.getenv("REDIS_URL", "redis://localhost:6379")
     stream_name: str = "messenger:events"
     consumer_group: str = "chatbot-processors"
     max_pending_contexts: int = int(os.getenv("MAX_PENDING_CONTEXTS", "1000"))
