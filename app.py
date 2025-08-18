@@ -88,6 +88,12 @@ adaptive_rag_app = compile_graph(checkpointer)
 app.state.graph = adaptive_rag_app
 
 
+@app.get("/health")
+async def health_check():
+    """Health check endpoint for Docker and monitoring"""
+    return {"status": "healthy", "service": "chatbot_aladin"}
+
+
 @app.post("/invoke")
 async def invoke_graph(request_data: dict):
     """
