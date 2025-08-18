@@ -235,6 +235,7 @@ class FacebookMessengerService:
         import re
         # Pattern để tìm URLs ảnh (postimg.cc, imgur.com, etc.)
         url_patterns = [
+            r'📸[^:]*:\s*(https?://[^\s]*)',  # 📸 COMBO NAME: URL format từ AI
             r'https?://[^\s]*\.(?:jpg|jpeg|png|gif|webp)',
             r'https?://i\.postimg\.cc/[^\s]*',
             r'https?://imgur\.com/[^\s]*',
@@ -262,11 +263,11 @@ class FacebookMessengerService:
         
         # Remove common image URL patterns
         patterns_to_remove = [
+            r'📸[^:\n]*:\s*https?://[^\s]*',  # 📸 COMBO NAME: URL (whole line)
             r'https?://[^\s]*\.(?:jpg|jpeg|png|gif|webp)',
             r'https?://i\.postimg\.cc/[^\s]*',
             r'https?://imgur\.com/[^\s]*',
             r'https?://[^\s]*postimg[^\s]*',
-            r'📸[^\n]*https?://[^\s]*',  # Remove emoji + URL lines
             r'\n\s*https?://[^\s]*\.\w+\s*\n',  # Remove standalone URL lines
         ]
         
