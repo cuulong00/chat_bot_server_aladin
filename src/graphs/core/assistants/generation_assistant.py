@@ -102,7 +102,7 @@ class GenerationAssistant(BaseAssistant):
             "   • Thành phần chính: …\n"
             "   • Ghi chú (nếu có): …\n"
             "3) Kết thúc bằng CTA lịch sự (chọn 1):\n"
-            "   - 'Anh/chị cần em giữ bàn/đặt món luôn không ạ? Nếu có, anh/chị giúp em: {required_booking_fields hoặc required_delivery_fields} ạ.'\n"
+            "   - 'Anh/chị cần em giữ bàn/đặt món luôn không ạ? Nếu đặt bàn, giúp em: {required_booking_fields}; nếu giao hàng, giúp em: {required_delivery_fields} ạ.'\n"
             "   - 'Anh/chị có muốn thêm món nào khác không ạ? Em sẽ ghi nhận đầy đủ để phục vụ mình tốt nhất ạ.'\n\n"
             
             "🍽️ **QUY TRÌNH ĐẶT BÀN 4 BƯỚC (INSPIRED BY AGENTS.PY):**\n"
@@ -248,8 +248,27 @@ class GenerationAssistant(BaseAssistant):
                 logging.warning("   ⚠️ No valid content found in documents or image contexts!")
                 return ""
 
+        def get_name_if_known(ctx: dict[str, Any]) -> str:
+            try:
+                profile = ctx.get("user_profile") or {}
+                info = ctx.get("user_info") or {}
+                name = (
+                    (profile.get("name") or "").strip()
+                    or (
+                        ((info.get("first_name") or "").strip() +
+                         (" " + info.get("last_name").strip() if info.get("last_name") else ""))
+                    ).strip()
+                    or (info.get("name") or "").strip()
+                )
+                return (" " + name) if name else ""
+            except Exception:
+                return ""
+
         runnable = (
-            RunnablePassthrough.assign(context=lambda ctx: get_combined_context(ctx))
+            RunnablePassthrough.assign(
+                context=lambda ctx: get_combined_context(ctx),
+                name_if_known=lambda ctx: get_name_if_known(ctx),
+            )
             | prompt
             | llm.bind_tools(all_tools)
         )
