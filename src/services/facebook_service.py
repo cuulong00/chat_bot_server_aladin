@@ -769,8 +769,13 @@ class FacebookMessengerService:
                         # Get thread_id for this conversation
                         thread_id = f"facebook_session_{user_id}"
                         
-                        # Retrieve image context
-                        context_result = retrieve_image_context(user_id, thread_id, text_content, limit=5)
+                        # Retrieve image context using .invoke()
+                        context_result = retrieve_image_context.invoke({
+                            "user_id": user_id,
+                            "thread_id": thread_id,
+                            "query": text_content,
+                            "limit": 5
+                        })
                         
                         if context_result and not context_result.startswith("❌") and "Không tìm thấy" not in context_result:
                             retrieved_image_context.append(context_result)
@@ -789,7 +794,12 @@ class FacebookMessengerService:
                     try:
                         from src.tools.image_context_tools import retrieve_image_context
                         thread_id = f"facebook_session_{user_id}"
-                        retry_context = retrieve_image_context(user_id, thread_id, text_content, limit=5)
+                        retry_context = retrieve_image_context.invoke({
+                            "user_id": user_id,
+                            "thread_id": thread_id,
+                            "query": text_content,
+                            "limit": 5
+                        })
                         if retry_context and not retry_context.startswith("❌") and "Không tìm thấy" not in retry_context:
                             retrieved_image_context.append(retry_context)
                             logger.info("✅ Retry successful - found image context")
@@ -1196,6 +1206,7 @@ class FacebookMessengerService:
                         logger.exception("Legacy text processing error: %s", e)
                         return "Xin lỗi, có lỗi xảy ra."
                 
+                import asyncio
                 reply = await asyncio.to_thread(_run_text_with_context)
                 
                 if reply:
@@ -1250,6 +1261,7 @@ class FacebookMessengerService:
                         logger.exception("Legacy context text processing error: %s", e)
                         return "Xin lỗi, có lỗi xảy ra."
                 
+                import asyncio
                 reply = await asyncio.to_thread(_run_text_with_context)
                 
                 if reply:
@@ -1284,7 +1296,12 @@ class FacebookMessengerService:
             from src.tools.image_context_tools import retrieve_image_context
             
             thread_id = f"facebook_session_{user_id}"
-            context_result = retrieve_image_context(user_id, thread_id, text, limit=5)
+            context_result = retrieve_image_context.invoke({
+                "user_id": user_id,
+                "thread_id": thread_id,
+                "query": text,
+                "limit": 5
+            })
             
             if context_result and not context_result.startswith("❌") and "Không tìm thấy" not in context_result:
                 logger.info(f"✅ LEGACY: Retrieved image context: {len(context_result)} chars")
