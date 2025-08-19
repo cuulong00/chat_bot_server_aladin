@@ -867,20 +867,24 @@ class FacebookMessengerService:
                                 return "Xin lỗi, có lỗi xảy ra khi xử lý tin nhắn."
                         
                         import asyncio
-                        reply = await asyncio.to_thread(_run_text_with_context)
-                        
-                        if reply:  # Only send message if reply is not None
-                            await self.send_message(user_id, reply)
+                        try:
+                            reply = await asyncio.to_thread(_run_text_with_context)
                             
-                            # Store bot reply
-                            self.message_history.store_message(
-                                user_id=user_id,
-                                message_id=f"bot_{user_id}_{int(time.time())}",
-                                content=reply,
-                                is_from_user=False
-                            )
-                        else:
-                            logger.info("📋 No reply needed for this message")
+                            if reply:  # Only send message if reply is not None
+                                await self.send_message(user_id, reply)
+                                
+                                # Store bot reply
+                                self.message_history.store_message(
+                                    user_id=user_id,
+                                    message_id=f"bot_{user_id}_{int(time.time())}",
+                                    content=reply,
+                                    is_from_user=False
+                                )
+                            else:
+                                logger.info("📋 No reply needed for this message")
+                        except Exception as asyncio_error:
+                            logger.error(f"❌ Error in asyncio.to_thread execution: {asyncio_error}", exc_info=True)
+                            await self.send_message(user_id, "Xin lỗi, có lỗi xảy ra khi xử lý tin nhắn.")
                             
                     except Exception as e:
                         logger.error(f"❌ Agent error for text processing {user_id}: {e}")
@@ -891,7 +895,11 @@ class FacebookMessengerService:
                 logger.info("📋 Image-only processing completed in STEP 2 - no additional action needed")
                 
         except Exception as e:
-            logger.error(f"❌ Context processing error for {user_id}: {e}")
+            logger.error(f"❌ Context processing error for {user_id}: {e}", exc_info=True)
+            try:
+                await self.send_message(user_id, "Xin lỗi, có lỗi xảy ra trong quá trình xử lý.")
+            except Exception as send_error:
+                logger.error(f"❌ Failed to send error message: {send_error}")
 
     # --- Entry processing ---
     async def handle_webhook_event(self, app_state, body: Dict[str, Any]) -> None:

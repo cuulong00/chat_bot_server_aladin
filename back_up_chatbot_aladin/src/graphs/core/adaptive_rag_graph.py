@@ -1958,7 +1958,7 @@ Hãy phân tích một cách chi tiết và toàn diện để thông tin này c
                 if len(analysis_results) > 0:
                     # Brief summary of what was found
                     first_analysis = analysis_results[0][:200] + "..." if len(analysis_results[0]) > 200 else analysis_results[0]
-                    confirmation_msg += f"\n\n📋 **Tóm tắt ngắn:** {first_analysis}"
+                    confirmation_msg += f"\n\n📋 {first_analysis}"
                 
                 confirmation_msg += f"\n\n💬 Bây giờ anh/chị có thể hỏi em bất cứ điều gì về hình ảnh này, em sẽ dựa vào thông tin đã phân tích để trả lời chi tiết nhé!"
                 
