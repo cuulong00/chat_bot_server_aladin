@@ -296,8 +296,6 @@ class FacebookMessengerService:
             return
 
     async def _sleep(self, seconds: float) -> None:
-        import asyncio
-
         await asyncio.sleep(seconds)
 
     # --- User Profile (Graph API) ---
@@ -440,8 +438,6 @@ class FacebookMessengerService:
         This wraps the synchronous LangGraph .stream(...) in a thread to avoid
         blocking the event loop.
         """
-        import asyncio
-
         question = (inputs.get("question") or "").strip()
         user_id = str(inputs.get("user_id") or "").strip()
         session_id = str(inputs.get("session_id") or f"facebook_session_{user_id}")
@@ -500,8 +496,6 @@ class FacebookMessengerService:
 
     async def call_agent_with_state(self, app_state, inputs: Dict[str, Any]) -> tuple[str, dict]:
         """Call agent and return both response and final state"""
-        import asyncio
-
         question = (inputs.get("question") or "").strip()
         user_id = str(inputs.get("user_id") or "").strip()
         session_id = str(inputs.get("session_id") or f"facebook_session_{user_id}")
@@ -866,7 +860,6 @@ class FacebookMessengerService:
                                 logger.exception("Error in text processing with context: %s", e)
                                 return "Xin lỗi, có lỗi xảy ra khi xử lý tin nhắn."
                         
-                        import asyncio
                         try:
                             reply = await asyncio.to_thread(_run_text_with_context)
                             
@@ -1214,7 +1207,6 @@ class FacebookMessengerService:
                         logger.exception("Legacy text processing error: %s", e)
                         return "Xin lỗi, có lỗi xảy ra."
                 
-                import asyncio
                 reply = await asyncio.to_thread(_run_text_with_context)
                 
                 if reply:
@@ -1269,7 +1261,6 @@ class FacebookMessengerService:
                         logger.exception("Legacy context text processing error: %s", e)
                         return "Xin lỗi, có lỗi xảy ra."
                 
-                import asyncio
                 reply = await asyncio.to_thread(_run_text_with_context)
                 
                 if reply:
