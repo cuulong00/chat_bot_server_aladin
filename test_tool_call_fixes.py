@@ -149,7 +149,7 @@ def simulate_debug_scenario():
     
     print("\n📸 TRƯỚC ĐÂY (LỖI):")
     print("   👤 User: 'ok hãy đặt bàn cho anh hôm nay được không ạ. Hãy anh còn muốn bổ sung thêm thông tin gì nữa không?'")
-    print("   🤖 Bot: 'Dạ được rồi ạ! Em đang tiến hành đặt bàn cho anh Trần Tuấn Dương. Anh chờ em một chút xíu nhá! ⏳'")
+    print("   🤖 Bot: 'Vâng ạ! Em đang tiến hành đặt bàn cho anh Trần Tuấn Dương. Anh chờ em một chút nhé! ⏳'")
     print("   🤖 Bot: '**(Gọi hàm book_table_reservation_test ở đây)**' ← 🚨 HIỂN THỊ TOOL CALL!")
     print("   🤖 Bot: '🎉 Tuyệt vời! Đặt bàn thành công rồi ạ! 🎉'")
     print("   📝 NOTE: Tool KHÔNG được gọi thực sự - chỉ là text fake!")

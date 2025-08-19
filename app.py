@@ -33,18 +33,29 @@ from src.graphs.core.adaptive_rag_graph import create_adaptive_rag_graph
 
 # Compile the graph with a custom checkpointer
 def compile_graph(checkpointer: BaseCheckpointSaver):
-    accounting_llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash-latest", temperature=0)
+    # accounting_llm = ChatOpenAI(model="gpt-4o-mini", streaming=True, temperature=0.1)
+    # llm_grade_documents = ChatOpenAI(model="gpt-4o-mini", streaming=True, temperature=0)
+    # llm_router = ChatOpenAI(model="gpt-4o-mini", streaming=True, temperature=0.1)
+    # llm_rewrite = ChatOpenAI(model="gpt-4o-mini", streaming=True, temperature=0.1)
+    # llm_generate_direct = ChatOpenAI(model="gpt-4o-mini", streaming=True, temperature=0.1)
+    # llm_hallucination_grader = ChatOpenAI(model="gpt-4o-mini", streaming=True, temperature=0)
+    # llm_summarizer = ChatOpenAI(model="gpt-4o-mini", streaming=True, temperature=0.1)
+    # llm_contextualize = ChatOpenAI(model="gpt-4o-mini", streaming=True, temperature=0.1)
+
+
+    accounting_llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash-latest", temperature=0.5)
     llm_grade_documents = ChatGoogleGenerativeAI(
         model="gemini-1.5-flash-latest", temperature=0
     )
-    llm_router = ChatGoogleGenerativeAI(model="gemini-1.5-flash-latest", temperature=0)
-    llm_rewrite = ChatGoogleGenerativeAI(model="gemini-1.5-flash-latest", temperature=0)
-    llm_generate_direct = ChatGoogleGenerativeAI(model="gemini-1.5-flash-latest", temperature=0)
+    llm_router = ChatGoogleGenerativeAI(model="gemini-1.5-flash-latest", temperature=0.5)
+    llm_rewrite = ChatGoogleGenerativeAI(model="gemini-1.5-flash-latest", temperature=0.5)
+    llm_generate_direct = ChatGoogleGenerativeAI(model="gemini-1.5-flash-latest", temperature=0.5)
     llm_hallucination_grader = ChatGoogleGenerativeAI(
         model="gemini-1.5-flash-latest", temperature=0
     )
-    llm_summarizer = ChatGoogleGenerativeAI(model="gemini-1.5-flash-latest", temperature=0)
-    llm_contextualize = ChatGoogleGenerativeAI(model="gemini-1.5-flash-latest", temperature=0)
+    llm_summarizer = ChatGoogleGenerativeAI(model="gemini-1.5-flash-latest", temperature=0.5)
+    llm_contextualize = ChatGoogleGenerativeAI(model="gemini-1.5-flash-latest", temperature=0.5)
+
     
     retriever = QdrantStore(
         collection_name=MARKETING_DOMAIN["collection_name"], 

@@ -454,10 +454,10 @@ def create_adaptive_rag_graph(
             # Progressive search strategy: start focused, then expand
             if search_attempts == 0 and rewrite_count == 0:
                 # First attempt: use higher limit to ensure combo documents are included
-                limit = 20  # Increased from 12 to capture combo documents
+                limit = 10  # Increased from 12 to capture combo documents
             else:
                 # Later attempts or rewrites: cast even wider net
-                limit = 24  # Increased to ensure comprehensive coverage
+                limit = 10  # Increased to ensure comprehensive coverage
             
             logging.info(f"🎯 Collection-wide search strategy")
             logging.info(f"   Search attempts: {search_attempts}, Rewrites: {rewrite_count}")
