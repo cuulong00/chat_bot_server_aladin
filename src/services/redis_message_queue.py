@@ -242,8 +242,15 @@ class SmartMessageAggregator:
         if not self.config.smart_delay_enabled:
             return False, self.config.fast_process_delay
         
-        # Keywords gợi ý có attachment sắp tới
-        image_keywords = [
+        # Keywords tham chiếu menu/combo - báo hiệu có thể có hình ảnh đi kèm
+        menu_reference_keywords = [
+            'món này', 'combo này', 'món đó', 'combo đó', 'cái này', 'cái đó',
+            'đặt món này', 'đặt combo này', 'order món này', 'menu này',
+            'thực đơn này', 'suất này', 'phần này', 'set này'
+        ]
+        
+        # Keywords yêu cầu phân tích hình ảnh trực tiếp
+        image_analysis_keywords = [
             'mô tả ảnh', 'xem ảnh', 'ảnh này', 'hình này', 'hình ảnh này',
             'phân tích ảnh', 'ảnh trên', 'hình trên', 'xem hình',
             'describe image', 'analyze image', 'this image', 'this picture',
@@ -258,14 +265,19 @@ class SmartMessageAggregator:
         
         text_lower = text.lower().strip()
         
-        # Độ ưu tiên cao - chờ lâu hơn
-        if any(keyword in text_lower for keyword in image_keywords):
-            logger.info(f"🖼️ SMART DELAY: Detected image keywords, waiting {self.config.image_keywords_wait}s")
+        # Độ ưu tiên cao - tham chiếu menu (thường có hình ảnh đi kèm)
+        if any(keyword in text_lower for keyword in menu_reference_keywords):
+            logger.info(f"🍽️ SMART DELAY: Menu reference detected, waiting {self.config.image_keywords_wait}s for potential image")
+            return True, self.config.image_keywords_wait
+        
+        # Độ ưu tiên cao - yêu cầu phân tích hình ảnh trực tiếp  
+        if any(keyword in text_lower for keyword in image_analysis_keywords):
+            logger.info(f"🖼️ SMART DELAY: Image analysis keywords, waiting {self.config.image_keywords_wait}s")
             return True, self.config.image_keywords_wait
             
-        # Độ ưu tiên trung bình - chờ ngắn hơn  
+        # Độ ưu tiên trung bình - xử lý file
         if any(keyword in text_lower for keyword in file_keywords):
-            logger.info(f"📁 SMART DELAY: Detected file keywords, waiting {self.config.file_keywords_wait}s")
+            logger.info(f"📁 SMART DELAY: File keywords, waiting {self.config.file_keywords_wait}s")
             return True, self.config.file_keywords_wait
             
         # Câu hỏi ngắn có thể liên quan đến attachment
@@ -385,20 +397,68 @@ class SmartMessageAggregator:
                 return
             user_id = ctx['user_id']
             thread_id = ctx.get('thread_id') or ''
-            final_context = {
-                'user_id': user_id,
-                'thread_id': thread_id,
-                'text': (ctx.get('text') or '').strip(),
-                'attachments': ctx.get('attachments') or [],
-                'created_at': ctx.get('created_at'),
-                'message_data': ctx.get('last_message_data', {}),
-            }
+            
+            # CRITICAL FIX: Sắp xếp để xử lý attachments trước, text sau
+            attachments = ctx.get('attachments') or []
+            text = (ctx.get('text') or '').strip()
+            
+            has_attachments = len(attachments) > 0
+            has_text = bool(text)
+            
+            # Nếu có cả text và attachments, tạo 2 batch riêng với độ ưu tiên
+            if has_attachments and has_text:
+                logger.info(f"📋 PRIORITY PROCESSING: Creating separate batches - attachments first, then text")
+                
+                # Batch 1: Chỉ attachments (ưu tiên cao)
+                attachment_context = {
+                    'user_id': user_id,
+                    'thread_id': thread_id,
+                    'text': '',  # Không có text
+                    'attachments': attachments,
+                    'created_at': ctx.get('created_at'),
+                    'message_data': ctx.get('last_message_data', {}),
+                    'processing_priority': 'high'
+                }
+                
+                # Batch 2: Chỉ text (ưu tiên thấp, delay thêm 2s)
+                text_context = {
+                    'user_id': user_id,
+                    'thread_id': thread_id,
+                    'text': text,
+                    'attachments': [],  # Không có attachments
+                    'created_at': ctx.get('created_at'),
+                    'message_data': ctx.get('last_message_data', {}),
+                    'processing_priority': 'low'
+                }
+                
+                # Gửi attachment batch trước (ngay lập tức)
+                await self.redis_queue.enqueue_event(user_id, "process_complete_message", attachment_context)
+                logger.info(f"📤 HIGH PRIORITY: Sent attachment batch for processing")
+                
+                # Delay text batch để đảm bảo attachments được xử lý trước
+                await asyncio.sleep(2.0)
+                await self.redis_queue.enqueue_event(user_id, "process_complete_message", text_context)
+                logger.info(f"📤 LOW PRIORITY: Sent text batch for processing (after 2s delay)")
+                
+            else:
+                # Batch đơn lẻ (chỉ text hoặc chỉ attachments)
+                final_context = {
+                    'user_id': user_id,
+                    'thread_id': thread_id,
+                    'text': text,
+                    'attachments': attachments,
+                    'created_at': ctx.get('created_at'),
+                    'message_data': ctx.get('last_message_data', {}),
+                    'processing_priority': 'normal'
+                }
+                await self.redis_queue.enqueue_event(user_id, "process_complete_message", final_context)
+                logger.info(f"📤 NORMAL: Sent single batch for processing")
+            
             self.metrics['timeout_processed'] += 1
             logger.info(
-                f"✅ Inactivity window reached. Finalizing batch for user={user_id} thread={thread_id}: text_len={len(final_context['text'])}, attachments={len(final_context['attachments'])}"
+                f"✅ Inactivity window reached. Finalizing batch for user={user_id} thread={thread_id}: text_len={len(text)}, attachments={len(attachments)}"
             )
-            # Emit processing event to queue
-            await self.redis_queue.enqueue_event(user_id, "process_complete_message", final_context)
+            
             # Cleanup
             self.pending_contexts.pop(key, None)
         except Exception as e:

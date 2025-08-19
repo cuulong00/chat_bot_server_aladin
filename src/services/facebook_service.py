@@ -629,8 +629,9 @@ class FacebookMessengerService:
         try:
             text = context_data.get('text', '').strip()
             attachments = context_data.get('attachments', [])
+            priority = context_data.get('processing_priority', 'normal')
             
-            logger.info(f"🎯 Processing AGGREGATED message - User: {user_id}, Text: '{text[:50]}...', Attachments: {len(attachments)}")
+            logger.info(f"🎯 Processing AGGREGATED message - User: {user_id}, Priority: {priority}, Text: '{text[:50]}...', Attachments: {len(attachments)}")
             
             # De-dup: avoid processing same context within short TTL
             if not self._should_process_context(user_id, text, attachments):
@@ -639,6 +640,14 @@ class FacebookMessengerService:
 
             # Show typing indicator
             await self.send_sender_action(user_id, "typing_on")
+            
+            # PRIORITY-BASED PROCESSING
+            if priority == 'high':
+                logger.info(f"🔥 HIGH PRIORITY: Processing attachments first")
+            elif priority == 'low':
+                logger.info(f"🔽 LOW PRIORITY: Processing text after attachments")
+            else:
+                logger.info(f"⚡ NORMAL PRIORITY: Standard processing")
             
             # STEP 1: Phân loại tin nhắn thành text và images
             text_messages = []
