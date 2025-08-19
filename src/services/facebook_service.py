@@ -90,6 +90,18 @@ class FacebookMessengerService:
 
         # Typing indicator management
         self._typing_tasks: dict[str, asyncio.Task] = {}
+        # Per-user last time we sent a typing_on to avoid UI flicker
+        self._last_typing_sent: dict[str, float] = {}
+        try:
+            # Heartbeat interval between refresh pings; higher = fewer blinks
+            self._typing_heartbeat_seconds = float(os.getenv("FB_TYPING_HEARTBEAT_SECONDS", "9.0"))
+        except ValueError:
+            self._typing_heartbeat_seconds = 9.0
+        try:
+            # Minimum seconds between consecutive typing_on sends per user
+            self._typing_rate_limit_seconds = float(os.getenv("FB_TYPING_RATE_LIMIT_SECONDS", "6.0"))
+        except ValueError:
+            self._typing_rate_limit_seconds = 6.0
         
         # Initialize Redis components if available
         if REDIS_AVAILABLE:
@@ -305,6 +317,19 @@ class FacebookMessengerService:
         url = f"{self.GRAPH_API_BASE}/{self.api_version}/me/messages"
         params = {"access_token": self.page_access_token}
         payload = {"recipient": {"id": recipient_psid}, "sender_action": action}
+
+        # Rate-limit typing_on to reduce blinking/flicker in UI
+        try:
+            if action == "typing_on":
+                now_ts = time.time()
+                last_ts = self._last_typing_sent.get(recipient_psid, 0.0)
+                if (now_ts - last_ts) < self._typing_rate_limit_seconds:
+                    # Skip redundant ping to avoid flicker
+                    return
+                self._last_typing_sent[recipient_psid] = now_ts
+        except Exception:
+            # Never fail due to rate-limiter issues
+            pass
         try:
             async with httpx.AsyncClient(timeout=5) as client:
                 await client.post(url, params=params, json=payload)
@@ -312,11 +337,13 @@ class FacebookMessengerService:
             # Silence errors; this is non-critical UX enhancement
             return
 
-    async def _typing_heartbeat(self, recipient_psid: str, interval: float = 7.0) -> None:
+    async def _typing_heartbeat(self, recipient_psid: str, interval: float | None = None) -> None:
         """Background task to keep 'typing_on' alive until stopped."""
         try:
             # Immediate ping to show UI quickly
             await self.send_sender_action(recipient_psid, "typing_on")
+            if interval is None or interval <= 0:
+                interval = self._typing_heartbeat_seconds
             while True:
                 await self._sleep(interval)
                 await self.send_sender_action(recipient_psid, "typing_on")
@@ -331,11 +358,10 @@ class FacebookMessengerService:
             # On unexpected errors, just stop the loop silently
             return
 
-    async def ensure_typing(self, recipient_psid: str, interval: float = 7.0) -> None:
-        """Ensure a typing heartbeat is running for the given user."""
+    async def ensure_typing(self, recipient_psid: str, interval: float | None = None) -> None:
+        """Ensure a typing heartbeat is running for the given user, with rate-limited refreshes."""
         if recipient_psid in self._typing_tasks and not self._typing_tasks[recipient_psid].done():
-            # Refresh immediate ping
-            await self.send_sender_action(recipient_psid, "typing_on")
+            # Heartbeat already active; avoid extra immediate pings to reduce blink
             return
         # Start a new heartbeat task
         task = asyncio.create_task(self._typing_heartbeat(recipient_psid, interval))
@@ -843,7 +869,8 @@ class FacebookMessengerService:
 
             # Show typing indicator (unless immediate image processing)
             if not (is_immediate and attachments and not text):
-                await self.send_sender_action(user_id, "typing_on")
+                # Use managed heartbeat to avoid frequent blinking
+                await self.ensure_typing(user_id)
             
             # PRIORITY-BASED PROCESSING (Enhanced for immediate processing)
             if is_immediate:
@@ -1672,7 +1699,8 @@ class FacebookMessengerService:
                 logger.debug("Profile enrichment skipped: %s", _pe)
 
             # UX: show typing indicator while we process
-            await self.send_sender_action(sender, "typing_on")
+            # Use managed heartbeat instead of direct typing_on to reduce flicker
+            await self.ensure_typing(sender)
             
             # Prepare full message content for agent
             full_message = self._prepare_message_for_agent(text, attachment_info, reply_context)
