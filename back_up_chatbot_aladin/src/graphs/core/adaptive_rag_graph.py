@@ -1913,22 +1913,10 @@ Hãy phân tích một cách chi tiết và toàn diện để thông tin này c
                             
                             image_analysis = result.text
                             analysis_results.append(image_analysis)
-                            
-                            # Save to both vector database AND state for immediate use
-                            save_result = save_image_context.invoke({
-                                "user_id": user_id,
-                                "thread_id": thread_id,
-                                "image_url": url,
-                                "image_analysis": image_analysis,
-                                "metadata": {
-                                    "analysis_timestamp": datetime.now().isoformat(),
-                                    "image_size": f"{pil_image.size[0]}x{pil_image.size[1]}",
-                                    "original_question": current_question[:200]
-                                }
-                            })
-                            
+                           
+                                                       
                             processed_images += 1
-                            logging.info(f"✅ Image analyzed and context saved: {save_result}")
+                           
                             
                             # Clean up uploaded file
                             genai.delete_file(uploaded_file.name)

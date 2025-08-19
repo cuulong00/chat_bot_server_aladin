@@ -75,6 +75,13 @@ class FacebookMessengerService:
         except ValueError:
             self._process_dedup_ttl = 10
 
+        # Message buffering for immediate processing
+        self._message_buffer: dict[str, dict] = {}  # user_id -> {messages: [], timestamp: float}
+        try:
+            self._buffer_timeout = float(os.getenv("FB_MESSAGE_BUFFER_SECONDS", "2.0"))  # 2 seconds buffer
+        except ValueError:
+            self._buffer_timeout = 2.0
+
         # Message history service
         self.message_history = get_message_history_service()
         
@@ -699,8 +706,66 @@ class FacebookMessengerService:
     
     async def _process_aggregated_context_from_queue(self, user_id: str, context_data: dict):
         """
-        Xử lý aggregated context theo thứ tự: images trước, text sau
-        Hỗ trợ immediate processing (không delay) cho callback system
+        Xử lý aggregated context từ Redis queue theo thứ tự: images trước, text sau
+        Enhanced with callback processor for clean architecture
+        """
+        try:
+            text = context_data.get('text', '').strip()
+            attachments = context_data.get('attachments', [])
+            priority = context_data.get('processing_priority', 'normal')
+            is_immediate = context_data.get('immediate_processing', False)
+            has_fresh_context = context_data.get('has_fresh_image_context', False)
+            
+            logger.info(f"🎯 Processing REDIS AGGREGATED message - User: {user_id}, Priority: {priority}, Text: '{text[:50]}...', Attachments: {len(attachments)}")
+            
+            # Skip de-dup for immediate processing (fresh context)
+            if not is_immediate and not self._should_process_context(user_id, text, attachments):
+                logger.info(f"🛑 Skipping duplicate queued context for {user_id} within TTL")
+                return
+
+            # Show typing indicator (unless immediate image processing)
+            if not (is_immediate and attachments and not text):
+                await self.send_sender_action(user_id, "typing_on")
+            
+            # ENHANCED: Use callback processor if available for clean architecture
+            if self.callback_processor:
+                logger.info(f"🔄 Using CALLBACK PROCESSOR for Redis aggregated data: {user_id}")
+                
+                # Create a fake thread_id for callback processor
+                thread_id = f"facebook_session_{user_id}"
+                
+                # Use callback processor with Redis aggregated data
+                result = await self.callback_processor.process_batch(
+                    user_id=user_id,
+                    thread_id=thread_id,
+                    text=text,
+                    attachments=attachments,
+                    message_data=context_data
+                )
+                
+                if result.success:
+                    logger.info(f"✅ Callback processor completed for Redis data: {result.message_type}")
+                else:
+                    logger.error(f"❌ Callback processor failed for Redis data: {result.error}")
+                    # Fallback to legacy processing
+                    await self._process_aggregated_context_legacy(user_id, context_data)
+                    
+            else:
+                # Fallback to legacy aggregated processing
+                logger.warning(f"⚠️ No callback processor - using legacy aggregated processing for {user_id}")
+                await self._process_aggregated_context_legacy(user_id, context_data)
+                
+        except Exception as e:
+            logger.error(f"❌ Context processing error for {user_id}: {e}", exc_info=True)
+            try:
+                await self.send_message(user_id, "Xin lỗi, có lỗi xảy ra trong quá trình xử lý.")
+            except Exception as send_error:
+                logger.error(f"❌ Failed to send error message: {send_error}")
+
+    async def _process_aggregated_context_legacy(self, user_id: str, context_data: dict):
+        """
+        Legacy method - original implementation của _process_aggregated_context_from_queue
+        Được sử dụng làm fallback khi callback processor không available
         """
         try:
             text = context_data.get('text', '').strip()
@@ -1080,27 +1145,21 @@ class FacebookMessengerService:
                             logger.info("🔄 Attempting to start Redis processor...")
                             await self.start_redis_processor(app_state)
 
-                        # IMMEDIATE CALLBACK MESSAGE PROCESSING - Bypass Redis delay
-                        if self.callback_processor:
-                            logger.info(f"📋 Using IMMEDIATE CALLBACK PROCESSING for {sender}")
+                        # REDIS AGGREGATION WITH CALLBACK PROCESSING
+                        # Use Redis queue system for proper 5s aggregation, then callback processing
+                        if REDIS_AVAILABLE and self.callback_processor and self._redis_processor_started:
+                            logger.info(f"📋 Using REDIS AGGREGATION + CALLBACK PROCESSING for {sender}")
                             
-                            # Process messages immediately without Redis aggregation delay
-                            result = await self.callback_processor.process_batch(
-                                user_id=sender,
-                                thread_id=self._resolve_thread_id(messaging),
-                                text=text,
-                                attachments=attachment_info,
-                                message_data=message
+                            # Use Redis aggregation system (5s window) with callback enhancement
+                            await self._handle_message_with_smart_aggregation(
+                                app_state, sender, text, attachment_info, message, reply_context, messaging
                             )
-                            
-                            if result.success:
-                                logger.info(f"✅ Immediate callback processing completed: {result.message_type}")
-                            else:
-                                logger.error(f"❌ Immediate callback processing failed: {result.error}")
-                                # Fallback to legacy
-                                await self._handle_message_legacy(
-                                    app_state, sender, text, attachment_info, message, reply_context, messaging
-                                )
+                        elif self.callback_processor:
+                            logger.warning(f"⚠️ Redis not ready - using IMMEDIATE CALLBACK as fallback for {sender}")
+                            # Only use immediate processing as fallback when Redis is not available
+                            await self._immediate_callback_processing(
+                                app_state, sender, text, attachment_info, message, messaging, reply_context
+                            )
                         else:
                             # Start Redis processor if needed for fallback
                             if REDIS_AVAILABLE and not self._redis_processor_started:
@@ -1173,12 +1232,65 @@ class FacebookMessengerService:
             # Fallback to legacy
             logger.info(f"🔄 Falling back to legacy processing for {sender}")
             await self._handle_message_legacy(app_state, sender, text, attachment_info, message, reply_context, messaging)
-            await self.message_aggregator.aggregate_message(sender, thread_id, event_type, data)
+    
+    async def _immediate_callback_processing(self, app_state, sender: str, text: str, 
+                                           attachment_info: list, message: dict, messaging: dict):
+        """Immediate callback processing - only used as fallback when Redis unavailable"""
+        try:
+            logger.info(f"⚡ IMMEDIATE FALLBACK: Processing message for {sender}")
+            
+            result = await self.callback_processor.process_batch(
+                user_id=sender,
+                thread_id=self._resolve_thread_id(messaging),
+                text=text,
+                attachments=attachment_info,
+                message_data=message
+            )
+            
+            if result.success:
+                logger.info(f"✅ Immediate callback processing completed: {result.message_type}")
+            else:
+                logger.error(f"❌ Immediate callback processing failed: {result.error}")
+                # Fallback to legacy
+                await self._handle_message_legacy(
+                    app_state, sender, text, attachment_info, message, "", messaging
+                )
                 
         except Exception as e:
             logger.error(f"❌ Smart aggregation error for {sender}: {e}")
-            # Fallback to direct processing
-            await self._process_complete_message(app_state, sender, message, text, attachment_info, reply_context)
+            # Fallback to legacy
+            logger.info(f"🔄 Falling back to legacy processing for {sender}")
+            await self._handle_message_legacy(app_state, sender, text, attachment_info, message, reply_context, messaging)
+    
+    async def _immediate_callback_processing(self, app_state, sender: str, text: str, 
+                                           attachment_info: list, message: dict, messaging: dict,
+                                           reply_context: str = ""):
+        """Immediate callback processing - only used as fallback when Redis unavailable"""
+        try:
+            logger.info(f"⚡ IMMEDIATE FALLBACK: Processing message for {sender}")
+            
+            result = await self.callback_processor.process_batch(
+                user_id=sender,
+                thread_id=self._resolve_thread_id(messaging),
+                text=text,
+                attachments=attachment_info,
+                message_data=message
+            )
+            
+            if result.success:
+                logger.info(f"✅ Immediate callback processing completed: {result.message_type}")
+            else:
+                logger.error(f"❌ Immediate callback processing failed: {result.error}")
+                # Fallback to legacy
+                await self._handle_message_legacy(
+                    app_state, sender, text, attachment_info, message, reply_context, messaging
+                )
+                
+        except Exception as e:
+            logger.error(f"❌ Immediate callback processing error: {e}")
+            await self._handle_message_legacy(
+                app_state, sender, text, attachment_info, message, reply_context, messaging
+            )
     
     async def _handle_message_legacy(self, app_state, sender: str, text: str, 
                                    attachment_info: list, message: dict, 
