@@ -544,9 +544,15 @@ class FacebookMessengerService:
             if isinstance(content, str):
                 return content.strip()
             if isinstance(content, list):
+                # Only keep plain text items; drop tool_code/code/tool_result/function_call artifacts
                 parts: list[str] = []
                 for item in content:
-                    if isinstance(item, dict) and "text" in item:
+                    if not isinstance(item, dict):
+                        continue
+                    item_type = item.get("type")
+                    if item_type in {"tool_code", "code", "tool_result", "function_call", "tool_use"}:
+                        continue
+                    if "text" in item:
                         parts.append(str(item.get("text", "")))
                 return " ".join(p for p in parts if p).strip()
             return str(content).strip() if content is not None else ""
@@ -602,9 +608,15 @@ class FacebookMessengerService:
             if isinstance(content, str):
                 return content.strip()
             if isinstance(content, list):
+                # Only keep plain text items; drop tool_code/code/tool_result/function_call artifacts
                 parts: list[str] = []
                 for item in content:
-                    if isinstance(item, dict) and "text" in item:
+                    if not isinstance(item, dict):
+                        continue
+                    item_type = item.get("type")
+                    if item_type in {"tool_code", "code", "tool_result", "function_call", "tool_use"}:
+                        continue
+                    if "text" in item:
                         parts.append(str(item.get("text", "")))
                 return " ".join(p for p in parts if p).strip()
             return str(content).strip() if content is not None else ""
