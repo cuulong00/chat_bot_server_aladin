@@ -7,6 +7,7 @@ from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.runnables import Runnable, RunnablePassthrough
 
 from src.graphs.core.assistants.base_assistant import BaseAssistant
+from src.utils.telemetry import time_step
 
 
 class GenerationAssistant(BaseAssistant):

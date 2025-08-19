@@ -11,6 +11,7 @@ import httpx
 import time
 from .message_history_service import get_message_history_service
 from .image_processing_service import get_image_processing_service
+from src.utils.telemetry import time_step
 
 logger = logging.getLogger(__name__)
 
@@ -189,16 +190,19 @@ class FacebookMessengerService:
             # Gửi text trước (nếu có text không phải URL)
             clean_text = self._remove_image_urls_from_text(text)
             if clean_text.strip():
-                await self._send_text_message(recipient_psid, clean_text)
+                with time_step(logger, "fb.send_text_part", user_id=recipient_psid):
+                    await self._send_text_message(recipient_psid, clean_text)
             
             # Gửi từng ảnh dưới dạng attachment
             for image_url in image_urls:
-                await self._send_image_attachment(recipient_psid, image_url)
+                with time_step(logger, "fb.send_image", user_id=recipient_psid, tags={"url_tail": image_url[-20:]}):
+                    await self._send_image_attachment(recipient_psid, image_url)
             
             return {"ok": True, "images_sent": len(image_urls)}
         else:
             # Gửi text message bình thường
-            return await self._send_text_message(recipient_psid, text)
+            with time_step(logger, "fb.send_text", user_id=recipient_psid):
+                return await self._send_text_message(recipient_psid, text)
 
     async def _send_text_message(self, recipient_psid: str, text: str) -> Dict[str, Any]:
         """Gửi tin nhắn text thông thường"""
@@ -214,7 +218,8 @@ class FacebookMessengerService:
         async with httpx.AsyncClient(timeout=10) as client:
             for attempt in range(3):
                 try:
-                    resp = await client.post(url, params=params, json=payload)
+                    with time_step(logger, "fb.http_post", user_id=recipient_psid, tags={"attempt": attempt + 1, "kind": "text"}):
+                        resp = await client.post(url, params=params, json=payload)
                     if resp.is_success:
                         return resp.json()
                     logger.error("Facebook send_message failed (attempt %d): %s", attempt + 1, resp.text)
@@ -246,7 +251,8 @@ class FacebookMessengerService:
         async with httpx.AsyncClient(timeout=15) as client:
             for attempt in range(3):
                 try:
-                    resp = await client.post(url, params=params, json=payload)
+                    with time_step(logger, "fb.http_post", user_id=recipient_psid, tags={"attempt": attempt + 1, "kind": "image"}):
+                        resp = await client.post(url, params=params, json=payload)
                     if resp.is_success:
                         logger.info(f"✅ Image sent successfully: {image_url}")
                         return resp.json()
@@ -408,7 +414,8 @@ class FacebookMessengerService:
         }
         try:
             async with httpx.AsyncClient(timeout=10) as client:
-                resp = await client.get(url, params=params)
+                with time_step(logger, "fb.get_user_profile", user_id=psid):
+                    resp = await client.get(url, params=params)
                 if not resp.is_success:
                     # Common cases: permissions missing, expired token, user not available
                     logger.info("get_user_profile(%s) failed: %s", psid, resp.text)
@@ -465,7 +472,8 @@ class FacebookMessengerService:
             
             logger.info(f"📝 Agent inputs prepared: {inputs}")
             
-            result = await self.call_agent_stream(app_state, inputs)
+            with time_step(logger, "agent.call_stream", user_id=user_id, tags={"has_attachment": has_attachment_pattern, "has_text": has_text_content}):
+                result = await self.call_agent_stream(app_state, inputs)
             logger.info(f"✅ Agent result type: {type(result)}")
             
             # If document processing, check if response indicates context storage
@@ -480,7 +488,8 @@ class FacebookMessengerService:
             if hasattr(result, '__aiter__'):
                 final_content = ""
                 async for chunk in result:
-                    logger.info(f"📦 Stream chunk type: {type(chunk)}, content: {chunk}")
+                    # Keep chunk logs light in hot path
+                    logger.debug(f"📦 Stream chunk type: {type(chunk)}, content: {str(chunk)[:200]}")
                     if isinstance(chunk, dict) and "content" in chunk:
                         final_content += chunk["content"]
                     elif isinstance(chunk, str):
@@ -1213,12 +1222,14 @@ class FacebookMessengerService:
                         
                         # Handle attachments (images, videos, files, etc.)
                         if message.get("attachments"):
-                            attachment_info = self._process_attachments(message["attachments"])
+                            with time_step(logger, "fb.parse_attachments", user_id=sender):
+                                attachment_info = self._process_attachments(message["attachments"])
                         
                         # Handle reply context
                         reply_context = ""
                         if message.get("reply_to"):
-                            reply_context = await self._get_reply_context(sender, message["reply_to"]["mid"])
+                            with time_step(logger, "fb.get_reply_context", user_id=sender):
+                                reply_context = await self._get_reply_context(sender, message["reply_to"]["mid"])
                         
                         # Skip if no content at all
                         if not text and not attachment_info:
@@ -1227,7 +1238,8 @@ class FacebookMessengerService:
                         # Start Redis processor if not started yet
                         if REDIS_AVAILABLE and not self._redis_processor_started:
                             logger.info("🔄 Attempting to start Redis processor...")
-                            await self.start_redis_processor(app_state)
+                            with time_step(logger, "redis.start_processor", user_id=sender):
+                                await self.start_redis_processor(app_state)
 
                         # REDIS AGGREGATION WITH CALLBACK PROCESSING
                         # Use Redis queue system for proper 5s aggregation, then callback processing
@@ -1235,32 +1247,37 @@ class FacebookMessengerService:
                             logger.info(f"📋 Using REDIS AGGREGATION + CALLBACK PROCESSING for {sender}")
                             
                             # Use Redis aggregation system (5s window) with callback enhancement
-                            await self._handle_message_with_smart_aggregation(
-                                app_state, sender, text, attachment_info, message, reply_context, messaging
-                            )
+                            with time_step(logger, "fb.smart_aggregation", user_id=sender):
+                                await self._handle_message_with_smart_aggregation(
+                                    app_state, sender, text, attachment_info, message, reply_context, messaging
+                                )
                         elif self.callback_processor:
                             logger.warning(f"⚠️ Redis not ready - using IMMEDIATE CALLBACK as fallback for {sender}")
                             # Only use immediate processing as fallback when Redis is not available
-                            await self._immediate_callback_processing(
-                                app_state, sender, text, attachment_info, message, messaging, reply_context
-                            )
+                            with time_step(logger, "fb.immediate_callback", user_id=sender):
+                                await self._immediate_callback_processing(
+                                    app_state, sender, text, attachment_info, message, messaging, reply_context
+                                )
                         else:
                             # Start Redis processor if needed for fallback
                             if REDIS_AVAILABLE and not self._redis_processor_started:
                                 logger.info("🔄 Starting Redis processor for fallback...")
-                                await self.start_redis_processor(app_state)
+                                with time_step(logger, "redis.start_processor_fallback", user_id=sender):
+                                    await self.start_redis_processor(app_state)
                             
                             # Fallback to Redis-based processing only if callback processor unavailable
                             if REDIS_AVAILABLE and self._redis_processor_started:
                                 logger.warning(f"⚠️ Callback processor unavailable - using REDIS processing for {sender}")
-                                await self._handle_message_with_smart_aggregation(
-                                    app_state, sender, text, attachment_info, message, reply_context, messaging
-                                )
+                                with time_step(logger, "fb.smart_aggregation_fallback", user_id=sender):
+                                    await self._handle_message_with_smart_aggregation(
+                                        app_state, sender, text, attachment_info, message, reply_context, messaging
+                                    )
                             else:
                                 logger.info(f"📝 Using LEGACY processing for {sender}")
-                                await self._handle_message_legacy(
-                                    app_state, sender, text, attachment_info, message, reply_context, messaging
-                                )
+                                with time_step(logger, "fb.legacy_processing", user_id=sender):
+                                    await self._handle_message_legacy(
+                                        app_state, sender, text, attachment_info, message, reply_context, messaging
+                                    )
                             
                             
         except Exception as e:

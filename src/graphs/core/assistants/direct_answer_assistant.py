@@ -224,5 +224,4 @@ class DirectAnswerAssistant(BaseAssistant):
         import logging
         logging.info(f"🔍 DirectAnswerAssistant - user_info: {prompt_data.get('user_info', 'MISSING')}")
         logging.info(f"🔍 DirectAnswerAssistant - user_profile: {prompt_data.get('user_profile', 'MISSING')}")
-        print(f"binding->prompt:{prompt_data}")
         return prompt_data

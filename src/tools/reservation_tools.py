@@ -1102,4 +1102,4 @@ def book_table_reservation_test(
         }
 
 # Export tools list for easy import
-reservation_tools = [lookup_restaurant_by_location, get_user_bookings, cancel_booking, book_table_reservation, book_table_reservation_test]
+reservation_tools = [lookup_restaurant_by_location, get_user_bookings, cancel_booking, book_table_reservation]
