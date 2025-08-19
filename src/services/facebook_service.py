@@ -87,6 +87,9 @@ class FacebookMessengerService:
         
         # Image processing service
         self.image_service = get_image_processing_service()
+
+        # Typing indicator management
+        self._typing_tasks: dict[str, asyncio.Task] = {}
         
         # Initialize Redis components if available
         if REDIS_AVAILABLE:
@@ -308,6 +311,47 @@ class FacebookMessengerService:
         except Exception:
             # Silence errors; this is non-critical UX enhancement
             return
+
+    async def _typing_heartbeat(self, recipient_psid: str, interval: float = 7.0) -> None:
+        """Background task to keep 'typing_on' alive until stopped."""
+        try:
+            # Immediate ping to show UI quickly
+            await self.send_sender_action(recipient_psid, "typing_on")
+            while True:
+                await self._sleep(interval)
+                await self.send_sender_action(recipient_psid, "typing_on")
+        except asyncio.CancelledError:
+            # Best-effort turn off when cancelled
+            try:
+                await self.send_sender_action(recipient_psid, "typing_off")
+            except Exception:
+                pass
+            raise
+        except Exception:
+            # On unexpected errors, just stop the loop silently
+            return
+
+    async def ensure_typing(self, recipient_psid: str, interval: float = 7.0) -> None:
+        """Ensure a typing heartbeat is running for the given user."""
+        if recipient_psid in self._typing_tasks and not self._typing_tasks[recipient_psid].done():
+            # Refresh immediate ping
+            await self.send_sender_action(recipient_psid, "typing_on")
+            return
+        # Start a new heartbeat task
+        task = asyncio.create_task(self._typing_heartbeat(recipient_psid, interval))
+        self._typing_tasks[recipient_psid] = task
+
+    async def stop_typing(self, recipient_psid: str) -> None:
+        """Stop the typing heartbeat and send typing_off."""
+        task = self._typing_tasks.pop(recipient_psid, None)
+        if task and not task.done():
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+            except Exception:
+                pass
 
     async def _sleep(self, seconds: float) -> None:
         await asyncio.sleep(seconds)
@@ -723,9 +767,11 @@ class FacebookMessengerService:
                 logger.info(f"🛑 Skipping duplicate queued context for {user_id} within TTL")
                 return
 
-            # Show typing indicator (unless immediate image processing)
+            # Start persistent typing indicator (unless immediate image-only processing)
+            typing_started = False
             if not (is_immediate and attachments and not text):
-                await self.send_sender_action(user_id, "typing_on")
+                await self.ensure_typing(user_id)
+                typing_started = True
             
             # ENHANCED: Use callback processor only for non-immediate aggregated batches
             # to avoid recursive delegation when invoked from the callback itself.
@@ -758,6 +804,10 @@ class FacebookMessengerService:
                 else:
                     logger.warning(f"⚠️ No callback processor - using legacy aggregated processing for {user_id}")
                 await self._process_aggregated_context_legacy(user_id, context_data)
+            
+            # Stop typing indicator if we started it here
+            if typing_started:
+                await self.stop_typing(user_id)
                 
         except Exception as e:
             logger.error(f"❌ Context processing error for {user_id}: {e}", exc_info=True)
@@ -765,6 +815,9 @@ class FacebookMessengerService:
                 await self.send_message(user_id, "Xin lỗi, có lỗi xảy ra trong quá trình xử lý.")
             except Exception as send_error:
                 logger.error(f"❌ Failed to send error message: {send_error}")
+            finally:
+                # Ensure typing indicator is turned off on error
+                await self.stop_typing(user_id)
 
     async def _process_aggregated_context_legacy(self, user_id: str, context_data: dict):
         """
@@ -1192,6 +1245,8 @@ class FacebookMessengerService:
                                                     reply_context: str, messaging: dict):
         """Xử lý tin nhắn bằng Smart Aggregation system"""
         try:
+            # Start a typing heartbeat immediately to keep the floating indicator visible
+            await self.ensure_typing(sender)
             # Diagnostic logging
             logger.info(f"📊 SMART AGGREGATION: sender={sender}, text_len={len(text)}, attachments={len(attachment_info)}")
             
@@ -1272,6 +1327,7 @@ class FacebookMessengerService:
                                    reply_context: str, messaging: dict):
         """Enhanced legacy processing khi Redis không available - with proper image+text synchronization"""
         try:
+            await self.ensure_typing(sender)
             # Legacy message merging với enhanced logic
             message_timestamp = messaging.get("timestamp", time.time() * 1000)
             merge_key = f"{sender}_{int(message_timestamp // 10000)}"  # 10-second window
@@ -1340,6 +1396,8 @@ class FacebookMessengerService:
                 
         except Exception as e:
             logger.error(f"❌ Legacy processing error for {sender}: {e}")
+        finally:
+            await self.stop_typing(sender)
     
     async def _process_legacy_aggregated_message(self, app_state, sender: str, message: dict, 
                                                merged_text: str, merged_attachments: list, reply_context: str):
