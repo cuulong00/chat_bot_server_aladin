@@ -978,7 +978,7 @@ def book_table_reservation_test(
 
         # Persist to booking.json at repo root
         repo_root = _resolve_repo_root()
-        print(f"repo_root:{repo_root}")
+        print(f"-------------repo_root---------------:{repo_root}")
         bookings_file = repo_root / "booking.json"
 
         # Read existing bookings (ensure list)
