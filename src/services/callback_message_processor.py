@@ -131,7 +131,8 @@ class CallbackMessageProcessor:
                 'attachments': image_attachments,
                 'message_data': message_data,
                 'processing_priority': 'high',
-                'immediate_processing': True  # Flag để báo xử lý ngay
+                'immediate_processing': True,  # Flag để báo xử lý ngay
+                'from_callback': True
             }
             
             # Xử lý image NGAY - không async delay
@@ -149,7 +150,8 @@ class CallbackMessageProcessor:
                 'message_data': message_data,
                 'processing_priority': 'normal',
                 'immediate_processing': True,  # Flag để báo xử lý ngay
-                'has_fresh_image_context': True  # Context vừa mới tạo
+                'has_fresh_image_context': True,  # Context vừa mới tạo
+                'from_callback': True
             }
             
             # Xử lý text NGAY với context mới - không async delay
@@ -190,7 +192,8 @@ class CallbackMessageProcessor:
                 'text': '',  # Chỉ image
                 'attachments': image_attachments,
                 'message_data': message_data,
-                'processing_priority': 'high'
+                'processing_priority': 'high',
+                'from_callback': True
             }
             
             await self.facebook_service._process_aggregated_context_from_queue(user_id, context_data)
@@ -205,7 +208,8 @@ class CallbackMessageProcessor:
                 'text': text,
                 'attachments': [],  # Chỉ text
                 'message_data': message_data,
-                'processing_priority': 'normal'
+                'processing_priority': 'normal',
+                'from_callback': True
             }
             
             await self.facebook_service._process_aggregated_context_from_queue(user_id, text_context_data)
@@ -238,7 +242,9 @@ class CallbackMessageProcessor:
                 'text': '',
                 'attachments': image_attachments,
                 'message_data': message_data,
-                'processing_priority': 'high'
+                'processing_priority': 'high',
+                'immediate_processing': True,
+                'from_callback': True
             }
             
             await self.facebook_service._process_aggregated_context_from_queue(user_id, context_data)
@@ -269,7 +275,9 @@ class CallbackMessageProcessor:
                 'text': text,
                 'attachments': [],
                 'message_data': message_data,
-                'processing_priority': 'normal'
+                'processing_priority': 'normal',
+                'immediate_processing': True,
+                'from_callback': True
             }
             
             await self.facebook_service._process_aggregated_context_from_queue(user_id, context_data)

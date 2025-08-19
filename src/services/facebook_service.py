@@ -727,11 +727,13 @@ class FacebookMessengerService:
             if not (is_immediate and attachments and not text):
                 await self.send_sender_action(user_id, "typing_on")
             
-            # ENHANCED: Use callback processor if available for clean architecture
-            if self.callback_processor:
+            # ENHANCED: Use callback processor only for non-immediate aggregated batches
+            # to avoid recursive delegation when invoked from the callback itself.
+            from_callback = bool(context_data.get('from_callback'))
+            if self.callback_processor and not is_immediate and not from_callback:
                 logger.info(f"🔄 Using CALLBACK PROCESSOR for Redis aggregated data: {user_id}")
                 
-                # Create a fake thread_id for callback processor
+                # Create a thread_id for callback processor
                 thread_id = f"facebook_session_{user_id}"
                 
                 # Use callback processor with Redis aggregated data
@@ -749,10 +751,12 @@ class FacebookMessengerService:
                     logger.error(f"❌ Callback processor failed for Redis data: {result.error}")
                     # Fallback to legacy processing
                     await self._process_aggregated_context_legacy(user_id, context_data)
-                    
             else:
-                # Fallback to legacy aggregated processing
-                logger.warning(f"⚠️ No callback processor - using legacy aggregated processing for {user_id}")
+                # Directly process (legacy path) for immediate or callback-originated batches
+                if is_immediate or from_callback:
+                    logger.info("⚡ Direct processing for immediate/callback-originated batch")
+                else:
+                    logger.warning(f"⚠️ No callback processor - using legacy aggregated processing for {user_id}")
                 await self._process_aggregated_context_legacy(user_id, context_data)
                 
         except Exception as e:
@@ -1227,35 +1231,6 @@ class FacebookMessengerService:
             result, ready = await self.message_aggregator.aggregate_message(sender, thread_id, event_type, data)
             logger.info(f"📋 Single-type message aggregation result: ready={ready}, event_type={event_type}")
             
-        except Exception as e:
-            logger.error(f"❌ Smart aggregation error for {sender}: {e}")
-            # Fallback to legacy
-            logger.info(f"🔄 Falling back to legacy processing for {sender}")
-            await self._handle_message_legacy(app_state, sender, text, attachment_info, message, reply_context, messaging)
-    
-    async def _immediate_callback_processing(self, app_state, sender: str, text: str, 
-                                           attachment_info: list, message: dict, messaging: dict):
-        """Immediate callback processing - only used as fallback when Redis unavailable"""
-        try:
-            logger.info(f"⚡ IMMEDIATE FALLBACK: Processing message for {sender}")
-            
-            result = await self.callback_processor.process_batch(
-                user_id=sender,
-                thread_id=self._resolve_thread_id(messaging),
-                text=text,
-                attachments=attachment_info,
-                message_data=message
-            )
-            
-            if result.success:
-                logger.info(f"✅ Immediate callback processing completed: {result.message_type}")
-            else:
-                logger.error(f"❌ Immediate callback processing failed: {result.error}")
-                # Fallback to legacy
-                await self._handle_message_legacy(
-                    app_state, sender, text, attachment_info, message, "", messaging
-                )
-                
         except Exception as e:
             logger.error(f"❌ Smart aggregation error for {sender}: {e}")
             # Fallback to legacy
