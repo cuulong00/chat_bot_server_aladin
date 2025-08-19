@@ -738,6 +738,30 @@ def create_adaptive_rag_graph(
         
         try:
             generation = generation_assistant(state, config)
+            # 🔎 Deep logging for tool calls emitted by GenerationAssistant
+            try:
+                if hasattr(generation, "tool_calls") and generation.tool_calls:
+                    logging.info(f"🧰 GENERATION TOOL_CALLS DETECTED: {len(generation.tool_calls)} call(s)")
+                    for i, tc in enumerate(generation.tool_calls, 1):
+                        name = tc.get("name") if isinstance(tc, dict) else getattr(tc, "name", "<unknown>")
+                        tc_id = tc.get("id") if isinstance(tc, dict) else getattr(tc, "id", "<unknown>")
+                        raw_args = tc.get("args") if isinstance(tc, dict) else getattr(tc, "args", {})
+                        # Normalize args for logging and truncate
+                        try:
+                            import json
+                            if isinstance(raw_args, (dict, list)):
+                                args_str = json.dumps(raw_args, ensure_ascii=False)
+                            else:
+                                args_str = str(raw_args)
+                        except Exception:
+                            args_str = str(raw_args)
+                        if len(args_str) > 500:
+                            args_str = args_str[:500] + "..."
+                        logging.info(f"   🧰 Tool #{i}: name={name}, id={tc_id}, args={args_str}")
+                        if name in ("book_table_reservation", "book_table_reservation_test"):
+                            logging.warning(f"   🚀 Booking tool requested by model: {name}")
+            except Exception as _tlog_err:
+                logging.debug(f"Tool-call logging skipped: {_tlog_err}")
         except Exception as e:
             user_id = state.get("user", {}).get("user_info", {}).get("user_id", "unknown")
             log_exception_details(
@@ -843,8 +867,86 @@ def create_adaptive_rag_graph(
         logging.info(f"🔍 GENERATE_DIRECT DEBUG - state keys: {list(state.keys())}")
         
         response = direct_answer_assistant(state, config)
+        # 🔎 Deep logging for tool calls emitted by DirectAnswerAssistant
+        try:
+            if hasattr(response, "tool_calls") and response.tool_calls:
+                logging.info(f"🧰 DIRECT TOOL_CALLS DETECTED: {len(response.tool_calls)} call(s)")
+                for i, tc in enumerate(response.tool_calls, 1):
+                    name = tc.get("name") if isinstance(tc, dict) else getattr(tc, "name", "<unknown>")
+                    tc_id = tc.get("id") if isinstance(tc, dict) else getattr(tc, "id", "<unknown>")
+                    raw_args = tc.get("args") if isinstance(tc, dict) else getattr(tc, "args", {})
+                    try:
+                        import json
+                        if isinstance(raw_args, (dict, list)):
+                            args_str = json.dumps(raw_args, ensure_ascii=False)
+                        else:
+                            args_str = str(raw_args)
+                    except Exception:
+                        args_str = str(raw_args)
+                    if len(args_str) > 500:
+                        args_str = args_str[:500] + "..."
+                    logging.info(f"   🧰 Tool #{i}: name={name}, id={tc_id}, args={args_str}")
+                    if name in ("book_table_reservation", "book_table_reservation_test"):
+                        logging.warning(f"   🚀 Booking tool requested by model (direct): {name}")
+        except Exception as _tlog_err:
+            logging.debug(f"Direct tool-call logging skipped: {_tlog_err}")
 
         return {"messages": [response]}
+
+    # --- Pre-Tools Loggers to trace tool execution intent ---
+    def pre_tools_logger(state: RagState, config: RunnableConfig | None = None):
+        """Log the pending tool calls before executing ToolNode (RAG flow)."""
+        logging.info("---NODE: PRE_TOOLS_LOGGER (RAG)---")
+        try:
+            last = state.get("messages", [])[-1]
+            if hasattr(last, "tool_calls") and last.tool_calls:
+                logging.info(f"🧰 Pending tool calls: {len(last.tool_calls)}")
+                for i, tc in enumerate(last.tool_calls, 1):
+                    name = tc.get("name") if isinstance(tc, dict) else getattr(tc, "name", "<unknown>")
+                    tc_id = tc.get("id") if isinstance(tc, dict) else getattr(tc, "id", "<unknown>")
+                    args = tc.get("args") if isinstance(tc, dict) else getattr(tc, "args", {})
+                    try:
+                        import json
+                        args_str = json.dumps(args, ensure_ascii=False) if isinstance(args, (dict, list)) else str(args)
+                    except Exception:
+                        args_str = str(args)
+                    if len(args_str) > 500:
+                        args_str = args_str[:500] + "..."
+                    logging.info(f"   👉 Tool #{i}: {name} (id={tc_id}) args={args_str}")
+                    if name in ("book_table_reservation", "book_table_reservation_test"):
+                        logging.warning("   ✅ Confirmation detected → booking tool will be executed next")
+            else:
+                logging.info("🧰 No tool_calls found on last AI message")
+        except Exception as e:
+            logging.warning(f"PRE_TOOLS_LOGGER error: {e}")
+        return {}
+
+    def pre_direct_tools_logger(state: RagState, config: RunnableConfig | None = None):
+        """Log the pending tool calls before executing ToolNode (direct flow)."""
+        logging.info("---NODE: PRE_DIRECT_TOOLS_LOGGER---")
+        try:
+            last = state.get("messages", [])[-1]
+            if hasattr(last, "tool_calls") and last.tool_calls:
+                logging.info(f"🧰 Pending direct tool calls: {len(last.tool_calls)}")
+                for i, tc in enumerate(last.tool_calls, 1):
+                    name = tc.get("name") if isinstance(tc, dict) else getattr(tc, "name", "<unknown>")
+                    tc_id = tc.get("id") if isinstance(tc, dict) else getattr(tc, "id", "<unknown>")
+                    args = tc.get("args") if isinstance(tc, dict) else getattr(tc, "args", {})
+                    try:
+                        import json
+                        args_str = json.dumps(args, ensure_ascii=False) if isinstance(args, (dict, list)) else str(args)
+                    except Exception:
+                        args_str = str(args)
+                    if len(args_str) > 500:
+                        args_str = args_str[:500] + "..."
+                    logging.info(f"   👉 Tool #{i}: {name} (id={tc_id}) args={args_str}")
+                    if name in ("book_table_reservation", "book_table_reservation_test"):
+                        logging.warning("   ✅ Confirmation detected → booking tool will be executed next (direct)")
+            else:
+                logging.info("🧰 No direct tool_calls found on last AI message")
+        except Exception as e:
+            logging.warning(f"PRE_DIRECT_TOOLS_LOGGER error: {e}")
+        return {}
 
     def force_suggest_node(state: RagState, config: RunnableConfig):
         logging.info("---NODE: FORCE SUGGEST---")
@@ -1265,7 +1367,9 @@ Hãy phân tích một cách chi tiết và toàn diện để thông tin này c
     graph.add_node("force_suggest", force_suggest_node)
     graph.add_node("generate_direct", generate_direct_node)
     graph.add_node("process_document", process_document_node)
+    graph.add_node("pre_tools_logger", pre_tools_logger)
     graph.add_node("tools", ToolNode(tools=all_tools))
+    graph.add_node("pre_direct_tools_logger", pre_direct_tools_logger)
     graph.add_node("direct_tools", ToolNode(tools=memory_tools + tools + image_context_tools + validation_tools))
     graph.add_node("tool_result_processor", process_tool_results_and_set_flags)
 
@@ -1306,8 +1410,10 @@ Hãy phân tích một cách chi tiết và toàn diện để thông tin này c
     graph.add_conditional_edges(
         "process_document",
         decide_after_process_document,
-        {"direct_tools": "direct_tools", "__end__": END},
+        {"direct_tools": "pre_direct_tools_logger", "__end__": END},
     )
+    # Insert logger before direct tools when coming from process_document
+    graph.add_edge("pre_direct_tools_logger", "direct_tools")
     graph.add_conditional_edges(
         "generate",
         lambda s: "hallucination_grader" if not s.get("skip_hallucination") else END,
@@ -1316,16 +1422,20 @@ Hãy phân tích một cách chi tiết và toàn diện để thông tin này c
     graph.add_conditional_edges(
         "hallucination_grader",
         decide_after_hallucination,
-        {"rewrite": "rewrite", "tools": "tools", "end": END, "generate": "generate"},
+        {"rewrite": "rewrite", "tools": "pre_tools_logger", "end": END, "generate": "generate"},
     )
+    # Insert logger before tools execution in RAG flow
+    graph.add_edge("pre_tools_logger", "tools")
     graph.add_edge("tools", "tool_result_processor")
     graph.add_edge("tool_result_processor", "generate")
 
     graph.add_conditional_edges(
         "generate_direct",
         decide_after_direct_generation,
-        {"direct_tools": "direct_tools", "__end__": END},
+        {"direct_tools": "pre_direct_tools_logger", "__end__": END},
     )
+    # Insert logger before direct tools when coming from generate_direct
+    graph.add_edge("pre_direct_tools_logger", "direct_tools")
     # Direct tools can route back to either generate_direct or process_document
     graph.add_conditional_edges(
         "direct_tools",
