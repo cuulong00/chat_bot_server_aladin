@@ -341,10 +341,20 @@ class SmartMessageAggregator:
         has_text = bool(ctx.get('text'))
         has_attachments = len(ctx.get('attachments') or []) > 0
         
+        # Kiểm tra text có tham chiếu menu không
+        text_content = ctx.get('text', '').lower()
+        has_menu_reference = any(keyword in text_content for keyword in [
+            'món này', 'combo này', 'đặt món này', 'order món này', 'menu này'
+        ])
+        
         if has_text and has_attachments:
             # Khi có cả text và hình ảnh: tăng thời gian chờ để đảm bảo hình ảnh được xử lý trước
             delay = self.config.inactivity_window * 2  # 10s thay vì 5s
             logger.info(f"🔄 Extended inactivity timer due to text+image combo: {delay:.1f}s")
+        elif has_text and has_menu_reference:
+            # Khi text có tham chiếu menu: chờ lâu hơn để có cơ hội nhận image
+            delay = self.config.inactivity_window * 3  # 15s cho menu reference
+            logger.info(f"🍽️ Extended inactivity timer for menu reference text: {delay:.1f}s")
         else:
             delay = self.config.inactivity_window
             

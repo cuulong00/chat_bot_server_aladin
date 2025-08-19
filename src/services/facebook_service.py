@@ -86,20 +86,27 @@ class FacebookMessengerService:
             self.redis_queue = RedisMessageQueue()
             self.message_aggregator = SmartMessageAggregator(self.redis_queue)
             self._redis_processor_started = False
-            logger.info("✅ Redis Smart Message Aggregator initialized")
+            
+            # Initialize Callback Message Processor
+            from .callback_message_processor import CallbackMessageProcessor
+            self.callback_processor = CallbackMessageProcessor(self, self.redis_queue)
+            logger.info("✅ Redis Smart Message Aggregator + Callback Processor initialized")
+            
             # Diagnostic: instance identities for singleton verification
             try:
                 logger.info(
-                    "🔧 FBService init: service_id=%s redis_queue_id=%s aggregator_id=%s",
+                    "🔧 FBService init: service_id=%s redis_queue_id=%s aggregator_id=%s callback_id=%s",
                     hex(id(self)),
                     hex(id(self.redis_queue)),
                     hex(id(self.message_aggregator)),
+                    hex(id(self.callback_processor)),
                 )
             except Exception:
                 pass
         else:
             self.redis_queue = None
             self.message_aggregator = None
+            self.callback_processor = None
             # Fallback to legacy message merging
             self._pending_messages = {}
             logger.info("📝 Using legacy message merging system")
@@ -1009,12 +1016,27 @@ class FacebookMessengerService:
                             logger.info("🔄 Attempting to start Redis processor...")
                             await self.start_redis_processor(app_state)
 
-                        # SMART MESSAGE AGGREGATION - Only if Redis is properly initialized
-                        if REDIS_AVAILABLE and self.message_aggregator and self._redis_processor_started:
-                            logger.info(f"📋 Using SMART AGGREGATION for {sender}")
-                            await self._handle_message_with_smart_aggregation(
-                                app_state, sender, text, attachment_info, message, reply_context, messaging
+                        # CALLBACK MESSAGE PROCESSING - Only if Redis is properly initialized
+                        if REDIS_AVAILABLE and self.callback_processor and self._redis_processor_started:
+                            logger.info(f"📋 Using CALLBACK PROCESSING for {sender}")
+                            
+                            # Use callback processor for batch processing
+                            result = await self.callback_processor.process_batch(
+                                user_id=sender,
+                                thread_id=self._resolve_thread_id(messaging),
+                                text=text,
+                                attachments=attachment_info,
+                                message_data=message
                             )
+                            
+                            if result.success:
+                                logger.info(f"✅ Callback processing completed: {result.message_type}")
+                            else:
+                                logger.error(f"❌ Callback processing failed: {result.error}")
+                                # Fallback to legacy
+                                await self._handle_message_legacy(
+                                    app_state, sender, text, attachment_info, message, reply_context, messaging
+                                )
                         else:
                             # Fallback to legacy processing
                             if REDIS_AVAILABLE and not self._redis_processor_started:
