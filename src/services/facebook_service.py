@@ -393,7 +393,9 @@ class FacebookMessengerService:
             
             # If document processing, check if response indicates context storage
             if is_document_processing:
-                if result and ("đã phân tích và lưu thông tin" in result or "✅ Em đã phân tích" in result):
+                # Smart detection: Check if AI indicates successful context storage
+                # This is more reliable than hardcoded text matching
+                if result and self._is_context_storage_response(result):
                     logger.info("📋 Document processing completed - context stored, no reply needed")
                     return None  # Don't send reply for document processing
             
@@ -568,6 +570,54 @@ class FacebookMessengerService:
                 return "Xin lỗi, có lỗi xảy ra khi xử lý tin nhắn.", {}
 
         return await asyncio.to_thread(_run_with_state)
+
+    def _is_context_storage_response(self, response: str) -> bool:
+        """
+        Intelligently detect if AI response indicates successful context storage.
+        This replaces hardcoded Vietnamese text matching with pattern-based detection.
+        """
+        if not response or not isinstance(response, str):
+            return False
+            
+        response_lower = response.lower().strip()
+        
+        # Pattern 1: Success indicators with context/analysis keywords
+        context_keywords = ['ngữ cảnh', 'context', 'thông tin', 'phân tích', 'lưu', 'save']
+        success_indicators = ['✅', 'thành công', 'hoàn tất', 'completed', 'success', 'đã']
+        
+        has_context_keyword = any(keyword in response_lower for keyword in context_keywords)
+        has_success_indicator = any(indicator in response_lower for indicator in success_indicators)
+        
+        # Pattern 2: Specific patterns that indicate context storage
+        storage_patterns = [
+            'đã lưu',
+            'đã phân tích',
+            'context.*save',
+            'save.*context',
+            'thông tin.*lưu',
+            'lưu.*thông tin',
+            'phân tích.*hoàn',
+            'hoàn.*phân tích'
+        ]
+        
+        import re
+        has_storage_pattern = any(re.search(pattern, response_lower) for pattern in storage_patterns)
+        
+        # Pattern 3: Response structure indicates context-only processing
+        is_short_confirmation = len(response_lower) < 200  # Context storage responses are typically brief
+        has_no_question_response = not any(word in response_lower for word in ['gì', 'nào', '?', 'như thế nào', 'bao nhiêu'])
+        
+        # Combine all patterns for intelligent detection
+        is_context_storage = (
+            (has_context_keyword and has_success_indicator) or
+            has_storage_pattern or
+            (is_short_confirmation and has_success_indicator and has_context_keyword)
+        )
+        
+        if is_context_storage:
+            logger.debug(f"🔍 Context storage detected: context_kw={has_context_keyword}, success={has_success_indicator}, pattern={has_storage_pattern}")
+        
+        return is_context_storage
 
     def _resolve_thread_id(self, messaging: Dict[str, Any]) -> str:
         """Best-effort thread id: use recipient.id (page) or PAGE_ID."""
