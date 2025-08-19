@@ -263,7 +263,7 @@ def book_table_reservation(
             note=note,
             has_birthday=has_birthday
         )
-        print(f"book_table_reservation->reservation_data:{reservation_data}")
+        
         # Find restaurant ID
         restaurant_id = _find_restaurant_id(restaurant_location)
         

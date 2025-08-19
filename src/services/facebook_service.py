@@ -182,6 +182,11 @@ class FacebookMessengerService:
     async def send_message(self, recipient_psid: str, text: str) -> Dict[str, Any]:
         url = f"{self.GRAPH_API_BASE}/{self.api_version}/me/messages"
         params = {"access_token": self.page_access_token}
+        # Final safety: sanitize any model text before sending
+        try:
+            text = self._sanitize_user_text(text)
+        except Exception:
+            pass
         
         # Kiểm tra xem message có image URLs không để gửi dưới dạng image attachment
         image_urls = self._extract_image_urls(text)
@@ -264,6 +269,34 @@ class FacebookMessengerService:
         
         logger.error(f"❌ Failed to send image after 3 attempts: {image_url}")
         return {"ok": False, "error": "failed_to_send_image"}
+
+    def _sanitize_user_text(self, text: str) -> str:
+        """Minimal, structured sanitizer: keep natural language, drop code blocks and obvious tool traces."""
+        import re
+        if not text:
+            return text
+        s = str(text)
+        # 1) Remove fenced code blocks (```...```), any language
+        s = re.sub(r"```[\s\S]*?```", "", s)
+        # 2) Remove inline code backticks to avoid leaking code-looking fragments
+        s = s.replace("`", "")
+        # 3) Drop lines that clearly look like tool/call artifacts (prefix-based, conservative)
+        dropped_prefixes = (
+            "tool_code", "function_call", "tool call", "tool_use", "print(", "default_api.",
+        )
+        cleaned_lines: list[str] = []
+        for line in s.splitlines():
+            lstr = line.strip()
+            if not lstr:
+                cleaned_lines.append(line)
+                continue
+            if any(lstr.startswith(p) for p in dropped_prefixes):
+                continue
+            cleaned_lines.append(line)
+        s = "\n".join(cleaned_lines)
+        # 4) Normalize multiple blank lines
+        s = re.sub(r"\n{3,}", "\n\n", s)
+        return s.strip()
     
     def _extract_image_urls(self, text: str) -> list[str]:
         """Trích xuất image URLs từ text"""
@@ -511,13 +544,14 @@ class FacebookMessengerService:
                     content = result["output"]
                 else:
                     content = str(result)
-                    
+                content = self._sanitize_user_text(content)
                 logger.info(f"📝 Direct response content: {content[:100]}...")
                 return content
             
             elif isinstance(result, str):
-                logger.info(f"📝 String response: {result[:100]}...")
-                return result
+                clean = self._sanitize_user_text(result)
+                logger.info(f"📝 String response: {clean[:100]}...")
+                return clean
             
             else:
                 logger.warning(f"⚠️ Unexpected result type: {type(result)}, value: {result}")
@@ -542,7 +576,21 @@ class FacebookMessengerService:
 
         def _extract_text(content: Any) -> str:
             if isinstance(content, str):
-                return content.strip()
+                return self._sanitize_user_text(content.strip())
+            if isinstance(content, list):
+                # Only keep plain text items; drop tool_code/code/tool_result/function_call artifacts
+                parts: list[str] = []
+                for item in content:
+                    if not isinstance(item, dict):
+                        continue
+                    item_type = item.get("type")
+                    if item_type in {"tool_code", "code", "tool_result", "function_call", "tool_use"}:
+                        continue
+                    if "text" in item:
+                        parts.append(str(item.get("text", "")))
+                joined = " ".join(p for p in parts if p).strip()
+                return self._sanitize_user_text(joined)
+            return self._sanitize_user_text(str(content).strip() if content is not None else "")
             if isinstance(content, list):
                 # Only keep plain text items; drop tool_code/code/tool_result/function_call artifacts
                 parts: list[str] = []
@@ -606,7 +654,21 @@ class FacebookMessengerService:
 
         def _extract_text(content: Any) -> str:
             if isinstance(content, str):
-                return content.strip()
+                return self._sanitize_user_text(content.strip())
+            if isinstance(content, list):
+                # Only keep plain text items; drop tool_code/code/tool_result/function_call artifacts
+                parts: list[str] = []
+                for item in content:
+                    if not isinstance(item, dict):
+                        continue
+                    item_type = item.get("type")
+                    if item_type in {"tool_code", "code", "tool_result", "function_call", "tool_use"}:
+                        continue
+                    if "text" in item:
+                        parts.append(str(item.get("text", "")))
+                joined = " ".join(p for p in parts if p).strip()
+                return self._sanitize_user_text(joined)
+            return self._sanitize_user_text(str(content).strip() if content is not None else "")
             if isinstance(content, list):
                 # Only keep plain text items; drop tool_code/code/tool_result/function_call artifacts
                 parts: list[str] = []

@@ -51,6 +51,7 @@ class DirectAnswerAssistant(BaseAssistant):
      "4. **BOOKING DETECTION:** 'đặt bàn'(book table), 'book', 'reservation' → MUST eventually call `book_table_reservation` after confirmation\n\n"
 
      "**⚠️ CRITICAL:** These tool calls are INVISIBLE to users - they happen automatically!\n\n"
+    "**🚫 TUYỆT ĐỐI KHÔNG HIỂN THỊ MÃ CODE/TOOL:** Không được hiển thị bất kỳ `tool_code`, `function_call`, `print(...)`, hay đoạn mã nào trong nội dung trả lời. Nếu cần dùng tool, hãy gọi ẩn (invisible) và CHỈ phản hồi bằng ngôn ngữ tự nhiên.\n\n"
      
      "🖼️ **XỬ LÝ THÔNG TIN HÌNH ẢNH:**\n"
      "**Khi có nội dung trong <ImageContexts>, phân tích ngữ cảnh câu hỏi:**\n\n"
