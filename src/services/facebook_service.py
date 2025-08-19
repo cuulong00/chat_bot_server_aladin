@@ -576,7 +576,7 @@ class FacebookMessengerService:
 
     # --- Redis Background Processing ---
     async def start_redis_processor(self, app_state):
-        """Khởi động background processor cho Redis events"""
+        """Khởi động background processor cho Redis events với retry logic"""
         if not REDIS_AVAILABLE or not self.redis_queue:
             logger.warning("⚠️ Redis not available, skipping background processor")
             return
@@ -585,18 +585,34 @@ class FacebookMessengerService:
             logger.info("📋 Redis processor already started")
             return
             
-        try:
-            await self.redis_queue.setup()
-            self._redis_processor_started = True
-            
-            # Store app_state for processing
-            self._app_state = app_state
-            
-            logger.info("🚀 Starting Redis message processor...")
-            asyncio.create_task(self._background_message_processor())
-            
-        except Exception as e:
-            logger.error(f"❌ Failed to start Redis processor: {e}")
+        max_retries = 3
+        retry_delay = 2
+        
+        for attempt in range(max_retries):
+            try:
+                logger.info(f"🔧 Starting Redis processor (attempt {attempt + 1}/{max_retries})...")
+                await self.redis_queue.setup()
+                
+                # Store app_state for processing
+                self._app_state = app_state
+                
+                # Start background processor
+                logger.info("🚀 Starting Redis message processor background task...")
+                asyncio.create_task(self._background_message_processor())
+                
+                self._redis_processor_started = True
+                logger.info("✅ Redis processor started successfully!")
+                return
+                
+            except Exception as e:
+                logger.error(f"❌ Redis processor start attempt {attempt + 1} failed: {e}")
+                if attempt < max_retries - 1:
+                    logger.info(f"🔄 Retrying in {retry_delay}s...")
+                    await asyncio.sleep(retry_delay)
+                    retry_delay *= 2  # Exponential backoff
+                else:
+                    logger.error("💥 All Redis processor start attempts failed - will use legacy processing")
+                    self._redis_processor_started = False
     
     async def _background_message_processor(self):
         """Background processor cho Redis events"""
@@ -671,14 +687,23 @@ class FacebookMessengerService:
             image_contexts = []
             
             if image_messages:
-                # CRITICAL: Nếu có cả image và text, chỉ xử lý image để lưu context (không gửi response)
-                # Nếu chỉ có image, xử lý bình thường và gửi response
-                process_image_silently = bool(text_messages)
+                # CRITICAL: Với priority-based processing:
+                # - HIGH PRIORITY (attachment-only batch): Luôn xử lý im lặng, không gửi response
+                # - NORMAL PRIORITY (single batch có cả image và text): Xử lý im lặng nếu có text
+                # - Image-only message với NORMAL priority: Gửi response
                 
-                if process_image_silently:
-                    logger.info("🖼️ Processing images SILENTLY (image+text combo detected) - no immediate response sent")
+                is_high_priority_batch = (priority == 'high')
+                has_text_in_batch = bool(text_messages)
+                
+                if is_high_priority_batch:
+                    process_image_silently = True
+                    logger.info("� HIGH PRIORITY batch: Processing images SILENTLY (attachment-first strategy)")
+                elif has_text_in_batch:
+                    process_image_silently = True
+                    logger.info("🖼️ Processing images SILENTLY (image+text combo in same batch)")
                 else:
-                    logger.info("🖼️ Processing images with response (image-only message)")
+                    process_image_silently = False
+                    logger.info("🖼️ Processing images with response (image-only normal batch)")
                 
                 try:
                     # Prepare image message for process_document_node
@@ -716,7 +741,7 @@ class FacebookMessengerService:
                             image_contexts = final_state.get("image_contexts", [])
                             logger.info(f"✅ Image processing completed: {len(image_contexts)} contexts extracted")
                             
-                            # Only send image response if this is image-only message
+                            # Only send image response if NOT processing silently
                             if not process_image_silently and image_result:
                                 await self.send_message(user_id, image_result)
                                 self.message_history.store_message(
@@ -727,7 +752,7 @@ class FacebookMessengerService:
                                 )
                                 logger.info("📤 Image-only response sent to user")
                             else:
-                                logger.info("🔇 Silent processing - no immediate response sent")
+                                logger.info("🔇 Silent processing - no immediate response sent (context saved for future text messages)")
                         else:
                             logger.error("❌ No app_state available for image processing")
                             
@@ -892,7 +917,11 @@ class FacebookMessengerService:
                         logger.error(f"❌ Agent error for text processing {user_id}: {e}")
                         await self.send_message(user_id, "Xin lỗi, có lỗi xảy ra. Vui lòng thử lại sau.")
             
-            # Image-only messages are handled in STEP 2 above
+            # HIGH PRIORITY BATCH: No additional processing needed (context saved)
+            elif priority == 'high':
+                logger.info("🔥 HIGH PRIORITY batch processing completed - context saved, no response sent")
+                
+            # Image-only messages with NORMAL priority are handled in STEP 2 above
             elif image_messages and not text_messages:
                 logger.info("📋 Image-only processing completed in STEP 2 - no additional action needed")
                 
@@ -977,15 +1006,21 @@ class FacebookMessengerService:
 
                         # Start Redis processor if not started yet
                         if REDIS_AVAILABLE and not self._redis_processor_started:
+                            logger.info("🔄 Attempting to start Redis processor...")
                             await self.start_redis_processor(app_state)
 
-                        # SMART MESSAGE AGGREGATION
-                        if REDIS_AVAILABLE and self.message_aggregator:
+                        # SMART MESSAGE AGGREGATION - Only if Redis is properly initialized
+                        if REDIS_AVAILABLE and self.message_aggregator and self._redis_processor_started:
+                            logger.info(f"📋 Using SMART AGGREGATION for {sender}")
                             await self._handle_message_with_smart_aggregation(
                                 app_state, sender, text, attachment_info, message, reply_context, messaging
                             )
                         else:
                             # Fallback to legacy processing
+                            if REDIS_AVAILABLE and not self._redis_processor_started:
+                                logger.warning(f"⚠️ Redis processor failed to start - using LEGACY processing for {sender}")
+                            else:
+                                logger.info(f"📝 Using LEGACY processing for {sender}")
                             await self._handle_message_legacy(
                                 app_state, sender, text, attachment_info, message, reply_context, messaging
                             )
@@ -1000,6 +1035,9 @@ class FacebookMessengerService:
                                                     reply_context: str, messaging: dict):
         """Xử lý tin nhắn bằng Smart Aggregation system"""
         try:
+            # Diagnostic logging
+            logger.info(f"📊 SMART AGGREGATION: sender={sender}, text_len={len(text)}, attachments={len(attachment_info)}")
+            
             # Determine event type
             if text and attachment_info:
                 # Combined message - enqueue and let aggregator handle
@@ -1014,22 +1052,33 @@ class FacebookMessengerService:
                 }
                 await self.redis_queue.enqueue_event(sender, event_type, data)
                 thread_id = self._resolve_thread_id(messaging)
-                await self.message_aggregator.aggregate_message(sender, thread_id, event_type, data)
+                result, ready = await self.message_aggregator.aggregate_message(sender, thread_id, event_type, data)
+                logger.info(f"📋 Combined message aggregation result: ready={ready}")
                 return
             
             # Single-type message - use aggregation
             if text:
                 event_type = "text"
                 data = {"text": text, "message": message, "reply_context": reply_context, "timestamp": messaging.get("timestamp")}
+                logger.info(f"📝 TEXT-only message from {sender}: '{text[:50]}...' → aggregate")
             else:
                 event_type = "attachment" 
                 data = {"attachments": attachment_info, "message": message, "reply_context": reply_context, "timestamp": messaging.get("timestamp")}
+                logger.info(f"📎 ATTACHMENT-only message from {sender}: {len(attachment_info)} attachments → aggregate")
             
             # Enqueue to Redis
             await self.redis_queue.enqueue_event(sender, event_type, data)
             
             # Smart aggregation (5s inactivity window)
             thread_id = self._resolve_thread_id(messaging)
+            result, ready = await self.message_aggregator.aggregate_message(sender, thread_id, event_type, data)
+            logger.info(f"📋 Single-type message aggregation result: ready={ready}, event_type={event_type}")
+            
+        except Exception as e:
+            logger.error(f"❌ Smart aggregation error for {sender}: {e}")
+            # Fallback to legacy
+            logger.info(f"🔄 Falling back to legacy processing for {sender}")
+            await self._handle_message_legacy(app_state, sender, text, attachment_info, message, reply_context, messaging)
             await self.message_aggregator.aggregate_message(sender, thread_id, event_type, data)
                 
         except Exception as e:
