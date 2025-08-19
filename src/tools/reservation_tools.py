@@ -326,63 +326,7 @@ def _save_booking_to_file(payload: Dict[str, Any], restaurant_location: str) -> 
             "error": str(e),
             "message": "An error occurred while saving the reservation. Please try again later or call hotline 1900 636 886."
         }
-    """
-    Save booking data to booking.json file (temporary solution until API is ready)
-    """
-    try:
-        # Get repository root
-        repo_root = _resolve_repo_root()
-        bookings_file = repo_root / "booking.json"
-        
-        # Read existing bookings
-        existing_bookings: List[Dict[str, Any]] = []
-        if bookings_file.exists():
-            try:
-                existing_obj = json.loads(bookings_file.read_text(encoding="utf-8"))
-                if isinstance(existing_obj, list):
-                    existing_bookings = existing_obj
-                else:
-                    logger.warning("booking.json is not a list; resetting to empty list")
-            except Exception as e:
-                logger.warning(f"Failed to parse existing booking.json: {e}; resetting to empty list")
-        
-        # Generate unique reservation ID
-        reservation_id = str(uuid.uuid4())
-        
-        # Create booking record
-        booking_record = {
-            "id": reservation_id,
-            "created_at": datetime.utcnow().isoformat() + "Z",
-            "restaurant_location": restaurant_location,
-            "status": "confirmed",
-            "source": "chatbot",
-            **payload  # Include all reservation data
-        }
-        
-        # Add to existing bookings
-        existing_bookings.append(booking_record)
-        
-        # Save to file
-        bookings_file.write_text(
-            json.dumps(existing_bookings, ensure_ascii=False, indent=2), 
-            encoding="utf-8"
-        )
-        
-        logger.info(f"Booking saved to file with ID: {reservation_id}")
-        
-        return {
-            "success": True,
-            "data": {"id": reservation_id, **payload},
-            "message": "Table reservation successful!"
-        }
-        
-    except Exception as e:
-        logger.error(f"Error saving booking to file: {e}")
-        return {
-            "success": False,
-            "error": str(e),
-            "message": "An error occurred while saving the reservation. Please try again later or call hotline 1900 636 886."
-        }
+   
 
 def _get_bookings_by_phone(phone: str) -> List[Dict[str, Any]]:
     """
@@ -759,7 +703,7 @@ def lookup_restaurant_by_location(location_query: str) -> Dict[str, Any]:
             "message": "Error occurred while searching restaurant information."
         }
 
-@tool
+@tool("book_table_reservation", args_schema=ReservationInput)
 def book_table_reservation(
     restaurant_location: str,
     first_name: str,
@@ -1034,6 +978,7 @@ def book_table_reservation_test(
 
         # Persist to booking.json at repo root
         repo_root = _resolve_repo_root()
+        print(f"repo_root:{repo_root}")
         bookings_file = repo_root / "booking.json"
 
         # Read existing bookings (ensure list)
