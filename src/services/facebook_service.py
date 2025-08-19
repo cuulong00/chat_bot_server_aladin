@@ -578,6 +578,19 @@ class FacebookMessengerService:
             if isinstance(content, str):
                 return self._sanitize_user_text(content.strip())
             if isinstance(content, list):
+                # Trace raw content structure before filtering for root-cause analysis
+                try:
+                    types = []
+                    for idx, item in enumerate(content[:12]):
+                        if isinstance(item, dict):
+                            itype = item.get("type")
+                            types.append(itype)
+                            if itype in {"tool_code", "function_call", "tool_use", "tool_result", "code"}:
+                                logger.warning("🧱 STREAM CONTENT[%s]: type=%s payload_keys=%s", idx, itype, list({k:v for k,v in item.items() if k!='text'}.keys()))
+                    if types:
+                        logger.info("📦 STREAM CONTENT TYPES: %s", types)
+                except Exception:
+                    pass
                 # Only keep plain text items; drop tool_code/code/tool_result/function_call artifacts
                 parts: list[str] = []
                 for item in content:
@@ -656,6 +669,19 @@ class FacebookMessengerService:
             if isinstance(content, str):
                 return self._sanitize_user_text(content.strip())
             if isinstance(content, list):
+                # Trace raw content structure before filtering for root-cause analysis
+                try:
+                    types = []
+                    for idx, item in enumerate(content[:12]):
+                        if isinstance(item, dict):
+                            itype = item.get("type")
+                            types.append(itype)
+                            if itype in {"tool_code", "function_call", "tool_use", "tool_result", "code"}:
+                                logger.warning("🧱 STREAM(WITH_STATE) CONTENT[%s]: type=%s payload_keys=%s", idx, itype, list({k:v for k,v in item.items() if k!='text'}.keys()))
+                    if types:
+                        logger.info("📦 STREAM(WITH_STATE) CONTENT TYPES: %s", types)
+                except Exception:
+                    pass
                 # Only keep plain text items; drop tool_code/code/tool_result/function_call artifacts
                 parts: list[str] = []
                 for item in content:

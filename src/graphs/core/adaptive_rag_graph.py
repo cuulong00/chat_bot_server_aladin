@@ -12,7 +12,7 @@ import httpx
 import os
 import google.generativeai as genai
 
-from typing import List, TypedDict, Annotated, Literal
+from typing import Any, List, TypedDict, Annotated, Literal
 
 from datetime import datetime
 from langchain_tavily import TavilySearch
@@ -736,6 +736,29 @@ def create_adaptive_rag_graph(
         else:
             logging.warning(f"   ⚠️ NO DOCUMENTS found for GENERATE node!")
         
+        def _log_content_structure(label: str, message_obj: Any) -> None:
+            try:
+                content = getattr(message_obj, "content", None)
+                if isinstance(content, list):
+                    logging.warning(f"🧱 {label}: assistant content is list with {len(content)} item(s)")
+                    for idx, it in enumerate(content[:10]):
+                        if isinstance(it, dict):
+                            it_type = it.get("type")
+                            preview = (it.get("text") or it.get("id") or "")
+                            if isinstance(preview, str):
+                                preview = preview[:120]
+                            # Log special tool-like items more prominently
+                            if it_type in {"tool_code", "function_call", "tool_use", "tool_result", "code"}:
+                                logging.warning(f"   [{idx}] type={it_type} payload={str({k:v for k,v in it.items() if k!='text'})[:200]}")
+                            else:
+                                logging.info(f"   [{idx}] type={it_type} text={preview}")
+                elif isinstance(content, str):
+                    logging.info(f"🧾 {label}: string content len={len(content)}")
+                else:
+                    logging.info(f"🧩 {label}: content type={type(content)} value_preview={str(content)[:120] if content is not None else 'None'}")
+            except Exception as _e:
+                logging.debug(f"{label} content logging skipped: {_e}")
+
         try:
             generation = generation_assistant(state, config)
             # 🔎 Deep logging for tool calls emitted by GenerationAssistant
@@ -762,6 +785,8 @@ def create_adaptive_rag_graph(
                             logging.warning(f"   🚀 Booking tool requested by model: {name}")
             except Exception as _tlog_err:
                 logging.debug(f"Tool-call logging skipped: {_tlog_err}")
+            # Always trace raw content structure for root-cause analysis
+            _log_content_structure("GENERATION RAW CONTENT", generation)
         except Exception as e:
             user_id = state.get("user", {}).get("user_info", {}).get("user_id", "unknown")
             log_exception_details(
@@ -900,6 +925,34 @@ def create_adaptive_rag_graph(
                     )
         except Exception as _tlog_err:
             logging.debug(f"Direct tool-call logging skipped: {_tlog_err}")
+
+        # Always trace raw content structure for root-cause analysis
+        try:
+            def _log_content_structure(label: str, message_obj: Any) -> None:
+                try:
+                    content = getattr(message_obj, "content", None)
+                    if isinstance(content, list):
+                        logging.warning(f"🧱 {label}: assistant content is list with {len(content)} item(s)")
+                        for idx, it in enumerate(content[:10]):
+                            if isinstance(it, dict):
+                                it_type = it.get("type")
+                                preview = (it.get("text") or it.get("id") or "")
+                                if isinstance(preview, str):
+                                    preview = preview[:120]
+                                if it_type in {"tool_code", "function_call", "tool_use", "tool_result", "code"}:
+                                    logging.warning(f"   [{idx}] type={it_type} payload={str({k:v for k,v in it.items() if k!='text'})[:200]}")
+                                else:
+                                    logging.info(f"   [{idx}] type={it_type} text={preview}")
+                    elif isinstance(content, str):
+                        logging.info(f"🧾 {label}: string content len={len(content)}")
+                    else:
+                        logging.info(f"🧩 {label}: content type={type(content)} value_preview={str(content)[:120] if content is not None else 'None'}")
+                except Exception as _e:
+                    logging.debug(f"{label} content logging skipped: {_e}")
+
+            _log_content_structure("DIRECT GENERATION RAW CONTENT", response)
+        except Exception:
+            pass
 
         return {"messages": [response]}
 
