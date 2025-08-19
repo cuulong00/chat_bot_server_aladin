@@ -61,10 +61,12 @@ class CallbackMessageProcessor:
                            text: str = "", attachments: List[dict] = None, 
                            message_data: dict = None) -> ProcessingResult:
         """
-        Entry point cho batch processing với callback system:
+        IMMEDIATE Entry point cho batch processing với callback system:
         1. Phân loại message thành image + text
-        2. Xử lý image trước (nếu có)
-        3. Callback xử lý text sau (nếu có)
+        2. Xử lý image trước (nếu có) - NGAY LẬP TỨC
+        3. Callback xử lý text sau (nếu có) - NGAY LẬP TỨC
+        
+        *** NO DELAYS - IMMEDIATE PROCESSING ***
         """
         attachments = attachments or []
         message_data = message_data or {}
@@ -74,22 +76,22 @@ class CallbackMessageProcessor:
         has_images = len(image_attachments) > 0
         has_text = bool(text and text.strip())
         
-        logger.info(f"📋 BATCH PROCESSING: {user_id} - Images: {len(image_attachments)}, Text: {'Yes' if has_text else 'No'}")
+        logger.info(f"📋 IMMEDIATE BATCH PROCESSING: {user_id} - Images: {len(image_attachments)}, Text: {'Yes' if has_text else 'No'}")
         
         try:
             if has_images and has_text:
-                # BATCH có cả image và text → Image trước, Text callback sau
-                logger.info(f"🔄 Mixed batch: Processing images first, then text via callback")
-                return await self._process_mixed_batch(user_id, thread_id, text, image_attachments, message_data)
+                # BATCH có cả image và text → Image trước NGAY, Text callback NGAY sau
+                logger.info(f"🔄 Mixed batch: IMMEDIATE processing - images first, then text callback")
+                return await self._process_mixed_batch_immediate(user_id, thread_id, text, image_attachments, message_data)
             
             elif has_images and not has_text:
-                # BATCH chỉ có image → Xử lý image only
-                logger.info(f"🖼️ Image-only batch: Processing images for context")
+                # BATCH chỉ có image → Xử lý image NGAY
+                logger.info(f"🖼️ Image-only batch: IMMEDIATE processing for context")
                 return await self._process_image_only_batch(user_id, thread_id, image_attachments, message_data)
             
             elif has_text and not has_images:
-                # BATCH chỉ có text → Xử lý text only
-                logger.info(f"📝 Text-only batch: Processing text immediately")
+                # BATCH chỉ có text → Xử lý text NGAY
+                logger.info(f"📝 Text-only batch: IMMEDIATE processing")
                 return await self._process_text_only_batch(user_id, thread_id, text, message_data)
             
             else:
@@ -101,13 +103,75 @@ class CallbackMessageProcessor:
                 )
                 
         except Exception as e:
-            logger.error(f"❌ Batch processing error: {e}")
+            logger.error(f"❌ Immediate batch processing error: {e}")
             return ProcessingResult(
                 success=False,
                 message_type='batch',
                 error=str(e)
             )
     
+    async def _process_mixed_batch_immediate(self, user_id: str, thread_id: str, 
+                                            text: str, image_attachments: List[dict], 
+                                            message_data: dict) -> ProcessingResult:
+        """
+        IMMEDIATE xử lý batch có cả image và text:
+        1. Xử lý image trước để tạo context - NGAY LẬP TỨC
+        2. Callback xử lý text với context đã có - NGAY LẬP TỨC TRONG CÙNG THREAD
+        
+        *** NO ASYNC DELAYS - SEQUENTIAL IMMEDIATE PROCESSING ***
+        """
+        try:
+            # STEP 1: Xử lý image trước (KHÔNG gửi response) - NGAY LẬP TỨC
+            logger.info(f"🖼️ STEP 1 IMMEDIATE: Processing {len(image_attachments)} images for context")
+            
+            context_data = {
+                'user_id': user_id,
+                'thread_id': thread_id,
+                'text': '',  # Chỉ image
+                'attachments': image_attachments,
+                'message_data': message_data,
+                'processing_priority': 'high',
+                'immediate_processing': True  # Flag để báo xử lý ngay
+            }
+            
+            # Xử lý image NGAY - không async delay
+            await self.facebook_service._process_aggregated_context_from_queue(user_id, context_data)
+            self.stats['images_processed'] += 1
+            
+            logger.info(f"📝 STEP 2 IMMEDIATE: Processing text with fresh image context")
+            
+            # STEP 2: Callback xử lý text với context đã có - NGAY LẬP TỨC
+            text_context_data = {
+                'user_id': user_id,
+                'thread_id': thread_id,
+                'text': text,
+                'attachments': [],  # Chỉ text
+                'message_data': message_data,
+                'processing_priority': 'normal',
+                'immediate_processing': True,  # Flag để báo xử lý ngay
+                'has_fresh_image_context': True  # Context vừa mới tạo
+            }
+            
+            # Xử lý text NGAY với context mới - không async delay
+            await self.facebook_service._process_aggregated_context_from_queue(user_id, text_context_data)
+            self.stats['texts_processed'] += 1
+            self.stats['callbacks_executed'] += 1
+            
+            return ProcessingResult(
+                success=True,
+                message_type='mixed_immediate',
+                context_created=True,
+                response_sent=True  # Text response được gửi ngay
+            )
+            
+        except Exception as e:
+            logger.error(f"❌ Immediate mixed batch processing error: {e}")
+            return ProcessingResult(
+                success=False,
+                message_type='mixed_immediate',
+                error=str(e)
+            )
+
     async def _process_mixed_batch(self, user_id: str, thread_id: str, 
                                   text: str, image_attachments: List[dict], 
                                   message_data: dict) -> ProcessingResult:

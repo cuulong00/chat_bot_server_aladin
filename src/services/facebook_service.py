@@ -648,24 +648,38 @@ class FacebookMessengerService:
             asyncio.create_task(self._background_message_processor())
     
     async def _process_aggregated_context_from_queue(self, user_id: str, context_data: dict):
-        """Xử lý aggregated context từ Redis queue theo thứ tự: images trước, text sau"""
+        """
+        Xử lý aggregated context theo thứ tự: images trước, text sau
+        Hỗ trợ immediate processing (không delay) cho callback system
+        """
         try:
             text = context_data.get('text', '').strip()
             attachments = context_data.get('attachments', [])
             priority = context_data.get('processing_priority', 'normal')
+            is_immediate = context_data.get('immediate_processing', False)
+            has_fresh_context = context_data.get('has_fresh_image_context', False)
             
-            logger.info(f"🎯 Processing AGGREGATED message - User: {user_id}, Priority: {priority}, Text: '{text[:50]}...', Attachments: {len(attachments)}")
+            if is_immediate:
+                logger.info(f"⚡ Processing IMMEDIATE message - User: {user_id}, Priority: {priority}, Text: '{text[:50]}...', Attachments: {len(attachments)}")
+            else:
+                logger.info(f"🎯 Processing AGGREGATED message - User: {user_id}, Priority: {priority}, Text: '{text[:50]}...', Attachments: {len(attachments)}")
             
-            # De-dup: avoid processing same context within short TTL
-            if not self._should_process_context(user_id, text, attachments):
+            # Skip de-dup for immediate processing (fresh context)
+            if not is_immediate and not self._should_process_context(user_id, text, attachments):
                 logger.info(f"🛑 Skipping duplicate queued context for {user_id} within TTL")
                 return
 
-            # Show typing indicator
-            await self.send_sender_action(user_id, "typing_on")
+            # Show typing indicator (unless immediate image processing)
+            if not (is_immediate and attachments and not text):
+                await self.send_sender_action(user_id, "typing_on")
             
-            # PRIORITY-BASED PROCESSING
-            if priority == 'high':
+            # PRIORITY-BASED PROCESSING (Enhanced for immediate processing)
+            if is_immediate:
+                if priority == 'high':
+                    logger.info(f"⚡⚡ IMMEDIATE HIGH PRIORITY: Processing images instantly for context")
+                else:
+                    logger.info(f"⚡📝 IMMEDIATE TEXT: Processing with fresh image context")
+            elif priority == 'high':
                 logger.info(f"🔥 HIGH PRIORITY: Processing attachments first")
             elif priority == 'low':
                 logger.info(f"🔽 LOW PRIORITY: Processing text after attachments")
@@ -1016,11 +1030,11 @@ class FacebookMessengerService:
                             logger.info("🔄 Attempting to start Redis processor...")
                             await self.start_redis_processor(app_state)
 
-                        # CALLBACK MESSAGE PROCESSING - Only if Redis is properly initialized
-                        if REDIS_AVAILABLE and self.callback_processor and self._redis_processor_started:
-                            logger.info(f"📋 Using CALLBACK PROCESSING for {sender}")
+                        # IMMEDIATE CALLBACK MESSAGE PROCESSING - Bypass Redis delay
+                        if self.callback_processor:
+                            logger.info(f"📋 Using IMMEDIATE CALLBACK PROCESSING for {sender}")
                             
-                            # Use callback processor for batch processing
+                            # Process messages immediately without Redis aggregation delay
                             result = await self.callback_processor.process_batch(
                                 user_id=sender,
                                 thread_id=self._resolve_thread_id(messaging),
@@ -1030,22 +1044,30 @@ class FacebookMessengerService:
                             )
                             
                             if result.success:
-                                logger.info(f"✅ Callback processing completed: {result.message_type}")
+                                logger.info(f"✅ Immediate callback processing completed: {result.message_type}")
                             else:
-                                logger.error(f"❌ Callback processing failed: {result.error}")
+                                logger.error(f"❌ Immediate callback processing failed: {result.error}")
                                 # Fallback to legacy
                                 await self._handle_message_legacy(
                                     app_state, sender, text, attachment_info, message, reply_context, messaging
                                 )
                         else:
-                            # Fallback to legacy processing
+                            # Start Redis processor if needed for fallback
                             if REDIS_AVAILABLE and not self._redis_processor_started:
-                                logger.warning(f"⚠️ Redis processor failed to start - using LEGACY processing for {sender}")
+                                logger.info("🔄 Starting Redis processor for fallback...")
+                                await self.start_redis_processor(app_state)
+                            
+                            # Fallback to Redis-based processing only if callback processor unavailable
+                            if REDIS_AVAILABLE and self._redis_processor_started:
+                                logger.warning(f"⚠️ Callback processor unavailable - using REDIS processing for {sender}")
+                                await self._handle_message_with_smart_aggregation(
+                                    app_state, sender, text, attachment_info, message, reply_context, messaging
+                                )
                             else:
                                 logger.info(f"📝 Using LEGACY processing for {sender}")
-                            await self._handle_message_legacy(
-                                app_state, sender, text, attachment_info, message, reply_context, messaging
-                            )
+                                await self._handle_message_legacy(
+                                    app_state, sender, text, attachment_info, message, reply_context, messaging
+                                )
                             
                             
         except Exception as e:
