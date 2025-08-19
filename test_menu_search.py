@@ -41,22 +41,22 @@ def test_menu_search():
     for query in test_queries:
         print(f"\n🔍 Query: '{query}'")
         try:
-            results = qdrant_store.search(query, limit=3, namespace="images")
+            results = qdrant_store.search(namespace="images", query=query, limit=3)
             
             if results:
                 print(f"✅ Found {len(results)} results:")
-                for i, result in enumerate(results, 1):
-                    metadata = result.get("metadata", {})
-                    content = result.get("content", "")
-                    score = result.get("score", 0)
+                for i, (key, value_dict, score) in enumerate(results, 1):
+                    content = value_dict.get("content", "")
+                    # Metadata được lưu trực tiếp trong value_dict
                     
                     print(f"  {i}. Score: {score:.3f}")
-                    print(f"     Title: {metadata.get('title', 'N/A')}")
-                    print(f"     Price: {metadata.get('price_vnd', 'N/A'):,} VND")
-                    print(f"     Guests: {metadata.get('guests', 'N/A')}")
+                    print(f"     Key: {key}")
+                    print(f"     Title: {value_dict.get('title', 'N/A')}")
+                    print(f"     Price: {value_dict.get('price_vnd', 'N/A'):,} VND")
+                    print(f"     Guests: {value_dict.get('guests', 'N/A')}")
                     print(f"     Content: {content}")
-                    if metadata.get('discount_info'):
-                        print(f"     Discount: {metadata.get('discount_info')}")
+                    if value_dict.get('discount_info'):
+                        print(f"     Discount: {value_dict.get('discount_info')}")
                     print()
             else:
                 print("❌ No results found")

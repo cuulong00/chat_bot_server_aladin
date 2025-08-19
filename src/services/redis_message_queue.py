@@ -62,26 +62,16 @@ class RedisMessageQueue:
             await asyncio.to_thread(self.redis.ping)
             logger.info(f"✅ Redis connected: {self.config.url}")
             
-            # Tạo consumer group (bỏ qua nếu đã tồn tại)
-            try:
-                await asyncio.to_thread(
-                    self.redis.xgroup_create,
-                    self.config.stream_name,
-                    self.config.consumer_group,
-                    id='0',
-                    mkstream=True
-                )
-                logger.info(f"✅ Created consumer group: {self.config.consumer_group}")
-            except redis.exceptions.ResponseError as e:
-                if "BUSYGROUP" in str(e):
-                    logger.info(f"📋 Consumer group already exists: {self.config.consumer_group}")
-                else:
-                    raise
+            # Ensure consumer group exists
+            if await self.ensure_consumer_group_exists():
+                self._initialized = True
+                logger.info(f"✅ Redis setup completed successfully")
+            else:
+                raise Exception("Failed to ensure consumer group exists")
                     
-            self._initialized = True
-            
         except Exception as e:
             logger.error(f"❌ Redis setup failed: {e}")
+            self._initialized = False
             raise
     
     async def enqueue_event(self, user_id: str, event_type: str, data: dict) -> str:
@@ -131,6 +121,21 @@ class RedisMessageQueue:
                     for msg_id, fields in msgs:
                         yield msg_id, fields
                         
+            except redis.exceptions.ResponseError as e:
+                if "NOGROUP" in str(e):
+                    logger.warning(f"⚠️ Consumer group not found, attempting to recreate: {e}")
+                    try:
+                        self._initialized = False
+                        await self.setup()
+                        logger.info("✅ Consumer group recreated successfully")
+                        continue
+                    except Exception as setup_error:
+                        logger.error(f"❌ Failed to recreate consumer group: {setup_error}")
+                        await asyncio.sleep(5)
+                        continue
+                else:
+                    logger.error(f"❌ Redis consume error: {e}")
+                    await asyncio.sleep(1)
             except Exception as e:
                 logger.error(f"❌ Redis consume error: {e}")
                 await asyncio.sleep(1)
@@ -155,6 +160,59 @@ class RedisMessageQueue:
         except Exception as e:
             logger.error(f"❌ Failed to get stream info: {e}")
             return {}
+    
+    async def ensure_consumer_group_exists(self) -> bool:
+        """Đảm bảo consumer group tồn tại, tạo mới nếu cần"""
+        try:
+            # Check if consumer group exists
+            groups = await asyncio.to_thread(self.redis.xinfo_groups, self.config.stream_name)
+            existing_groups = [group['name'] for group in groups]
+            
+            if self.config.consumer_group in existing_groups:
+                logger.info(f"✅ Consumer group {self.config.consumer_group} already exists")
+                return True
+            else:
+                # Create consumer group
+                await asyncio.to_thread(
+                    self.redis.xgroup_create,
+                    self.config.stream_name,
+                    self.config.consumer_group,
+                    id='0',
+                    mkstream=True
+                )
+                logger.info(f"✅ Created consumer group: {self.config.consumer_group}")
+                return True
+                
+        except redis.exceptions.ResponseError as e:
+            if "no such key" in str(e).lower():
+                logger.info(f"🔄 Stream {self.config.stream_name} not found, creating...")
+                try:
+                    # Create stream by adding and deleting a dummy message
+                    dummy_id = await asyncio.to_thread(
+                        self.redis.xadd,
+                        self.config.stream_name,
+                        {"init": "stream_creation"}
+                    )
+                    await asyncio.to_thread(self.redis.xdel, self.config.stream_name, dummy_id)
+                    
+                    # Now create consumer group
+                    await asyncio.to_thread(
+                        self.redis.xgroup_create,
+                        self.config.stream_name,
+                        self.config.consumer_group,
+                        id='0'
+                    )
+                    logger.info(f"✅ Created stream and consumer group: {self.config.consumer_group}")
+                    return True
+                except Exception as create_error:
+                    logger.error(f"❌ Failed to create stream/consumer group: {create_error}")
+                    return False
+            else:
+                logger.error(f"❌ Error checking consumer group: {e}")
+                return False
+        except Exception as e:
+            logger.error(f"❌ Error ensuring consumer group exists: {e}")
+            return False
     
     def close(self):
         """Đóng Redis connection"""
