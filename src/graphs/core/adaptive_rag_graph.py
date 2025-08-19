@@ -888,6 +888,16 @@ def create_adaptive_rag_graph(
                     logging.info(f"   🧰 Tool #{i}: name={name}, id={tc_id}, args={args_str}")
                     if name in ("book_table_reservation", "book_table_reservation_test"):
                         logging.warning(f"   🚀 Booking tool requested by model (direct): {name}")
+            else:
+                # Heuristic: if user confirms but no tool call emitted, flag it for diagnostics
+                cq = (current_question or "").lower()
+                confirm_markers = [
+                    "xác nhận", "chốt", "ok đặt", "đồng ý", "cứ đặt"
+                ]
+                if any(marker in cq for marker in confirm_markers):
+                    logging.warning(
+                        "⚠️ CONFIRMATION DETECTED BUT NO TOOL_CALLS EMITTED (direct). Check prompt/tool binding and direct_tools node."
+                    )
         except Exception as _tlog_err:
             logging.debug(f"Direct tool-call logging skipped: {_tlog_err}")
 
@@ -1370,7 +1380,8 @@ Hãy phân tích một cách chi tiết và toàn diện để thông tin này c
     graph.add_node("pre_tools_logger", pre_tools_logger)
     graph.add_node("tools", ToolNode(tools=all_tools))
     graph.add_node("pre_direct_tools_logger", pre_direct_tools_logger)
-    graph.add_node("direct_tools", ToolNode(tools=memory_tools + tools + image_context_tools + validation_tools))
+    # Include reservation_tools so booking tool calls emitted in direct flow are executable
+    graph.add_node("direct_tools", ToolNode(tools=memory_tools + tools + image_context_tools + validation_tools + reservation_tools))
     graph.add_node("tool_result_processor", process_tool_results_and_set_flags)
 
     # --- Define Graph Flow ---

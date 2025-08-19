@@ -106,5 +106,32 @@
     "table": "",
     "is_online": false,
     "nguon_khach": 1
+  },
+  {
+    "id": "01d9eaa2-7c9d-41b8-8c56-8528136ed294",
+    "created_at": "2025-08-19T04:47:10.293877Z",
+    "restaurant_location": "Trần Thái Tông",
+    "status": 1,
+    "source": "chatbot",
+    "restaurant_id": "6858f6ec9ca8d67d6",
+    "first_name": "Trần",
+    "last_name": "Tuấn Dương",
+    "phone": "0984434979",
+    "email": "0984434979@tianlong.placeholder",
+    "dob": "1990-01-01",
+    "reservation_date": "2025-08-19",
+    "start_time": "19:00",
+    "end_time": "22:00",
+    "guest": 7,
+    "note": "",
+    "table_id": [],
+    "amount_children": 0,
+    "amount_adult": 7,
+    "has_birthday": false,
+    "from_sale": false,
+    "info_order": "",
+    "table": "",
+    "is_online": false,
+    "nguon_khach": 1
   }
 ]
