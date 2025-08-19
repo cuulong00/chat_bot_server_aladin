@@ -703,7 +703,7 @@ def lookup_restaurant_by_location(location_query: str) -> Dict[str, Any]:
             "message": "Error occurred while searching restaurant information."
         }
 
-@tool("book_table_reservation", args_schema=ReservationInput)
+@tool
 def book_table_reservation(
     restaurant_location: str,
     first_name: str,
