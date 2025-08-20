@@ -158,7 +158,7 @@ class QueryClassifier:
             "is_faq_query": False,
             "confidence": 0.0,
             "search_strategy": "comprehensive",
-            "namespace_priority": ["maketing", "faq"],
+            "namespace_priority": ["marketing", "faq"],
             "retrieval_limit": 8,
             "expansion_keywords": [],
             "signals": [],
@@ -185,12 +185,12 @@ class QueryClassifier:
     def _get_namespace_priority(self, primary_category: str, confidence: float) -> List[str]:
         """Get prioritized list of namespaces to search."""
         if primary_category == "faq" and confidence > 0.7:
-            return ["faq", "maketing"]
+            return ["faq", "marketing"]
         elif primary_category in ["menu", "location", "promotion"] and confidence > 0.7:
-            return ["maketing", "faq"] 
+            return ["marketing", "faq"] 
         else:
             # For uncertain cases, search both with equal priority
-            return ["maketing", "faq"]
+            return ["marketing", "faq"]
     
     def _get_retrieval_limit(self, search_strategy: str, is_faq_query: bool) -> int:
         """Get retrieval limit based on search strategy."""

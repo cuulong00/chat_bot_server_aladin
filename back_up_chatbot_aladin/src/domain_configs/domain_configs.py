@@ -86,8 +86,8 @@ MARKETING_DOMAIN = {
     ],
     "regulatory_requirements": "Food safety compliance, local restaurant service & consumer protection regulations",
     # Keep existing collection/namespace unless a new restaurant collection is ingested; rename later if needed.
-    "collection_name": "aladin_maketing",
-    "namespace": "maketing",
+    "collection_name": "tianlong_marketing",
+    "namespace": "marketing",
     "embedding_model": "models/text-embedding-004",
     "output_dimensionality_query": 768,
 }

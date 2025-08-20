@@ -15,7 +15,7 @@ from ..database.qdrant_store import QdrantStore
 logger = logging.getLogger(__name__)
 
 # Collection và namespace constants
-IMAGE_CONTEXT_COLLECTION = "aladin_maketing"
+IMAGE_CONTEXT_COLLECTION = "tianlong_marketing"
 IMAGE_CONTEXT_NAMESPACE_PREFIX = "image_context"
 
 def get_image_context_namespace(user_id: str, thread_id: str) -> str:

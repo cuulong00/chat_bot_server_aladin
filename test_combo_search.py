@@ -84,7 +84,7 @@ def test_combo_search():
                     print(f"    ❌ Search failed: {e}")
                     
             # Also test specific namespaces
-            for namespace in ['images', 'maketing', 'faq']:
+            for namespace in ['images', 'marketing', 'faq']:
                 try:
                     results = store.search(query=query, limit=5, namespace=namespace)
                     combo_count = sum(1 for _, doc_dict, _ in results 

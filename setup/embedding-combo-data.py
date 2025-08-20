@@ -32,7 +32,7 @@ from langchain_core.documents import Document
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 
 try:
-    from src.models.qdrant_store import QdrantStore
+    from src.database.qdrant_store import QdrantStore
 except ModuleNotFoundError as e:
     raise ModuleNotFoundError(
         "Cannot import 'src'. Ensure you run inside project root or PYTHONPATH includes it. "
@@ -380,7 +380,7 @@ def embed_combo_data(
 
 def run_combo_embedding_pipeline(
     combo_file: Optional[str] = None,
-    collection_name: str = "aladin_maketing",
+    collection_name: str = "tianlong_marketing",
     domain: str = "restaurant_menu",
     model_name: str = "text-embedding-004",
     namespace: str = "images",
@@ -420,8 +420,7 @@ def run_combo_embedding_pipeline(
     check_and_recreate_collection(collection_name, vector_size)
     
     # Initialize Qdrant store
-    qdrant_url = os.getenv("QDRANT_URL", "http://localhost:6333")
-    qdrant_store = QdrantStore(url=qdrant_url, collection_name=collection_name)
+    qdrant_store = QdrantStore(collection_name=collection_name, embedding_model=model_key)
     
     # Embed and store combo data
     embed_combo_data(
@@ -440,7 +439,7 @@ def run_combo_embedding_pipeline(
 def parse_args():
     parser = argparse.ArgumentParser(description="Embed combo menu data into Qdrant with image URLs in metadata")
     parser.add_argument("--combo-file", default=None, help="Path to combo JSON file")
-    parser.add_argument("--collection", default="aladin_maketing", help="Qdrant collection name")
+    parser.add_argument("--collection", default="tianlong_marketing", help="Qdrant collection name")
     parser.add_argument("--domain", default="restaurant_menu", help="Domain metadata tag")
     parser.add_argument("--namespace", default="images", help="Namespace for storage")
     parser.add_argument("--model", default="text-embedding-004", help="Embedding model alias")

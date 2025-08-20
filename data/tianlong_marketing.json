@@ -1,0 +1,246 @@
+{
+  "restaurant_info": {
+    "basic_info": {
+      "id": "basic_info",
+      "category": "thông tin cơ bản",
+      "content": "Tên nhà hàng: TIAN LONG - LẨU BÒ TƯƠI TRIỀU CHÂU. Slogan: Hương vị chính gốc Triều Châu - Bò tươi Tian Long mới bán! Hotline: 1900 636 886. Website: https://tianlong.vn. Công ty: CÔNG TY CP TẦM NHÌN QUỐC TẾ ALADDIN. Trụ sở: Số 16 ngách 145/49 Phố Quan Nhân, Phường Nhân Chính, Quận Thanh Xuân. MST: 0107742477",
+      "keywords": ["tian long", "lẩu bò tươi", "triều châu", "hotline", "website", "thông tin liên hệ"]
+    },
+    "concept": {
+      "id": "restaurant_concept",
+      "category": "giới thiệu nhà hàng",
+      "content": "Tian Long là chuỗi nhà hàng lẩu bò tươi theo phong cách Triều Châu, với không gian sang trọng và thực đơn đa dạng có lợi cho sức khỏe. Thương hiệu nổi bật với các món lẩu bò tươi chất lượng cao, thảo mộc quý và dimsum thủ công từ nghệ nhân ẩm thực. Nhà hàng phục vụ hình thức gọi món, phần nước lẩu và nhân nhúng được tách riêng để khách hàng có thể lựa chọn theo sở thích và khẩu phần của mình.",
+      "keywords": ["concept", "lẩu bò triều châu", "gọi món", "không buffet", "sang trọng", "sức khỏe"]
+    },
+    "brand_story": {
+      "id": "brand_story",
+      "category": "câu chuyện thương hiệu",
+      "content": "Là người em của chuỗi lẩu hấp thủy nhiệt Hong Kong lớn nhất Việt Nam - Long Wang và chuỗi nhà hàng bò tơ lớn nhất Việt Nam - Bò Tơ Quán Mộc. Tian Long đã trải qua hành trình 10 năm không ngừng nghỉ để tìm ra món lẩu bò ngon nhất. Đội ngũ Tian Long đã dành nhiều năm dày công nghiên cứu ẩm thực Triều Châu, đến tận nơi để học hỏi bí quyết từ những sư phụ bậc thầy tại địa phương.",
+      "keywords": ["long wang", "bò tơ quán mộc", "10 năm", "nghiên cứu", "sư phụ", "triều châu", "câu chuyện"]
+    },
+    "meat_quality": {
+      "id": "meat_quality",
+      "category": "chất lượng thịt",
+      "content": "Chỉ có chưa đầy 37% lượng thịt của một con bò là thịt chất lượng cao, đủ tiêu chuẩn thịt nhúng lẩu. Phần thịt tinh tuyển ngon nhất (Diềm thăn, Gù hoa, Đầu rồng, Bắp lõi...) chỉ chiếm khoảng 1%. Mỗi loại thịt phải dùng một thủ pháp cắt riêng với độ dày miếng thịt khác nhau, sao cho khi nhúng cùng nhau vẫn chín đều, ngon miệng.",
+      "keywords": ["chất lượng thịt", "37%", "tinh tuyển", "diềm thăn", "gù hoa", "đầu rồng", "bắp lõi", "thủ pháp cắt"]
+    }
+  },
+  "locations": {
+    "branch_count": {
+      "id": "branch_info",
+      "category": "chi nhánh",
+      "content": "Tian Long có tổng cộng 8 chi nhánh tại Hà Nội, Hải Phòng, TP.HCM và Huế.",
+      "keywords": ["8 chi nhánh", "hà nội", "hải phòng", "tp.hcm", "huế", "cơ sở"]
+    },
+    "hanoi_branches": {
+      "id": "hanoi_locations",
+      "category": "chi nhánh hà nội",
+      "content": "Hà Nội có 4 chi nhánh: 1) TIAN LONG TRẦN THÁI TÔNG: 107-D5 Trần Thái Tông, Dịch Vọng Hậu, Cầu Giấy. 2) TIAN LONG VINCOM PHẠM NGỌC THẠCH: Vincom Center Phạm Ngọc Thạch, 2 Phạm Ngọc Thạch, Kim Liên, Đống Đa. 3) TIAN LONG TIMES CITY: Times City, Minh Khai. 4) TIAN LONG VINCOM BÀ TRIỆU: Vincom Bà Triệu, 191 P. Bà Triệu, Lê Đại Hành, Hai Bà Trưng.",
+      "keywords": ["hà nội", "trần thái tông", "vincom phạm ngọc thạch", "times city", "vincom bà triệu", "địa chỉ"]
+    },
+    "other_branches": {
+      "id": "other_locations",
+      "category": "chi nhánh khác",
+      "content": "Hải Phòng: TIAN LONG VINCOM IMPERIA - Vincom Imperia Hải Phòng, số 1 Bạch Đằng, Hồng Bàng. TP.HCM: 1) TIAN LONG VINCOM THẢO ĐIỀN - Tầng L4 Vincom Mega Mall Thảo Điền, 161 Võ Nguyên Giáp, TP. Thủ Đức. 2) TIAN LONG LÊ VĂN SỸ - 183 Lê Văn Sỹ, Phường 13, Quận Phú Nhuận. Huế: TIAN LONG AEON MALL HUẾ - 08 Võ Nguyên Giáp, phường An Đông, quận Thuận Hóa.",
+      "keywords": ["hải phòng", "tp.hcm", "huế", "vincom imperia", "thảo điền", "lê văn sỹ", "aeon mall"]
+    }
+  },
+  "menu": {
+    "hotpot_types": {
+      "id": "hotpot_menu",
+      "category": "menu lẩu",
+      "content": "Các loại lẩu tại Tian Long: 1) Lẩu cay Tian Long, 2) Lẩu thảo mộc Tian Long, 3) Lẩu trường thọ, 4) Lẩu bò tươi Triều Châu. Menu chi tiết tại: https://menu.tianlong.vn/",
+      "keywords": ["lẩu cay", "lẩu thảo mộc", "lẩu trường thọ", "lẩu bò tươi triều châu", "menu"]
+    },
+    "combo_options": {
+      "id": "combo_menu",
+      "category": "combo",
+      "content": "Các combo Tian Long: 1) COMBO 1: 441,000đ cho 2 khách (221,000đ/người), 2) COMBO 2: 668,000đ cho 3 khách (223,000đ/người), 3) COMBO 3: 945,000đ cho 4 khách (236,000đ/người), 4) COMBO 4: 1,299,000đ cho 5 khách (260,000đ/người), 5) COMBO TÂM GIAO: Giảm 30% từ 795k còn 555k (phù hợp 2-3 khách, khoảng 185k/khách).",
+      "keywords": ["combo", "giá", "2 người", "3 người", "4 người", "5 người", "tâm giao"]
+    },
+    "menu_links": {
+      "id": "menu_access",
+      "category": "truy cập menu",
+      "content": "Menu tại quán và menu ship đều có tại: https://menu.tianlong.vn/",
+      "keywords": ["menu online", "menu tại quán", "menu ship", "link menu"]
+    }
+  },
+  "promotions": {
+    "restaurant_promotions": {
+      "id": "restaurant_offers",
+      "category": "ưu đãi tại quán",
+      "content": "Các chương trình ưu đãi khu vực Sài Gòn khi đặt bàn trước và dùng tại quán đến 31/8: 1) Tặng 01 khay bò tươi 1 Mét cho nhóm từ 04 khách, 2) Tặng 01 Thăn Đầu Rồng cho nhóm từ 3 khách áp dụng từ 4/8, 3) Ưu đãi 30% Vòng Xoay Bò Đặc Biệt (1 phần trong khung giờ 10:00-15:00, duy nhất tại Lê Văn Sỹ), 4) Ưu đãi sinh nhật giảm 10% menu đồ ăn + gói trang trí (khách có sinh nhật trước/sau 7 ngày, mang CMND).",
+      "keywords": ["khuyến mãi", "ưu đãi", "giảm giá", "tặng bò 1 mét", "thăn đầu rồng", "sinh nhật", "sài gòn"]
+    },
+    "promotion_conditions": {
+      "id": "promotion_terms",
+      "category": "điều kiện ưu đãi",
+      "content": "Lưu ý ưu đãi: Không áp dụng đối với hóa đơn có sử dụng Combo. Các ưu đãi không áp dụng đồng thời. Không áp dụng các ngày Lễ, Tết. Áp dụng khách hàng đã là thành viên hoặc đăng ký thành viên mới. Ưu đãi tặng 1 mét thịt bò tươi không áp dụng lũy kế.",
+      "keywords": ["điều kiện", "không combo", "không lễ tết", "thành viên", "không lũy kế"]
+    }
+  },
+  "membership": {
+    "membership_tiers": {
+      "id": "member_benefits",
+      "category": "thẻ thành viên",
+      "content": "Thẻ thành viên Tian Long có 3 hạng: 1) BẠC (dưới 20 triệu): Giảm 5% menu đồ ăn, 2) VÀNG (20-50 triệu): Giảm 7% menu đồ ăn, 3) KIM CƯƠNG (trên 50 triệu): Giảm 10% menu đồ ăn. Thành viên được hưởng ưu đãi sinh nhật và Ngày hội thành viên (-15% toàn bộ menu đồ ăn vào thứ 3 hàng tuần).",
+      "keywords": ["thành viên", "bạc", "vàng", "kim cương", "giảm giá", "sinh nhật", "thứ 3"]
+    },
+    "membership_registration": {
+      "id": "member_signup",
+      "category": "đăng ký thành viên",
+      "content": "Cách đăng ký thẻ thành viên: 1) Truy cập Zalo Official Account 'Long Wang- Lẩu hấp thủy nhiệt Hồng Kông' hoặc quét mã QR Code, 2) Nhấn Quan tâm, 3) Điền thông tin đăng ký (Họ tên, địa chỉ, ngày sinh...), 4) Nhập mã OTP và nhận mã ưu đãi sau 24h.",
+      "keywords": ["đăng ký", "zalo", "long wang", "qr code", "otp", "24h"]
+    }
+  },
+  "policies": {
+    "reservation_policy": {
+      "id": "booking_rules",
+      "category": "đặt bàn",
+      "content": "Chính sách đặt bàn: Giữ bàn trong vòng 15 phút. Đặt bàn đoàn đông từ 15 người trở lên yêu cầu đặt món trước và cọc tối thiểu 500,000 đồng. Nếu hủy bàn, cần báo trước ít nhất 6 tiếng để hoàn lại tiền cọc. Tiền cọc được trừ trực tiếp vào hóa đơn sau khi dùng bữa.",
+      "keywords": ["đặt bàn", "15 phút", "15 người", "cọc", "500k", "6 tiếng", "hủy bàn"]
+    },
+    "vat_policy": {
+      "id": "tax_policy",
+      "category": "thuế vat",
+      "content": "Chính sách VAT: Tian Long thuộc chuỗi cửa hàng được quản lý theo tổng công ty nên thu VAT 8% đồ ăn và 10% đồ uống có cồn theo quy định nhà nước. Không thể bỏ VAT vì phải tuân thủ quy định.",
+      "keywords": ["vat", "thuế", "8%", "10%", "quy định", "không bỏ được"]
+    },
+    "outside_food_policy": {
+      "id": "outside_food_rules",
+      "category": "mang đồ từ ngoài",
+      "content": "Chính sách mang đồ ăn/uống từ ngoài: Được phép nhưng có tính phí. Phí rượu: 50k/1 lít rượu quê, 100k/1 chai vang, 150k/1 chai nhập ngoại. Đồ ăn: 80k/đĩa.",
+      "keywords": ["mang đồ từ ngoài", "phí", "rượu", "50k", "100k", "150k", "80k"]
+    },
+    "bill_splitting_policy": {
+      "id": "bill_policy",
+      "category": "tách bill",
+      "content": "Chính sách tách bill: Tian Long KHÔNG hỗ trợ tách bill do quy định kiểm soát của bộ phận QC và kế toán.",
+      "keywords": ["tách bill", "không hỗ trợ", "qc", "kế toán"]
+    },
+    "combo_policy": {
+      "id": "combo_rules",
+      "category": "combo",
+      "content": "Chính sách combo: Combo được set cố định toàn hệ thống, không thể đổi món. Nếu không sử dụng một món trong combo thì giá vẫn như vậy.",
+      "keywords": ["combo", "cố định", "không đổi món", "giá không đổi"]
+    },
+    "payment_methods": {
+      "id": "payment_options",
+      "category": "thanh toán",
+      "content": "Hình thức thanh toán: Tian Long chấp nhận tiền mặt, thẻ tín dụng/ghi nợ, và các ví điện tử phổ biến.",
+      "keywords": ["thanh toán", "tiền mặt", "thẻ tín dụng", "ví điện tử"]
+    }
+  },
+  "food_info": {
+    "hotpot_specialties": {
+      "id": "teochew_hotpot",
+      "category": "đặc sản lẩu",
+      "content": "Lẩu bò tươi Triều Châu có đặc điểm 'Tươi nhưng không tanh, ngọt nhưng không ngấy, non nhưng không sống'. Nước lẩu được nấu từ công thức gia truyền, kết hợp 36 vị thuốc quý có tác dụng thanh lọc cơ thể. Thịt bò được tinh tuyển với chỉ 37% từ con bò đạt tiêu chuẩn, trong đó 1% là phần thịt ngon nhất.",
+      "keywords": ["lẩu bò triều châu", "tươi không tanh", "36 vị thuốc", "thanh lọc", "37% tinh tuyển"]
+    },
+    "hotpot_differences": {
+      "id": "hotpot_types_comparison",
+      "category": "phân biệt lẩu",
+      "content": "Sự khác biệt: Lẩu thảo mộc có hương vị thanh nhẹ, ngọt tự nhiên, kết hợp thảo mộc và thuốc quý Đông y, thích hợp cho người thích vị thanh dịu và quan tâm sức khỏe. Lẩu cay có hương vị cay nồng đặc trưng, sử dụng gia vị cay và thảo mộc khác biệt, thích hợp cho người thích ăn cay.",
+      "keywords": ["lẩu thảo mộc", "lẩu cay", "thanh nhẹ", "cay nồng", "đông y", "sức khỏe"]
+    },
+    "spice_adjustment": {
+      "id": "spice_customization",
+      "category": "điều chỉnh độ cay",
+      "content": "Khách hàng có thể yêu cầu điều chỉnh độ cay của nước lẩu theo sở thích cá nhân. Nhân viên nhà hàng sẽ hỗ trợ điều chỉnh phù hợp.",
+      "keywords": ["điều chỉnh độ cay", "sở thích", "nhân viên hỗ trợ"]
+    }
+  },
+  "service_scripts": {
+    "greeting": {
+      "id": "initial_greeting",
+      "category": "chào hỏi",
+      "content": "Kịch bản chào hỏi: 'Dạ, Tian Long xin chào, Anh/Chị muốn đặt bàn hay đặt ship mang về để em tư vấn ạ'",
+      "keywords": ["chào hỏi", "đặt bàn", "đặt ship", "tư vấn"]
+    },
+    "booking_process": {
+      "id": "booking_script",
+      "category": "quy trình đặt bàn",
+      "content": "Thông tin cần thu thập khi đặt bàn: Tên, SĐT, Số lượng khách, Giờ đến, Ngày, Cơ sở. Sau khi thu thập sẽ xác nhận lại thông tin và thông báo giữ bàn 15 phút.",
+      "keywords": ["thông tin đặt bàn", "tên", "sdt", "số khách", "giờ", "ngày", "cơ sở"]
+    },
+    "menu_consultation": {
+      "id": "menu_advice",
+      "category": "tư vấn menu",
+      "content": "Khi tư vấn menu: Hỏi khách muốn dùng tại quán hay mang về để gửi link menu phù hợp. Menu tại quán và menu ship đều tại https://menu.tianlong.vn/",
+      "keywords": ["tư vấn menu", "tại quán", "mang về", "link menu"]
+    },
+    "delivery_process": {
+      "id": "delivery_script",
+      "category": "quy trình ship",
+      "content": "Thông tin cần thu thập khi đặt ship: Tên, SĐT, Giờ nhận hàng, Ngày nhận hàng, Địa chỉ, Bát đũa ăn 1 lần (nếu có). Phí ship tính theo phí giao hàng qua app.",
+      "keywords": ["đặt ship", "thông tin giao hàng", "phí ship", "app"]
+    }
+  },
+  "complaint_handling": {
+    "price_complaints": {
+      "id": "price_response",
+      "category": "phản hồi giá cả",
+      "content": "Khi khách phàn nàn về giá: 'Cảm ơn anh/chị đã góp ý. Mức giá này được khảo sát với các nhà hàng cùng concept. Đồ ăn được chế biến từ nguyên liệu tươi ngon đảm bảo chất lượng, qua nhiều khâu kiểm tra. Chế biến ngay tại quầy line mở để khách hàng giám sát quá trình.'",
+      "keywords": ["phàn nàn giá", "khảo sát", "chất lượng", "nguyên liệu tươi", "kiểm tra"]
+    },
+    "separate_pricing_complaints": {
+      "id": "pricing_structure_response",
+      "category": "phản hồi tính riêng",
+      "content": "Khi khách phàn nàn tính riêng nước lẩu: 'Tian long tính riêng nước lẩu và nhân nhúng vì mỗi phần có giá trị nguyên liệu và giá thành khác nhau. Việc này giúp khách hàng thoải mái lựa chọn theo sở thích và ngân sách.'",
+      "keywords": ["tính riêng", "nước lẩu", "nhân nhúng", "nguyên liệu", "lựa chọn"]
+    },
+    "deposit_complaints": {
+      "id": "deposit_response",
+      "category": "phản hồi đặt cọc",
+      "content": "Khi khách phàn nàn đặt cọc: 'Việc đặt cọc giúp nhà hàng giữ chỗ và chuẩn bị chu đáo hơn. Điều này giúp phục vụ khách hàng tốt nhất, đặc biệt vào giờ cao điểm.'",
+      "keywords": ["đặt cọc", "giữ chỗ", "chuẩn bị", "phục vụ", "cao điểm"]
+    },
+    "service_speed_complaints": {
+      "id": "service_speed_response",
+      "category": "phản hồi phục vụ chậm",
+      "content": "Khi khách phàn nàn phục vụ chậm: 'Em thay mặt quán xin lỗi về trải nghiệm chưa tốt này. Em báo quản lý check lại bàn ngay. Hôm nay lượng khách đông nên phục vụ có phần chậm trễ. Mong anh/chị thông cảm.'",
+      "keywords": ["phục vụ chậm", "xin lỗi", "quản lý", "khách đông", "thông cảm"]
+    }
+  },
+  "communication_rules": {
+    "address_format": {
+      "id": "addressing_customers",
+      "category": "xưng hô",
+      "content": "Quy tắc xưng hô: Nếu khách xưng 'chị/c' → gọi 'chị'. Nếu khách xưng 'anh/a' → gọi 'anh'. Nếu không rõ → dùng 'anh/chị'. Tự xưng là 'em' hoặc 'em Vy'.",
+      "keywords": ["xưng hô", "anh", "chị", "em vy", "lịch sự"]
+    },
+    "abbreviations": {
+      "id": "common_abbreviations",
+      "category": "từ viết tắt",
+      "content": "Hiểu các từ viết tắt: 'DC', 'đ/c', 'dchi' = địa chỉ. 'a' = anh. 'c' = chị. 'con số + nl' (3nl) = số người lớn. 'con số + te' (2te) = số trẻ em.",
+      "keywords": ["viết tắt", "địa chỉ", "người lớn", "trẻ em"]
+    },
+    "date_formats": {
+      "id": "date_handling",
+      "category": "xử lý ngày tháng",
+      "content": "Định dạng ngày tháng: dd/mm/yyyy, dd/mm, dd/mm/yy. Ngày trong tuần: 'Thứ Hai/Thứ 2', 'Thứ Ba/Thứ 3'... Ngày gần: 'Hôm nay', 'Ngày mai', 'Ngày kia', 'Cuối tuần này'.",
+      "keywords": ["định dạng ngày", "thứ", "hôm nay", "ngày mai"]
+    }
+  },
+  "additional_info": {
+    "children_friendly": {
+      "id": "kids_options",
+      "category": "trẻ em",
+      "content": "Về trẻ em: Nhà hàng là hình thức gọi món nên có thể gọi theo sức ăn của các bé. Có nhiều món phù hợp cho trẻ em như: khoai tây chiên, chân gà, dimsum.",
+      "keywords": ["trẻ em", "gọi món", "sức ăn", "khoai tây chiên", "chân gà", "dimsum"]
+    },
+    "portion_info": {
+      "id": "portion_details",
+      "category": "định lượng",
+      "content": "Về định lượng đĩa thịt: Không thể tiết lộ định lượng cụ thể vì liên quan đến cost của bếp. Tuy nhiên hình ảnh đều là ảnh chụp thực tế.",
+      "keywords": ["định lượng", "cost", "ảnh thực tế"]
+    },
+    "birthday_decoration": {
+      "id": "birthday_service",
+      "category": "trang trí sinh nhật",
+      "content": "Dịch vụ trang trí sinh nhật: Có các màu bóng bạc mix với hồng, vàng hoặc xanh dương. Bảng gỗ ghép chữ tùy chọn theo yêu cầu khách hàng.",
+      "keywords": ["sinh nhật", "trang trí", "bóng bay", "bảng gỗ", "ghép chữ"]
+    }
+  }
+}

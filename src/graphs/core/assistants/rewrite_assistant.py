@@ -23,7 +23,7 @@ class RewriteAssistant(BaseAssistant):
                     "• 'nhà hàng này' → 'nhà hàng Tian Long'\n"
                     "• Luôn thêm tên thương hiệu vào context\n\n"
                     "2️⃣ **KEYWORD ENHANCEMENT theo chủ đề:**\n"
-                    "• **Chi nhánh/Địa chỉ:** → 'Tian Long có bao nhiêu chi nhánh', 'địa chỉ chi nhánh Tian Long', 'cơ sở Tian Long ở đâu'\n"
+                    "• **Chi nhánh/Địa chỉ:** → 'thông tin chi nhánh Tian Long', 'Tian Long có bao nhiêu chi nhánh', 'địa chỉ cơ sở Tian Long', 'chi nhánh Tian Long ở đâu', 'locations Tian Long'\n"
                     "• **Menu/Món ăn:** → 'thực đơn Tian Long', 'combo lẩu bò', 'giá món ăn Tian Long'\n" 
                     "• **Khuyến mãi:** → 'ưu đãi Tian Long', 'chương trình khuyến mãi', 'giảm giá sinh nhật'\n"
                     "• **Dịch vụ:** → 'dịch vụ Tian Long', 'đặt bàn', 'giao hàng'\n\n"
@@ -35,9 +35,11 @@ class RewriteAssistant(BaseAssistant):
                     "Domain: {domain_context}\n"
                     "Conversation: {conversation_summary}\n\n"
                     "**VÍ DỤ CHUYỂN ĐỔI:**\n"
-                    "• 'cho anh hỏi bên mình có bao nhiêu chi nhánh' → 'Tian Long có bao nhiêu chi nhánh và ở đâu'\n"
+                    "• 'cho anh hỏi bên mình có bao nhiêu chi nhánh' → 'thông tin chi nhánh Tian Long có bao nhiêu cơ sở'\n"
                     "• 'quán có những món gì' → 'thực đơn món ăn Tian Long có gì'\n"
-                    "• 'có ưu đãi gì không' → 'chương trình khuyến mãi ưu đãi Tian Long'\n\n"
+                    "• 'có ưu đãi gì không' → 'chương trình khuyến mãi ưu đãi Tian Long'\n"
+                    "• 'địa chỉ cơ sở nào' → 'thông tin địa chỉ chi nhánh Tian Long ở đâu'\n"
+                    "• 'vincom thảo điền' → 'chi nhánh Tian Long Vincom Thảo Điền địa chỉ'\n\n"
                     "**YÊU CẦU:** Viết lại để tăng semantic similarity với tài liệu trong database."
                 ),
                 (

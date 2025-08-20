@@ -24,7 +24,7 @@ def test_combo_documents_image_urls():
     try:
         # Initialize QdrantStore
         retriever = QdrantStore(
-            collection_name="aladin_maketing"
+            collection_name="tianlong_marketing"
         )
         
         # Test query for combo images

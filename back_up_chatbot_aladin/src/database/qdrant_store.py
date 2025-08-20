@@ -30,7 +30,7 @@ class QdrantStore:
         self,
         embedding_model: str = "models/text-embedding-004",
         output_dimensionality_query: int = 768,
-        collection_name: str = "langgraph_store",
+        collection_name: str = "tianlong_marketing",
     ) -> None:
         self.qdrant_client = QdrantClient(
             host=os.getenv("QDRANT_HOST", "localhost"),

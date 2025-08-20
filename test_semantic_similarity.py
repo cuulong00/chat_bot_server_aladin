@@ -110,7 +110,7 @@ def test_vector_search_performance():
     print("🔍 VECTOR SEARCH PERFORMANCE TEST")
     print("=" * 80)
     
-    qs = QdrantStore(collection_name='aladin_maketing')
+    qs = QdrantStore(collection_name='tianlong_marketing')
     
     test_queries = [
         "cho anh hỏi bên mình có bao nhiêu chi nhánh",  # Original failing
@@ -124,7 +124,7 @@ def test_vector_search_performance():
         print(f"\n{i}. Testing: '{query}'")
         print("-" * 60)
         
-        results = qs.search(namespace='maketing', query=query, limit=5)
+        results = qs.search(namespace='marketing', query=query, limit=5)
         
         found_branch_info = False
         for j, (key, value, score) in enumerate(results, 1):

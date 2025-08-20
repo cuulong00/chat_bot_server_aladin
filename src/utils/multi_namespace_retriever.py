@@ -53,7 +53,7 @@ class MultiNamespaceRetriever:
         self, 
         qdrant_store: QdrantStore, 
         namespaces: List[str], 
-        default_namespace: str = "maketing",
+        default_namespace: str = "marketing",
         max_workers: int = 4,
         deduplication_threshold: float = 0.95
     ):

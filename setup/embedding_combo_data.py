@@ -174,7 +174,7 @@ def main():
     )
     parser.add_argument(
         "--collection",
-        default="aladin_maketing",
+        default="tianlong_marketing",
         help="Qdrant collection name"
     )
     parser.add_argument(

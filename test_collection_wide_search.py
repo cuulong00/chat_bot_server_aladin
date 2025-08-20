@@ -34,7 +34,7 @@ def test_collection_wide_search():
         logger.info("🚀 Starting collection-wide search test")
         
         # Initialize Qdrant store
-        collection_name = "aladin_maketing"
+        collection_name = "tianlong_marketing"
         qdrant_store = QdrantStore(collection_name=collection_name)
         
         # Test queries liên quan đến ảnh
@@ -91,7 +91,7 @@ def test_collection_wide_search():
                 # Compare with namespace-specific searches
                 logger.info("\n   🎯 Comparison with namespace-specific searches:")
                 
-                for namespace in ['maketing', 'faq', 'images']:
+                for namespace in ['marketing', 'faq', 'images']:
                     try:
                         ns_results = qdrant_store.search(
                             namespace=namespace,
@@ -134,7 +134,7 @@ def test_collection_wide_search():
             logger.info(f"🖼️  Total documents with images: {image_count}")
             
             # Check if all expected domains are present
-            expected_domains = ['maketing', 'faq', 'images']
+            expected_domains = ['marketing', 'faq', 'images']
             missing_domains = [d for d in expected_domains if d not in domain_stats]
             
             if missing_domains:

@@ -33,14 +33,14 @@ class MultiNamespaceTestSuite:
         
         self.retriever = MultiNamespaceRetriever(
             qdrant_store=self.store,
-            namespaces=["maketing", "faq"],
-            default_namespace="maketing"
+            namespaces=["marketing", "faq"],
+            default_namespace="marketing"
         )
         
         self.test_queries = [
             {
                 "query": "cho anh hỏi bên mình có bao nhiêu chi nhánh",
-                "expected_namespaces": ["maketing"],
+                "expected_namespaces": ["marketing"],
                 "strategy": "fallback",
                 "description": "Location query - should find branch info"
             },
@@ -52,13 +52,13 @@ class MultiNamespaceTestSuite:
             },
             {
                 "query": "làm sao để đăng ký thẻ thành viên",
-                "expected_namespaces": ["faq", "maketing"],
+                "expected_namespaces": ["faq", "marketing"],
                 "strategy": "comprehensive",
                 "description": "Ambiguous - might be in both namespaces"
             },
             {
                 "query": "thực đơn có những món gì",
-                "expected_namespaces": ["maketing"],
+                "expected_namespaces": ["marketing"],
                 "strategy": "fallback",
                 "description": "Menu question - marketing content"
             },
@@ -70,7 +70,7 @@ class MultiNamespaceTestSuite:
             },
             {
                 "query": "tôi muốn biết về Tian Long",
-                "expected_namespaces": ["maketing", "faq"],
+                "expected_namespaces": ["marketing", "faq"],
                 "strategy": "comprehensive",
                 "description": "General query - search everywhere"
             }
@@ -135,7 +135,7 @@ class MultiNamespaceTestSuite:
                     results = self.retriever.search_all_namespaces(query, limit_per_namespace=5)
                 else:
                     results = self.retriever.search_with_fallback(
-                        query, primary_namespace="maketing", limit=10
+                        query, primary_namespace="marketing", limit=10
                     )
                 
                 elapsed = (time.time() - start_time) * 1000
@@ -170,7 +170,7 @@ class MultiNamespaceTestSuite:
         test_query = "cho anh hỏi bên mình có bao nhiêu chi nhánh"
         strategies = [
             ("fallback", lambda: self.retriever.search_with_fallback(
-                test_query, "maketing", limit=10
+                test_query, "marketing", limit=10
             )),
             ("comprehensive", lambda: self.retriever.search_all_namespaces(
                 test_query, limit_per_namespace=5
@@ -293,7 +293,7 @@ class MultiNamespaceTestSuite:
             
             try:
                 results = self.retriever.search_with_fallback(
-                    query, "maketing", limit=5
+                    query, "marketing", limit=5
                 )
                 print(f"   ✅ Handled gracefully: {len(results)} results")
                 
@@ -319,7 +319,7 @@ class MultiNamespaceTestSuite:
         for i, query in enumerate(queries):
             try:
                 results = self.retriever.search_with_fallback(
-                    query, "maketing", limit=8
+                    query, "marketing", limit=8
                 )
                 successful += 1
                 

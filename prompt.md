@@ -1,4 +1,4 @@
-đánh giá câu trả lời trong ảnh đính kèm, và tài liệu embedding maketing_data.txt, sau đó review lại prompt hướng dẫn AI trả lời trong file adaptive_rag_graph.py cụ thể là biến generation_prompt. Tham khảo file embedding dữ liệu để hiểu cấu trúc dữ liệu được embedding vào vector database
+đánh giá câu trả lời trong ảnh đính kèm, và tài liệu embedding marketing_data.txt, sau đó review lại prompt hướng dẫn AI trả lời trong file adaptive_rag_graph.py cụ thể là biến generation_prompt. Tham khảo file embedding dữ liệu để hiểu cấu trúc dữ liệu được embedding vào vector database
 1. Review câu trả lời đã đạt tiêu chuẩn chưa?
 2. Nếu câu trả lời chưa đạt tiêu chuẩn thì hãy tìm nguyên nhân vì sao?
 3. Sau khi tìm ra nguyên nhân hãy đưa ra phương án xử lý chi tiết

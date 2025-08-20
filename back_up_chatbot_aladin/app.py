@@ -42,7 +42,7 @@ def compile_graph(checkpointer: BaseCheckpointSaver):
     llm_contextualize = ChatOpenAI(model="gpt-4o-mini", temperature=0)
     
     retriever = QdrantStore(
-        collection_name="accounting_store", embedding_model="text-embedding-3-small"
+        collection_name="tianlong_marketing", embedding_model="text-embedding-3-small"
     )
     
     # Domain configuration for restaurant/accounting

@@ -464,7 +464,7 @@ def create_adaptive_rag_graph(
             logging.info(f"   Search limit: {limit}")
             
             # Direct search in collection without namespace filter
-            # This allows finding documents from all namespaces (maketing, faq, images)
+            # This allows finding documents from all namespaces (marketing, faq, images)
             documents = retriever.search(
                 query=question,
                 limit=limit,
@@ -520,7 +520,7 @@ def create_adaptive_rag_graph(
             # Fallback to basic single-namespace search on error
             try:
                 logging.warning(f"⚠️ Falling back to basic search in default namespace")
-                default_namespace = DOMAIN.get("namespace", "maketing")
+                default_namespace = DOMAIN.get("namespace", "marketing")
                 documents = retriever.search(namespace=default_namespace, query=question, limit=10)
                 cleaned_documents = clean_documents_remove_embeddings(documents)
                 
@@ -538,98 +538,52 @@ def create_adaptive_rag_graph(
     def grade_documents_node(state: RagState, config: RunnableConfig):
         logging.info("---NODE: GRADE DOCUMENTS---")
 
-        # Get the question from state using consistent method
+        # Get question and documents from state
         question = get_current_user_question(state)
+        documents = state.get("documents", [])
 
-        # Ensure messages is valid
-        if not question:
-            logging.error("Invalid message for document grading")
+        # Validate inputs
+        if not question or not documents:
+            logging.info("No question or documents to grade")
             return {"documents": []}
 
-        logging.debug(f"grade_documents_node->question -> {question}")
-
-        documents = state["documents"]
-        
-        if not documents:
-            logging.debug(f"Khong tim duoc tai lieu nao")
-            return {"documents": []}
-
-        # Limit number of documents to grade to prevent timeout
-        max_docs_to_grade = 8  # Reduce from 12 to prevent timeout
-        documents_to_grade = documents[:max_docs_to_grade]
-        remaining_docs = documents[max_docs_to_grade:]
-        
-        logging.info(f"Grading {len(documents_to_grade)} documents, including {len(remaining_docs)} without grading")
+        logging.info(f"Grading {len(documents)} documents for relevance")
 
         filtered_docs = []
-        combo_docs_found = []
         
-        # First pass: Identify combo documents in all documents
-        for d in documents:
-            if isinstance(d, tuple) and len(d) > 1 and isinstance(d[1], dict):
-                doc_content = d[1].get("content", "")
-                if ('combo' in doc_content.lower() and 
-                    ('tian long' in doc_content.lower() or 'menu' in doc_content.lower()) and
-                    ('441,000' in doc_content or '668,000' in doc_content or 'image_url' in str(d[1]))):
-                    combo_docs_found.append(d)
-                    logging.info(f"   🎯 COMBO DOCUMENT IDENTIFIED: {doc_content[:100]}...")
-        
-        # Check if query is asking for images/combo
-        query_wants_images = any(keyword in question.lower() for keyword in ['ảnh', 'image', 'photo', 'combo', 'menu'])
-        
-        if query_wants_images and combo_docs_found:
-            logging.info(f"   🚨 IMAGE QUERY DETECTED: Force including {len(combo_docs_found)} combo documents")
-            filtered_docs.extend(combo_docs_found)
-        
-        # Grade limited number of documents
-        for i, d in enumerate(documents_to_grade):
+        # Grade each document for relevance
+        for i, doc in enumerate(documents):
             try:
-                logging.debug(f"Grading document {i+1}/{len(documents_to_grade)}")
-                
-                if isinstance(d, tuple) and len(d) > 1 and isinstance(d[1], dict):
-                    doc_content = d[1].get("content", "")
+                # Extract document content
+                if isinstance(doc, tuple) and len(doc) > 1 and isinstance(doc[1], dict):
+                    doc_content = doc[1].get("content", "")
                 else:
                     logging.warning(f"Skipping invalid document format at index {i}")
                     continue
-                    
+                
+                # Simple query for document grading
                 query_grade_document = {
                     "document": doc_content,
                     "messages": question,
                     "user": state.get("user", {}),
+                    "current_date": datetime.now().strftime("%Y-%m-%d"),
+                    "domain_context": "Nhà hàng lẩu bò tươi Triều Châu Tian Long - Thông tin chi nhánh, menu, dịch vụ",
+                    "conversation_summary": state.get("conversation_summary", ""),
                 }
-                logging.debug(f"query_grade_document:{query_grade_document}")
                 
-                score = doc_grader_assistant(
-                    query_grade_document,
-                    config,
-                )
+                # Get relevance score from assistant
+                score = doc_grader_assistant(query_grade_document, config)
                 
-                logging.debug(f"score:{score}")
+                # Include document if relevant
                 if score.binary_score.lower() == "yes":
-                    filtered_docs.append(d)
+                    filtered_docs.append(doc)
                         
             except Exception as e:
                 logging.error(f"Error grading document {i+1}: {e}")
-                # Include document if grading fails to avoid losing content
-                filtered_docs.append(d)
-                continue
-        
-        # Include remaining documents only if we already have some relevant docs;
-        # otherwise keep empty to trigger rewrite flow.
-        if filtered_docs:
-            filtered_docs.extend(remaining_docs)
-        
-        # DETAILED LOGGING for documents passed to next node
-        logging.info(f"📋 GRADE_DOCUMENTS OUTPUT ANALYSIS:")
-        for i, doc in enumerate(filtered_docs):
-            if isinstance(doc, tuple) and len(doc) > 1 and isinstance(doc[1], dict):
-                doc_content = doc[1].get("content", "")[:200]
-                logging.info(f"   📄 Final Doc {i+1}: {doc_content}...")
+                # Include document on error to avoid losing potentially relevant content
+                filtered_docs.append(doc)
 
-        logging.info(
-            f"Finished grading. {len(filtered_docs)} total documents ({len(filtered_docs) - len(remaining_docs)} graded, {len(remaining_docs) if filtered_docs else 0} auto-included)."
-        )
-
+        logging.info(f"Finished grading: {len(filtered_docs)}/{len(documents)} documents are relevant")
         return {"documents": filtered_docs}
 
     def rewrite(state: RagState, config: RunnableConfig):

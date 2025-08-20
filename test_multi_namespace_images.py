@@ -36,12 +36,12 @@ def test_multi_namespace_search():
         logger.info("🚀 Starting multi-namespace search test for image-related queries")
         
         # Initialize Qdrant store
-        collection_name = "aladin_maketing"
+        collection_name = "tianlong_marketing"
         qdrant_store = QdrantStore(collection_name=collection_name)
         
         # Test namespaces
-        namespaces = ["maketing", "faq", "images"]
-        default_namespace = "maketing"
+        namespaces = ["marketing", "faq", "images"]
+        default_namespace = "marketing"
         
         logger.info(f"📋 Testing namespaces: {namespaces}")
         logger.info(f"🎯 Default namespace: {default_namespace}")

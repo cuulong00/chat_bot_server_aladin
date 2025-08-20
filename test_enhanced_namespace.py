@@ -49,7 +49,7 @@ def test_enhanced_classification():
         print(f"   📈 Limit: {result.get('retrieval_limit', 'unknown')}")
         
         # Determine namespace based on old vs new logic
-        old_namespace = "faq" if result['primary_category'] == "faq" else "maketing"
+        old_namespace = "faq" if result['primary_category'] == "faq" else "marketing"
         new_strategy = result.get('search_strategy', 'fallback')
         
         print(f"   📌 Old Logic: {old_namespace} only")
@@ -71,8 +71,8 @@ def test_multi_namespace_retrieval():
     # Initialize multi-namespace retriever
     multi_retriever = MultiNamespaceRetriever(
         qdrant_store=store,
-        namespaces=["faq", "maketing"],
-        default_namespace="maketing"
+        namespaces=["faq", "marketing"],
+        default_namespace="marketing"
     )
     
     # Test queries with different strategies
@@ -107,7 +107,7 @@ def test_multi_namespace_retrieval():
         if strategy == "comprehensive":
             results = multi_retriever.search_all_namespaces(query, limit_per_namespace=4)
         elif strategy == "fallback":
-            primary_ns = "maketing"  # For location queries
+            primary_ns = "marketing"  # For location queries
             results = multi_retriever.search_with_fallback(
                 query, primary_ns, limit=10, fallback_threshold=0.65
             )

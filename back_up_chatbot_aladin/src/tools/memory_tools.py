@@ -13,7 +13,7 @@ load_dotenv()
 # Khởi tạo clients
 QDRANT_HOST = os.getenv("QDRANT_HOST", "69.197.187.234")
 QDRANT_PORT = int(os.getenv("QDRANT_PORT", "6333"))
-USER_MEMORY_COLLECTION = os.getenv("USER_MEMORY_COLLECTION", "aladin_maketing")
+USER_MEMORY_COLLECTION = os.getenv("USER_MEMORY_COLLECTION", "tianlong_marketing")
 USER_MEMORY_NAMESPACE = os.getenv("USER_MEMORY_NAMESPACE", "user_ref")
 
 qdrant_client = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT)

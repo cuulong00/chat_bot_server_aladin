@@ -30,7 +30,7 @@ class QdrantStore:
         self,
         embedding_model: str = "models/text-embedding-004",
         output_dimensionality_query: int = 768,
-        collection_name: str = "langgraph_store",
+        collection_name: str = "tianlong_marketing",
     ) -> None:
         self.qdrant_client = QdrantClient(
             host=os.getenv("QDRANT_HOST", "localhost"),
@@ -176,6 +176,7 @@ class QdrantStore:
                 with_payload=True,
                 query_filter=query_filter,
             )
+            
             # Print concise summary of results without embeddings or full payloads
             try:
                 summary = []
@@ -247,3 +248,32 @@ def search_user_preferences(query: str) -> str:
         return "Thông tin sở thích của bạn:\n" + "\n".join(lines)
     except Exception as e:  # noqa: BLE001
         return f"Lỗi khi tìm kiếm sở thích: {e}"
+
+
+@tool
+def search_marketing_content(query: str) -> str:
+    """Tìm kiếm thông tin marketing (namespace 'tianlong_marketing') và trả về top 3 kết quả định dạng danh sách."""
+    try:
+        results = qdrant_store.search(namespace="tianlong_marketing", query=query, limit=3)
+        if not results:
+            return "Không tìm thấy thông tin marketing nào liên quan đến câu hỏi của bạn."
+        lines = []
+        for _, value, score in results:
+            # Extract original content or use full content
+            content = ""
+            if isinstance(value, dict):
+                # Try to get original content first, then fallback to content
+                content = value.get("original_content") or value.get("content", "")
+                # Add category if available
+                category = value.get("category", "")
+                if category and category not in content:
+                    content = f"[{category}] {content}" if content else f"[{category}]"
+            else:
+                content = str(value)
+            
+            lines.append(f"- {content} (độ liên quan: {score:.2f})")
+        return "Thông tin marketing:\n" + "\n".join(lines)
+    except Exception as e:  # noqa: BLE001
+        return f"Lỗi khi tìm kiếm thông tin marketing: {e}"
+
+

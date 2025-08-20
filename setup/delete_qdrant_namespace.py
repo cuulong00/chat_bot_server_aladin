@@ -5,9 +5,9 @@ from qdrant_client.models import Filter, FieldCondition, MatchValue
 # Lấy thông tin kết nối từ biến môi trường hoặc sửa trực tiếp tại đây
 QDRANT_HOST = os.getenv("QDRANT_HOST", "69.197.187.234")
 QDRANT_PORT = int(os.getenv("QDRANT_PORT", "6333"))
-COLLECTION_NAME = "aladin_maketing"  # Đổi tên collection nếu cần
-NAMESPACE = "images"  # Đổi namespace cần xóa
-
+COLLECTION_NAME = "tianlong_marketing"  # Đổi tên collection nếu cần
+#NAMESPACE = "images"  # Đổi namespace cần xóa
+NAMESPACE = "marketing"  # Đổi namespace cần xóa
 client = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT)
 
 def delete_by_namespace(collection_name: str, namespace: str):

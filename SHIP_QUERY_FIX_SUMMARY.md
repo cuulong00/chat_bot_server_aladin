@@ -84,7 +84,7 @@ Với câu hỏi **"anh muốn ship mang về có được không"**:
    - Gọi tên khách: "anh Dương" 
 ```
 
-## 📚 Dữ liệu ship có sẵn trong `maketing_data.txt`
+## 📚 Dữ liệu ship có sẵn trong `marketing_data.txt`
 
 ```plaintext
 ## KỊCH BẢN ĐẶT SHIP MANG VỀ

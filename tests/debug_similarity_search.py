@@ -59,7 +59,7 @@ def main():
         sys.exit(2)
 
     # Domain-driven defaults
-    collection_name = args.collection or MARKETING_DOMAIN.get("collection_name", "aladin_maketing")
+    collection_name = args.collection or MARKETING_DOMAIN.get("collection_name", "tianlong_marketing")
     embedding_model = MARKETING_DOMAIN.get("embedding_model", "models/text-embedding-004")
     output_dim = MARKETING_DOMAIN.get("output_dimensionality_query", 768)
 
@@ -71,7 +71,7 @@ def main():
         faq_ns = os.getenv("FAQ_NAMESPACE") or MARKETING_DOMAIN.get("faq_namespace")
         location_ns = os.getenv("LOCATION_NAMESPACE") or MARKETING_DOMAIN.get("location_namespace")
         # Add a few common guesses
-        candidates = [location_ns, faq_ns, default_ns, "location", "faq", "maketing"]
+        candidates = [location_ns, faq_ns, default_ns, "location", "faq", "marketing"]
 
     namespaces = uniq(candidates)
     if not namespaces:

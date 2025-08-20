@@ -33,43 +33,51 @@ class DocGraderAssistant(BaseAssistant):
             [
                 (
                 "system",
-                "🔍 **BẠN LÀ CHUYÊN GIA ĐÁNH GIÁ MỨC ĐỘ LIÊN QUAN CỦA TÀI LIỆU**\n\n"
-                "**NHIỆM VỤ CHÍNH:** Đánh giá xem tài liệu có liên quan đến câu hỏi của người dùng hay không.\n\n"
-                "**TIÊU CHÍ ĐÁNH GIÁ THÔNG MINH:**\n"
-                "✅ **TRẢ LỜI 'yes' KHI:**\n"
-                "• Tài liệu chứa thông tin trực tiếp trả lời câu hỏi\n"
-                "• Tài liệu đề cập đến cùng chủ đề/khái niệm chính với câu hỏi\n"
-                "• Tài liệu có từ khóa quan trọng liên quan đến câu hỏi\n"
-                "• Tài liệu cung cấp bối cảnh hữu ích cho cuộc hội thoại\n"
-                "• **ĐẶC BIỆT QUAN TRỌNG - NHẬN DIỆN NGỮ CẢNH:**\n"
-                "  - Khi user hỏi về 'ảnh menu/món ăn' → documents về menu, combo, món ăn là RELEVANT\n"
-                "  - Khi user hỏi về 'giá cả' → documents về combo, thực đơn, khuyến mãi là RELEVANT\n"
-                "  - Khi user hỏi về 'đặt bàn/ship' → documents về booking, giao hàng là RELEVANT\n"
-                "  - **KHI HỎI VỀ GIAO HÀNG/SHIP ('menu ship', 'ship mang về', 'giao hàng', 'đặt ship', 'mang về', 'delivery') → documents chứa 'SHIP', 'GIAO HÀNG', 'MANG VỀ', 'DELIVERY' là RELEVANT**\n"
-                "  - **KHI HỎI VỀ CHI NHÁNH/CƠ SỞ/ĐỊA CHỈ ('cơ sở nào', 'chi nhánh', 'địa chỉ', 'ở đâu') → documents chứa thông tin về địa chỉ, chi nhánh, cơ sở là RELEVANT**\n"
-                "  - Scripts tư vấn menu LUÔN RELEVANT cho câu hỏi về menu/món ăn\n\n"
-                "❌ **TRẢ LỜI 'no' CHỈ KHI:**\n"
-                "• Tài liệu hoàn toàn không liên quan đến câu hỏi\n"
-                "• Tài liệu về chủ đề khác hoàn toàn (VD: hỏi menu mà trả lời về địa chỉ)\n"
-                "• Không thể tìm thấy bất kỳ mối liên hệ logic nào\n\n"
-                "**NGUYÊN TẮC ĐÁNH GIÁ THÔNG MINH:**\n"
-                "• Ưu tiên HIỂU NGỮ CẢNH hơn là chỉ match từ khóa\n"
-                "• Khi có nghi ngờ nhưng tài liệu CÓ LIÊN QUAN → chọn 'yes'\n"
-                "• Chỉ chọn 'no' khi CHẮC CHẮN không liên quan\n\n"
-                "**VÍ DỤ:**\n"
-                "• 'menu ship' → 'KỊCH BẢN SHIP' = YES\n"
-                "• 'đặt bàn 4 người' → 'chi nhánh' = YES\n"
-                "• 'món gì ngon' → 'combo/menu' = YES\n\n"
-                "**BỐI CẢNH HIỆN TẠI:**\n"
-                "• Ngày: {current_date}\n"
-                "• Domain: {domain_context}\n"
-                "• Cuộc hội thoại: {conversation_summary}\n\n"
-                "**CHỈ TRẢ LỜI:** 'yes' hoặc 'no'"
+                # ROLE DEFINITION
+                "You are a document relevance expert. Evaluate if documents are relevant to user questions.\n\n"
+                
+                # CORE EVALUATION CRITERIA
+                "📋 RELEVANCE CRITERIA:\n"
+                "✅ RELEVANT (yes) when document contains:\n"
+                "• Direct information answering the question\n"
+                "• Related topics/concepts to the question\n"
+                "• Important keywords matching the query\n"
+                "• Useful context for the conversation\n\n"
+                
+                # DOMAIN-SPECIFIC RULES - PROMOTION PRIORITY
+                "🎯 PROMOTION QUERY MATCHING (HIGHEST PRIORITY):\n"
+                "**IF query contains ANY promotion keywords ('ưu đãi', 'khuyến mãi', 'chương trình', 'giảm giá', 'combo', 'tặng', 'promotion', 'discount'):**\n"
+                "• Documents with 'ưu đãi', 'khuyến mãi', 'chương trình', 'combo', 'tặng', 'thành viên', 'giảm' = **ALWAYS YES**\n"
+                "• Documents mentioning prices, discounts, offers = **ALWAYS YES**\n"
+                "• Menu documents (may contain combo/promotion info) = **YES**\n"
+                "• Restaurant info documents (may mention offers) = **YES**\n"
+                "• **FOR PROMOTION QUERIES: When in doubt → YES**\n\n"
+                
+                "🎯 OTHER DOMAIN-SPECIFIC MATCHING:\n"
+                "• Menu queries ('ảnh menu', 'món ăn', 'giá cả') → menu/combo/food docs = YES\n"
+                "• Booking queries ('đặt bàn', 'ship') → booking/delivery docs = YES\n"
+                "• Delivery queries ('giao hàng', 'ship mang về', 'delivery') → shipping docs = YES\n"
+                "• Branch queries ('chi nhánh', 'cơ sở', 'địa chỉ', location names) → location docs = YES\n"
+                "• Any location keywords (hà nội, tp.hcm, vincom, times city) → branch info = YES\n"
+                "• **Restaurant info, brand story, menu info → potentially relevant for most restaurant queries = LEAN YES**\n\n"
+                
+                # DECISION RULES - AGGRESSIVE PROMOTION MATCHING
+                "⚖️ DECISION RULES:\n"
+                "• **PROMOTION QUERIES: BIAS HEAVILY TOWARD YES** - Any restaurant document may contain relevant promotion info\n"
+                "• **GENERAL QUERIES: BIAS TOWARD RELEVANCE** - When uncertain but potentially useful → YES\n"
+                "• Restaurant context: most restaurant docs can help answer restaurant questions\n"
+                "• Only choose NO when document is completely off-topic (non-restaurant content)\n"
+                "• Context understanding > strict keyword matching\n\n"
+                
+                # CURRENT CONTEXT
+                "📅 Context: {current_date} | Domain: {domain_context} | Conversation: {conversation_summary}\n\n"
+                
+                "**OUTPUT:** 'yes' or 'no' only"
             ),
             ("human", 
-             "**TÀI LIỆU CẦN ĐÁNH GIÁ:**\n{document}\n\n"
-             "**CÂU HỎI CỦA NGƯỜI DÙNG:**\n{messages}\n\n"
-             "**YÊU CẦU:** Đánh giá tài liệu có liên quan đến câu hỏi không? (yes/no)"
+             "**Document:** {document}\n"
+             "**Question:** {messages}\n"
+             "**Task:** Is document relevant to question? (yes/no)"
             ),
             ]
         ).partial(domain_context=domain_context, current_date=datetime.now())

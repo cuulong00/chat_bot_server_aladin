@@ -54,7 +54,7 @@ The `DirectAnswerAssistant` system prompt already contains:
 ### 4. Collection Configuration Already Correct ✅
 Verified that `app.py` uses correct collection configuration:
 - ✅ Uses `MARKETING_DOMAIN["collection_name"]` 
-- ✅ MARKETING_DOMAIN configured with `"collection_name": "aladin_maketing"`
+- ✅ MARKETING_DOMAIN configured with `"collection_name": "tianlong_marketing"`
 - ✅ Matches the marketing domain for restaurant searches
 
 ## Testing Results ✅

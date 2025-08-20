@@ -15,7 +15,7 @@ def test_doc_grader_ship_relevance():
     """Test DocGrader with ship/delivery related documents"""
     print("🧪 Testing DocGrader ship query relevance...")
     
-    # Sample ship-related document from maketing_data.txt
+    # Sample ship-related document from marketing_data.txt
     ship_document = """## KỊCH BẢN ĐẶT SHIP MANG VỀ
 
 ### Hỏi địa chỉ
