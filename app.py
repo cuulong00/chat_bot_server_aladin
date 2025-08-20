@@ -43,18 +43,18 @@ def compile_graph(checkpointer: BaseCheckpointSaver):
     # llm_contextualize = ChatOpenAI(model="gpt-4o-mini", streaming=True, temperature=0.1)
 
 
-    accounting_llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash-latest", temperature=0.5)
+    accounting_llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash-latest", temperature=0)
     llm_grade_documents = ChatGoogleGenerativeAI(
         model="gemini-1.5-flash-latest", temperature=0
     )
-    llm_router = ChatGoogleGenerativeAI(model="gemini-1.5-flash-latest", temperature=0.5)
-    llm_rewrite = ChatGoogleGenerativeAI(model="gemini-1.5-flash-latest", temperature=0.5)
-    llm_generate_direct = ChatGoogleGenerativeAI(model="gemini-1.5-flash-latest", temperature=0.5)
+    llm_router = ChatGoogleGenerativeAI(model="gemini-1.5-flash-latest", temperature=0)
+    llm_rewrite = ChatGoogleGenerativeAI(model="gemini-1.5-flash-latest", temperature=0)
+    llm_generate_direct = ChatGoogleGenerativeAI(model="gemini-1.5-flash-latest", temperature=0)
     llm_hallucination_grader = ChatGoogleGenerativeAI(
         model="gemini-1.5-flash-latest", temperature=0
     )
-    llm_summarizer = ChatGoogleGenerativeAI(model="gemini-1.5-flash-latest", temperature=0.5)
-    llm_contextualize = ChatGoogleGenerativeAI(model="gemini-1.5-flash-latest", temperature=0.5)
+    llm_summarizer = ChatGoogleGenerativeAI(model="gemini-1.5-flash-latest", temperature=0)
+    llm_contextualize = ChatGoogleGenerativeAI(model="gemini-1.5-flash-latest", temperature=0)
 
     
     retriever = QdrantStore(

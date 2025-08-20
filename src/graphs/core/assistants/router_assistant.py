@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Literal
+from typing import Literal, Optional, Dict, Any
+import logging
 
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import Runnable
@@ -9,70 +10,255 @@ from pydantic import BaseModel, Field
 
 from src.graphs.core.assistants.base_assistant import BaseAssistant
 
+logger = logging.getLogger(__name__)
+
 
 class RouteQuery(BaseModel):
     """Pydantic model for the output of the router."""
     datasource: Literal["vectorstore", "web_search", "direct_answer", "process_document"] = Field(
         ...,
-        description="Given a user question, choose to route it to web search, a vectorstore, to answer directly, or to process documents/images.",
+        description="Route to appropriate data source based on query type",
+    )
+    confidence: Optional[float] = Field(
+        None, 
+        ge=0.0, 
+        le=1.0,
+        description="Confidence score for the routing decision (0.0-1.0)"
+    )
+    reasoning: Optional[str] = Field(
+        None,
+        description="Brief explanation of why this route was chosen"
     )
 
 
 class RouterAssistant(BaseAssistant):
     """
-    An assistant that routes the user's query to the appropriate tool or data source.
+    An assistant that routes user queries to appropriate tools or data sources.
+    
+    Improvements:
+    - Cleaner prompt structure with examples
+    - Better error handling
+    - Logging for debugging
+    - Fallback mechanisms
+    - Confidence scoring
     """
-    def __init__(self, llm: Runnable, domain_context: str, domain_instructions: str):
-        prompt = ChatPromptTemplate.from_messages(
-            [
-                (
-                    "system",
-                    "Current date for context is: {current_date}\n"
-                    "You are a highly efficient routing agent about {domain_context}. Your ONLY job: return exactly one token from this set: vectorstore | web_search | direct_answer | process_document.\n\n"
-                    "DECISION ALGORITHM (execute in order, stop at first match):\n"
-                    "1. PROCESS_DOCUMENT (DOCUMENT/IMAGE ANALYSIS) -> Choose 'process_document' if the user:\n"
-                    "   - **HIGHEST PRIORITY: Message contains attachment metadata like '[HÌNH ẢNH] URL:', '[VIDEO] URL:', '[TỆP TIN] URL:' - ALWAYS route to process_document**, OR\n"
-                    "   - Message contains '📸 **Phân tích hình ảnh:**' (pre-analyzed content), OR\n"
-                    "   - Sends or mentions documents, files, attachments, images that need analysis (mentions of 'hình ảnh', 'ảnh', 'photo', 'image', 'xem được', 'trong hình', 'giao diện', 'tài liệu', 'file', 'đính kèm'), OR\n"
-                    "   - Asks about content in images, photos, documents they have sent, OR\n"
-                    "   - Questions that reference visual or document content that requires analysis tools rather than knowledge retrieval, OR\n"
-                    "   - Requests analysis or description of attached media content.\n"
-                    "   Rationale: these require specialized document/image processing capabilities and tools.\n"
-                    "2. DIRECT_ANSWER (🔥 PREFERENCES/ACTION/CONFIRMATION/SMALL TALK) -> Choose 'direct_answer' if the user is:\n"
-                    "   - **🔥 HIGHEST PRIORITY: Expressing preferences/likes/dislikes** with keywords ('thích', 'yêu thích', 'ưa', 'không thích', 'ghét', 'muốn', 'cần', 'không muốn') - e.g., 'tôi thích ăn cay', 'anh thích không gian yên tĩnh', 'em yêu thích món lẩu', OR\n"
-                    "   - **Stating habits/routines** ('thường', 'hay', 'luôn') - e.g., 'tôi thường đặt bàn 6 người', OR\n"
-                    "   - **Explicitly giving confirmation/negation** in an active booking flow (e.g., 'không có ai sinh nhật', '7h tối nay', '3 người lớn 2 trẻ em'), OR\n"
-                    "   - **Actively performing a booking action** with clear intent ('đặt bàn ngay', 'xác nhận đặt bàn'), OR\n"
-                    "   - **Pure greeting/thanks** with no information request ('xin chào', 'cảm ơn').\n"
-                    "   Rationale: Preferences require tool calling (save_user_preference_with_refresh_flag) which only happens in direct_answer workflow.\n"
-                    "3. VECTORSTORE (INTERNAL KNOWLEDGE RETRIEVAL) -> Choose 'vectorstore' if the user asks for:\n"
-                    "   - **ANY information about the restaurant business** (menu, địa chỉ, chi nhánh, hotline, chính sách, ưu đãi, giờ mở cửa, FAQ, prices, food items, locations, policies, promotions), OR\n"
-                    "   - **General questions about the restaurant** that might be answered from internal documentation, OR\n"
-                    "   - **Information seeking queries** where the answer should come from the restaurant's knowledge base, OR\n"
-                    "   - **Questions about services, products, or business information** even if phrased conversationally, OR\n"
-                    "   - **Requests to send/share content** when customer asks for images, documents, or information to be sent to them ('gửi ảnh', 'gửi menu', 'share photo', 'send document', 'gửi thông tin', 'gửi tài liệu', 'show me', 'can you send'), OR\n"
-                    "   - **Inquiries about sending capabilities** ('có thể gửi được không', 'can you send', 'có ảnh không', 'do you have images'), OR\n"
-                    "   - **Requests for visual content** ('xem ảnh', 'show pictures', 'có hình không', 'want to see images').\n"
-                    "   Rationale: The vectorstore contains comprehensive restaurant information and should be the primary source for any informational queries. Requests for content to be sent should retrieve from knowledge base first.\n"
-                    "4. WEB_SEARCH -> Only if none of (1), (2), or (3) apply AND the user clearly needs real‑time external info that wouldn't be in restaurant documents.\n\n"
-                    "**CRITICAL ROUTING PRIORITY:**\n"
-                    "- **🔥 HIGHEST PRIORITY: 'direct_answer' for preferences/likes ('thích', 'yêu thích', 'ưa', etc.) - tool calling required**\n"
-                    "- **Second priority: 'vectorstore' for any question that could be answered from restaurant knowledge**\n"
-                    "- Only use 'direct_answer' for preferences, actions, confirmations, or pure social interaction\n"
-                    "- When in doubt between 'vectorstore' and 'direct_answer', check for preference keywords first\n"
-                    "- Document/image content takes highest priority over other routing decisions\n\n"
-                    "CONVERSATION CONTEXT SUMMARY (may strengthen decision toward vectorstore):\n{conversation_summary}\n\n"
-                    "User info:\n<UserInfo>\n{user_info}\n</UserInfo>\n"
-                    "User profile:\n<UserProfile>\n{user_profile}\n</UserProfile>\n\n"
-                    "Domain instructions (reinforce vectorstore bias):\n{domain_instructions}\n\n"
-                    "Return ONLY one of: vectorstore | web_search | direct_answer | process_document. No explanations.\n",
-                ),
-                ("human", "{messages}"),
-            ]
-        ).partial(
-            current_date=datetime.now,
-            domain_context=domain_context,
-            domain_instructions=domain_instructions,
-        )
-        runnable = prompt | llm.with_structured_output(RouteQuery)
+    
+    def __init__(
+        self, 
+        llm: Runnable, 
+        domain_context: str, 
+        domain_instructions: str,
+        enable_confidence_scoring: bool = False,
+        fallback_route: str = "vectorstore"
+    ):
+        self.domain_context = domain_context
+        self.domain_instructions = domain_instructions
+        self.enable_confidence_scoring = enable_confidence_scoring
+        self.fallback_route = fallback_route
+        
+        prompt = self._create_routing_prompt()
+        
+        # Configure structured output
+        if enable_confidence_scoring:
+            runnable = prompt | llm.with_structured_output(RouteQuery)
+        else:
+            # Simpler version without confidence scoring
+            simple_prompt = self._create_simple_routing_prompt()
+            runnable = simple_prompt | llm.with_structured_output(RouteQuery)
+            
         super().__init__(runnable)
+    
+    def _create_routing_prompt(self) -> ChatPromptTemplate:
+        """Create the main routing prompt with confidence scoring."""
+        return ChatPromptTemplate.from_messages([
+            (
+                "system",
+                "You are an intelligent routing agent for a restaurant chatbot.\n"
+                "Current date: {current_date}\n"
+                "Restaurant context: {domain_context}\n\n"
+                
+                "TASK: Analyze the user message and route to the most appropriate handler.\n"
+                "Return JSON with 'datasource', 'confidence' (0.0-1.0), and 'reasoning'.\n\n"
+                
+                "ROUTING OPTIONS:\n"
+                "1. vectorstore - Restaurant-specific information from internal knowledge\n"
+                "2. process_document - File/image analysis and document processing\n" 
+                "3. direct_answer - Simple responses that don't need external data\n"
+                "4. web_search - External/real-time information not in internal docs\n\n"
+                
+                "ROUTING RULES WITH EXAMPLES:\n\n"
+                
+                "🔍 VECTORSTORE (High confidence: 0.8-1.0):\n"
+                "✓ Menu items: 'Thực đơn có gì?', 'Giá cơm tấm?', 'Món nào ngon?'\n"
+                "✓ Restaurant info: 'Địa chỉ chi nhánh', 'Giờ mở cửa', 'Chính sách đặt bàn'\n"
+                "✓ Food details: 'Thành phần món', 'Cách chế biến', 'Độ cay như thế nào?'\n"
+                "✓ Recommendations: 'Gợi ý món cho 4 người', 'Combo nào hợp lý?'\n"
+                "✓ Promotions: 'Có khuyến mãi gì không?', 'Ưu đãi hôm nay'\n\n"
+                
+                "📄 PROCESS_DOCUMENT (High confidence: 0.9-1.0):\n"
+                "✓ File analysis: 'Phân tích file này', 'Xem hình ảnh đính kèm'\n"
+                "✓ Visual content: '[HÌNH ẢNH]', '[VIDEO]', '[TỆP TIN]', '📸'\n"
+                "✓ Document requests: 'Upload menu để phân tích'\n\n"
+                
+                "💬 DIRECT_ANSWER (High confidence: 0.8-1.0):\n"
+                "✓ Greetings: 'Xin chào', 'Hi', 'Chào bạn'\n"
+                "✓ Thanks: 'Cảm ơn', 'Thank you', 'Thanks'\n"
+                "✓ Simple confirmations: 'Ok', 'Được', 'Đồng ý', 'Chốt'\n"
+                "✓ Booking confirmations (NO menu questions): '19h tối nay 4 người'\n"
+                "✓ Personal preferences (no restaurant info needed): 'Tôi thích cay'\n\n"
+                
+                "🌐 WEB_SEARCH (Medium confidence: 0.6-0.8):\n"
+                "✓ External info: 'Thời tiết hôm nay', 'Tin tức mới nhất'\n"
+                "✓ Other restaurants: 'Nhà hàng nào ngon ở quận 1?'\n"
+                "✓ Real-time data: 'Giá xăng hôm nay', 'Tỷ giá USD'\n\n"
+                
+                "DECISION PRIORITY (check in order):\n"
+                "1. If contains file/image patterns → process_document\n"
+                "2. If asks restaurant-specific info → vectorstore\n"
+                "3. If simple social interaction → direct_answer\n"
+                "4. If needs external real-time info → web_search\n\n"
+                
+                "CONFLICT RESOLUTION:\n"
+                "• Mixed booking + menu question → vectorstore\n"
+                "• Ambiguous cases → vectorstore (safer for restaurant context)\n"
+                "• Unknown restaurant terms → vectorstore\n\n"
+                
+                "CONTEXT:\n"
+                "Domain instructions: {domain_instructions}\n"
+                "Conversation summary: {conversation_summary}\n"
+                "User info: {user_info}\n"
+                "User profile: {user_profile}\n"
+            ),
+            ("human", "{messages}")
+        ]).partial(
+            current_date=datetime.now().strftime("%Y-%m-%d %H:%M"),
+            domain_context=self.domain_context,
+            domain_instructions=self.domain_instructions
+        )
+    
+    def _create_simple_routing_prompt(self) -> ChatPromptTemplate:
+        """Create simplified routing prompt without confidence scoring."""
+        return ChatPromptTemplate.from_messages([
+            (
+                "system",
+                "Route user messages for restaurant chatbot. Return datasource only.\n"
+                "Date: {current_date} | Domain: {domain_context}\n\n"
+                
+                "ROUTING EXAMPLES:\n"
+                "• 'Menu có gì?' → vectorstore\n"
+                "• 'Giá bánh mì?' → vectorstore\n" 
+                "• 'Địa chỉ nhà hàng?' → vectorstore\n"
+                "• 'Gợi ý món ngon' → vectorstore\n"
+                "• '[HÌNH ẢNH] Phân tích này' → process_document\n"
+                "• 'Xin chào' → direct_answer\n"
+                "• 'Cảm ơn bạn' → direct_answer\n"
+                "• 'Ok đặt bàn' → direct_answer\n"
+                "• 'Thời tiết hôm nay?' → web_search\n\n"
+                
+                "RULES:\n"
+                "- Restaurant knowledge → vectorstore\n"
+                "- Files/images → process_document\n" 
+                "- Simple social → direct_answer\n"
+                "- External info → web_search\n"
+                "- When unsure → vectorstore\n\n"
+                
+                "Context: {domain_instructions}"
+            ),
+            ("human", "{messages}")
+        ]).partial(
+            current_date=datetime.now().strftime("%Y-%m-%d"),
+            domain_context=self.domain_context,
+            domain_instructions=self.domain_instructions
+        )
+    
+    def route_query(
+        self, 
+        messages: str,
+        conversation_summary: str = "",
+        user_info: str = "",
+        user_profile: str = ""
+    ) -> RouteQuery:
+        """
+        Route a user query with enhanced error handling and logging.
+        
+        Args:
+            messages: User message to route
+            conversation_summary: Summary of conversation context
+            user_info: User information
+            user_profile: User profile data
+            
+        Returns:
+            RouteQuery with routing decision
+        """
+        try:
+            # Prepare input
+            input_data = {
+                "messages": messages,
+                "conversation_summary": conversation_summary or "No previous context",
+                "user_info": user_info or "No user info available",
+                "user_profile": user_profile or "No profile data"
+            }
+            
+            # Get routing decision
+            result = self.runnable.invoke(input_data)
+            
+            # Log the decision
+            logger.info(
+                f"Router decision: {result.datasource} "
+                f"(confidence: {getattr(result, 'confidence', 'N/A')}) "
+                f"for message: '{messages[:50]}...'"
+            )
+            
+            # Validate and apply fallbacks
+            result = self._apply_fallback_logic(result, messages)
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"Router error for message '{messages[:50]}...': {e}")
+            # Return safe fallback
+            return RouteQuery(
+                datasource=self.fallback_route,
+                confidence=0.3,
+                reasoning=f"Fallback due to error: {str(e)[:100]}"
+            )
+    
+    def _apply_fallback_logic(self, result: RouteQuery, original_message: str) -> RouteQuery:
+        """Apply fallback logic for low-confidence or problematic routing decisions."""
+        
+        # If confidence is too low, use fallback
+        if hasattr(result, 'confidence') and result.confidence and result.confidence < 0.5:
+            logger.warning(f"Low confidence ({result.confidence}) routing, using fallback")
+            result.datasource = self.fallback_route
+            result.reasoning = f"Low confidence fallback: {result.reasoning}"
+        
+        # Safety checks for restaurant context
+        restaurant_keywords = [
+            'menu', 'thực đơn', 'món', 'giá', 'combo', 'địa chỉ', 
+            'chi nhánh', 'đặt bàn', 'gợi ý', 'tư vấn', 'khuyến mãi'
+        ]
+        
+        has_restaurant_keywords = any(
+            keyword in original_message.lower() 
+            for keyword in restaurant_keywords
+        )
+        
+        # Override to vectorstore if message has restaurant keywords but wasn't routed there
+        if has_restaurant_keywords and result.datasource not in ['vectorstore', 'process_document']:
+            logger.info("Overriding to vectorstore due to restaurant keywords")
+            result.datasource = 'vectorstore'
+            result.reasoning = "Override: detected restaurant-related content"
+            if hasattr(result, 'confidence'):
+                result.confidence = min(0.8, (result.confidence or 0.5) + 0.2)
+        
+        return result
+    
+    def get_routing_stats(self) -> Dict[str, Any]:
+        """Get routing statistics for monitoring and optimization."""
+        # This would integrate with your logging/monitoring system
+        return {
+            "total_routes": "N/A - implement with actual logging",
+            "route_distribution": "N/A - implement with actual logging", 
+            "average_confidence": "N/A - implement with actual logging",
+            "fallback_rate": "N/A - implement with actual logging"
+        }

@@ -45,7 +45,7 @@ def verify_prompt_content():
             "Hiển thị đầy đủ thông tin khách đã cung cấp",
             "Format đẹp mắt với emoji phù hợp",
             "xác nhận đặt bàn với thông tin trên không",
-            "book_table_reservation_test",
+            "book_table_reservation",
             "KHÔNG tiết lộ việc dùng tool",
             "Thông báo kết quả + lời chúc phù hợp"
         ]
