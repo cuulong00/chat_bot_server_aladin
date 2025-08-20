@@ -250,8 +250,13 @@ class GenerationAssistant(BaseAssistant):
         text = state.get("question") or _text_from_messages(state.get("messages"))
         keywords = ["menu", "thực đơn", "món", "combo", "giá", "ưu đãi", "khuyến mãi"]
         is_menu_intent = any(k in (text or "") for k in keywords)
+        # Detect explicit user preference expressions (e.g. 'thích', 'yêu', 'ưa', ...)
+        preference_keywords = ["thích", "yêu", "ưa", "thường", "hay", "luôn", "muốn", "cần", "sinh nhật"]
+        is_preference_intent = any(p in (text or "") for p in preference_keywords)
         datasource = (state.get("datasource") or "").lower()
-        use_tools = not (is_menu_intent and datasource == "vectorstore")
+        # Keep previous behavior (disable tools for pure menu intent on vectorstore) but
+        # always enable tools when a preference is detected so save_user_preference can be called.
+        use_tools = is_preference_intent or not (is_menu_intent and datasource == "vectorstore")
         if not use_tools:
             logging.info("🛡️ GenerationAssistant: Disabling tools for menu intent to ensure hallucination grading.")
 
