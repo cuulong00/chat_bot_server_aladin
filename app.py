@@ -79,6 +79,7 @@ def compile_graph(checkpointer: BaseCheckpointSaver):
         retriever=retriever,
         tools=all_tools,
         DOMAIN=MARKETING_DOMAIN,
+        skip_grade_documents=True,  # Skip document grading by default for better performance
     )
 
     compiled_app = adaptive_graph.compile(checkpointer=checkpointer)

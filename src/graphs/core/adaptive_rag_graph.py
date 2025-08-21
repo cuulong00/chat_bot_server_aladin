@@ -292,6 +292,18 @@ def get_last_user_question(messages: List[BaseMessage]) -> HumanMessage | None:
     return None
 
 
+def get_skip_grade_documents_from_env() -> bool:
+    """Helper function to read skip_grade_documents setting from environment.
+    
+    Returns:
+        bool: True if SKIP_GRADE_DOCUMENTS env var is set to 'true', 'True', '1', or 'yes'
+              False otherwise (default)
+    """
+    import os
+    skip_env = os.getenv("SKIP_GRADE_DOCUMENTS", "false").lower()
+    return skip_env in ("true", "1", "yes", "on")
+
+
 def extract_text_from_message_content(content) -> str:
     """Extract text from message content, handling both string and list formats."""
     if isinstance(content, str):
@@ -328,12 +340,50 @@ def create_adaptive_rag_graph(
     retriever: QdrantStore,
     tools: list,
     DOMAIN: dict,
+    skip_grade_documents: bool = False,
 ):
+    """Create an Adaptive RAG graph with configurable document grading.
+    
+    Args:
+        llm: Main language model for generation
+        llm_grade_documents: LLM for document relevance grading
+        llm_router: LLM for routing questions to appropriate processing paths
+        llm_rewrite: LLM for rewriting queries
+        llm_generate_direct: LLM for direct answer generation
+        llm_hallucination_grader: LLM for hallucination detection
+        llm_summarizer: LLM for conversation summarization
+        llm_contextualize: LLM for contextualizing responses
+        retriever: Vector database retriever
+        tools: List of tools available to assistants
+        DOMAIN: Domain configuration dictionary
+        skip_grade_documents: If True, skip document grading step and pass all retrieved 
+                            documents directly to generation. Default is False to maintain
+                            existing behavior. Can also be controlled via SKIP_GRADE_DOCUMENTS 
+                            environment variable.
+                            
+    Returns:
+        StateGraph: Compiled graph ready for execution
+        
+    Example:
+        # Skip document grading explicitly
+        graph = create_adaptive_rag_graph(..., skip_grade_documents=True)
+        
+        # Or via environment variable
+        # export SKIP_GRADE_DOCUMENTS=true
+        graph = create_adaptive_rag_graph(..., skip_grade_documents=get_skip_grade_documents_from_env())
+    """
 
     # --- Bind domain config ---
     domain_context = DOMAIN["domain_context"]
     domain_instructions = DOMAIN["domain_instructions"]
     domain_examples = "\n".join(DOMAIN["domain_examples"])
+    
+    # Log configuration
+    logging.info(f"🏗️ Creating Adaptive RAG Graph with skip_grade_documents={skip_grade_documents}")
+    if skip_grade_documents:
+        logging.info("📋 Document grading will be skipped - documents go directly to generation")
+    else:
+        logging.info("📋 Document grading will be performed as normal")
 
     web_search_tool = TavilySearch(max_results=5)
     memory_tools = [get_user_profile, save_user_preference]
@@ -452,7 +502,7 @@ def create_adaptive_rag_graph(
             rewrite_count = state.get("rewrite_count", 0)
             
             # Progressive search strategy: start focused, then expand
-            limit = 10
+            limit = 5
             
             logging.info(f"🎯 Collection-wide search strategy")
             logging.info(f"   Search attempts: {search_attempts}, Rewrites: {rewrite_count}")
@@ -465,7 +515,6 @@ def create_adaptive_rag_graph(
                 limit=limit,
                 namespace=None  # No namespace filter - search entire collection
             )
-            
             logging.info(f"🌐 Collection search: {len(documents)} results found")
 
             # Log detailed retrieval stats by analyzing domains
@@ -499,7 +548,7 @@ def create_adaptive_rag_graph(
             
             # Clean documents: remove embedding vectors to save memory and reduce token usage
             cleaned_documents = clean_documents_remove_embeddings(documents)
-            
+            print(f"🔍 Cleaned documents: {cleaned_documents}")
             return {
                 "documents": cleaned_documents,
                 "search_attempts": state.get("search_attempts", 0) + 1,
@@ -1215,6 +1264,42 @@ Hãy phân tích một cách chi tiết và toàn diện để thông tin này c
 
     # --- Conditional Edges ---
 
+    def decide_after_retrieve(
+        state: RagState,
+    ) -> Literal["grade_documents", "generate", "force_suggest", "rewrite"]:
+        """Decide whether to grade documents or skip directly to generation/other steps."""
+        
+        if skip_grade_documents:
+            # Skip grading - use same logic as decide_after_grade but without grading
+            documents = state.get("documents", [])
+            search_attempts = state.get("search_attempts", 0)
+            rewrite_count = state.get("rewrite_count", 0)
+            
+            logging.info(f"🔀 DECIDE_AFTER_RETRIEVE (skip_grade=True): docs={len(documents)}, search_attempts={search_attempts}, rewrite_count={rewrite_count}")
+            
+            # If we have documents, proceed directly to generate
+            if documents and len(documents) > 0:
+                logging.info(f"🔀 → GENERATE (found {len(documents)} documents, skipping grading)")
+                return "generate"
+            
+            # If no documents and we've tried multiple searches, suggest fallback
+            if search_attempts >= 2 and len(documents) == 0:
+                logging.info(f"🔀 → FORCE_SUGGEST (max search attempts reached, skipping grading)")
+                return "force_suggest"
+            
+            # If no documents but haven't tried rewrite yet, try rewriting the query
+            if len(documents) == 0 and rewrite_count < 1:
+                logging.info(f"🔀 → REWRITE (no documents found, trying query rewrite, skipping grading)")
+                return "rewrite"
+            
+            # Fallback: generate with whatever we have
+            logging.info(f"🔀 → GENERATE (fallback, skipping grading)")
+            return "generate"
+        else:
+            # Use grade_documents as before
+            logging.info(f"🔀 DECIDE_AFTER_RETRIEVE (skip_grade=False): → GRADE_DOCUMENTS")
+            return "grade_documents"
+
     def decide_after_grade(
         state: RagState,
     ) -> Literal["rewrite", "generate", "force_suggest"]:
@@ -1357,7 +1442,10 @@ Hãy phân tích một cách chi tiết và toàn diện để thông tin này c
    
     graph.add_node("router", route_question)
     graph.add_node("retrieve", retrieve)
+    
+    # Grade documents node - always add but may be bypassed based on configuration
     graph.add_node("grade_documents", grade_documents_node)
+    
     graph.add_node("rewrite", rewrite)
     graph.add_node("web_search", web_search_node)
     graph.add_node("generate", generate)
@@ -1390,7 +1478,19 @@ Hãy phân tích một cách chi tiết và toàn diện để thông tin này c
             "process_document": "process_document",
         },
     )
-    graph.add_edge("retrieve", "grade_documents")
+    
+    # After retrieve: conditionally grade documents or skip to generation logic
+    graph.add_conditional_edges(
+        "retrieve",
+        decide_after_retrieve,
+        {
+            "grade_documents": "grade_documents",
+            "generate": "generate",
+            "force_suggest": "force_suggest",
+            "rewrite": "rewrite",
+        },
+    )
+    
     graph.add_conditional_edges(
         "grade_documents",
         decide_after_grade,
@@ -1401,7 +1501,21 @@ Hãy phân tích một cách chi tiết và toàn diện để thông tin này c
         },
     )
     graph.add_edge("rewrite", "retrieve")
-    graph.add_edge("web_search", "grade_documents")
+    
+    # Web search can also skip grading if configured
+    if skip_grade_documents:
+        graph.add_conditional_edges(
+            "web_search",
+            decide_after_retrieve,  # Same logic as after retrieve
+            {
+                "grade_documents": "grade_documents",
+                "generate": "generate", 
+                "force_suggest": "force_suggest",
+                "rewrite": "rewrite",
+            },
+        )
+    else:
+        graph.add_edge("web_search", "grade_documents")
     # graph.add_edge("force_suggest", "generate")
     graph.add_edge("force_suggest", END)
     

@@ -1,15 +1,12 @@
-"""Embedding ingestion pipeline for Qdrant.
-
-Improvements in this patch:
- - Robust project root resolution so `src` module can be imported even when script executed from any cwd
- - Path handling via pathlib (removes Windows backslash escape issues & SyntaxWarning)
- - CLI arguments (override files, urls, collection, model, namespace, chunk params)
- - Safety checks for required environment variables (e.g. GOOGLE_API_KEY when using Gemini)
- - Optional automatic USER_AGENT default to reduce warnings
- - Graceful handling when input file missing
 """
+EMBEDDING PIPELINE - SIMPLIFIED VERSION
+========================================
+Chỉ có nhiệm vụ: XÓA namespace cũ → EMBEDDING lại dữ liệu mới
 
-from qdrant_client.http.models import VectorParams, Distance
+CÁCH SỬ DỤNG:
+1. Sửa CONFIG bên dưới
+2. Chạy: python setup/embedding-data-qdrant.py
+"""
 
 import sys
 from pathlib import Path
@@ -20,32 +17,42 @@ PROJECT_ROOT = THIS_FILE.parent.parent  # repo root
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+# =================================
+# 🔧 CONFIG - SỬA TẠI ĐÂY
+# =================================
+CONFIG = {
+    # File dữ liệu để embedding
+    "DATA_FILE": PROJECT_ROOT / "data" / "marketing_data_structured.txt",
+    
+    # Qdrant collection và namespace
+    "COLLECTION_NAME": "tianlong_marketing",
+    "NAMESPACE": "marketing",
+    
+    # Model embedding
+    "MODEL": "text-embedding-004",  # hoặc "gemini-embedding-exp-03-07"
+    
+    # Metadata
+    "DOMAIN": "marketing",
+}
+
 def get_vector_size(model_key: str) -> int:
     if model_key == "gemini-embedding-exp-03-07":
         return 3072
-    # text-embedding-004 và các model Google mới
     return 768
 
 
 import os
 from dotenv import load_dotenv
 import logging
-from typing import List, Optional, Dict, Any, Callable
-import argparse
-import json
+from typing import List, Optional, Dict, Any
 import google.generativeai as genai
-from langchain_community.document_loaders import (
-    WebBaseLoader,
-    PyPDFLoader,
-    TextLoader,
-    Docx2txtLoader,
-)
+from qdrant_client.http.models import VectorParams, Distance
 from langchain_core.documents import Document
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
-from langchain.text_splitter import RecursiveCharacterTextSplitter
+
 try:
     from src.database.qdrant_store import QdrantStore
-except ModuleNotFoundError as e:  # Fallback informative error
+except ModuleNotFoundError as e:
     raise ModuleNotFoundError(
         "Cannot import 'src'. Ensure you run inside project root or PYTHONPATH includes it. "
         f"PROJECT_ROOT attempted: {PROJECT_ROOT}"
@@ -64,6 +71,45 @@ EMBEDDING_MODELS: Dict[str, Callable[[], Any]] = {
     # "openai": lambda: OpenAIEmbeddings(...),
     # "nomic": lambda: NomicEmbeddings(...),
 }
+
+# --- Structured text loader for semantic chunks ---
+def _load_structured_text(file_path: str) -> List[Document]:
+    """Load structured text file with semantic breaks (---BREAK---) and convert to documents."""
+    try:
+        with open(file_path, "r", encoding="utf-8") as f:
+            content = f.read()
+        
+        # Split by semantic break marker
+        sections = content.split("---BREAK---")
+        documents = []
+        
+        for i, section in enumerate(sections):
+            section = section.strip()
+            if not section:
+                continue
+                
+            # Extract title from first line if it starts with #
+            title = ""
+            lines = section.split('\n')
+            if lines and lines[0].strip().startswith('#'):
+                title = lines[0].strip().replace('#', '').strip()
+            
+            metadata = {
+                "source": file_path,
+                "section_id": f"section_{i+1:02d}",
+                "title": title,
+                "type": "structured_content",
+                "section_index": i
+            }
+            
+            documents.append(Document(page_content=section, metadata=metadata))
+        
+        logger.info(f"Loaded {len(documents)} structured sections from {file_path}")
+        return documents
+        
+    except Exception as e:
+        logger.error(f"Failed to load structured text file {file_path}: {e}")
+        return []
 
 # --- JSON loader for menu combos ---
 def _load_menu_json(file_path: str) -> List[Document]:
@@ -139,12 +185,13 @@ def _safe_load_text(file_path: str) -> List[Document]:
     )
 
 
-# Loader registry for extensibility (order is not relevant except .txt uses robust loader)
+# Loader registry for extensibility
 LOADER_REGISTRY: Dict[str, Callable[[str], Any]] = {
     ".pdf": lambda f: PyPDFLoader(f).load(),
     ".docx": lambda f: Docx2txtLoader(f).load(),
     ".txt": _safe_load_text,
     ".json": _load_menu_json,
+    "_structured.txt": _load_structured_text,  # For structured text files
 }
 
 
@@ -155,30 +202,100 @@ def load_documents(
 ) -> List[Any]:
     """
     Load documents from files and URLs. Attach extra_metadata to each doc.
+    Supports structured text files with semantic breaks.
     """
     docs = []
     urls = urls or []
     for file in files:
-        ext = os.path.splitext(file)[-1].lower()
-        loader = LOADER_REGISTRY.get(ext)
+        file_name = os.path.basename(file)
+        file_ext = os.path.splitext(file)[-1].lower()
+        
+        # Special handling for structured text files
+        if file_name.endswith("_structured.txt"):
+            loader = LOADER_REGISTRY.get("_structured.txt")
+        else:
+            loader = LOADER_REGISTRY.get(file_ext)
+            
         if loader:
             loaded = loader(file)
             if extra_metadata:
                 for doc in loaded:
                     doc.metadata.update(extra_metadata)
             docs.extend(loaded)
+            logger.info(f"Loaded {len(loaded)} documents from {file}")
         else:
-            logger.warning(f"Unsupported file: {file}")
+            logger.warning(f"Unsupported file: {file} (extension: {file_ext})")
+            
     for url in urls:
         loaded = WebBaseLoader(url).load()
         if extra_metadata:
             for doc in loaded:
                 doc.metadata.update(extra_metadata)
         docs.extend(loaded)
+        logger.info(f"Loaded {len(loaded)} documents from URL: {url}")
+        
     return docs
 
 
 def get_embedding_model(model_name: Optional[str] = None):
+    """
+    Lấy model embedding từ tên thân thiện hoặc biến môi trường. Tự động map các alias phổ biến về registry key.
+    Nếu là gemini-embedding-exp-03-07 thì trả về None (dùng API gốc Google).
+    """
+    load_dotenv()
+    model_env = os.getenv("EMBEDDING_MODEL")
+    model_name = model_name or model_env or "google-gemini"
+    # Map các alias phổ biến về registry key
+    model_aliases = {
+        "google": "google-text-embedding-004",
+        "text-embedding-004": "google-text-embedding-004",
+        "models/text-embedding-004": "google-text-embedding-004",
+        "google-text-embedding-004": "google-text-embedding-004",
+        "gemini-embedding-exp-03-07": "gemini-embedding-exp-03-07",
+    }
+    model_key = model_aliases.get(model_name.lower(), model_name)
+    if model_key not in EMBEDDING_MODELS:
+        raise ValueError(
+            f"Model '{model_name}' not supported. Available: {list(EMBEDDING_MODELS.keys())}. Bạn có thể dùng: {list(model_aliases.keys())}"
+        )
+    return model_key, EMBEDDING_MODELS[model_key]()
+
+
+def clear_namespace_data(qdrant_store: QdrantStore, namespace: str):
+    """
+    Clear all data from a specific namespace in Qdrant collection.
+    """
+    try:
+        from qdrant_client import QdrantClient
+        from qdrant_client.http.models import Filter, FieldCondition, MatchValue
+        
+        qdrant_host = os.getenv("QDRANT_HOST", "localhost")
+        qdrant_port = int(os.getenv("QDRANT_PORT", "6333"))
+        qdrant_client = QdrantClient(host=qdrant_host, port=qdrant_port)
+        
+        collection_name = qdrant_store.collection_name
+        
+        # Delete all points with the specified namespace
+        result = qdrant_client.delete(
+            collection_name=collection_name,
+            points_selector=Filter(
+                must=[
+                    FieldCondition(
+                        key="namespace",
+                        match=MatchValue(value=namespace)
+                    )
+                ]
+            )
+        )
+        
+        logger.info(f"✅ Cleared namespace '{namespace}' from collection '{collection_name}'")
+        print(f"✅ Cleared namespace '{namespace}' from collection '{collection_name}'")
+        return True
+        
+    except Exception as e:
+        logger.error(f"❌ Failed to clear namespace '{namespace}': {e}")
+        print(f"❌ Failed to clear namespace '{namespace}': {e}")
+        return False
     """
     Lấy model embedding từ tên thân thiện hoặc biến môi trường. Tự động map các alias phổ biến về registry key.
     Nếu là gemini-embedding-exp-03-07 thì trả về None (dùng API gốc Google).
@@ -211,26 +328,41 @@ def embed_and_store(
     chunk_overlap: int = 200,
     model_name: Optional[str] = None,
     namespace: Optional[str] = None,
+    semantic_chunking: bool = False,
 ):
     """
-    Embed documents and store in Qdrant. Metadata (domain, department, user_id, ...) is attached to each chunk.
+    Embed documents and store in Qdrant. 
+    If semantic_chunking=True, use documents as-is (for structured content).
+    Otherwise, split documents using RecursiveCharacterTextSplitter.
     """
-    splitter = RecursiveCharacterTextSplitter(
-        chunk_size=chunk_size, chunk_overlap=chunk_overlap
-    )
-    logger.info(f"[embed_and_store] Splitting {len(docs)} docs into chunks...")
-    print(f"[embed_and_store] Splitting {len(docs)} docs into chunks...")
-    doc_chunks = splitter.split_documents(docs)
-    logger.info(
-        f"[embed_and_store] Split {len(docs)} docs thành {len(doc_chunks)} chunks"
-    )
-    print(f"[embed_and_store] Split {len(docs)} docs thành {len(doc_chunks)} chunks")
+    
+    # Clear namespace data first if namespace is specified
+    if namespace:
+        logger.info(f"🧹 Clearing existing data from namespace '{namespace}'...")
+        print(f"🧹 Clearing existing data from namespace '{namespace}'...")
+        clear_namespace_data(qdrant_store, namespace)
+    
+    if semantic_chunking:
+        # Use documents as-is (for structured content)
+        doc_chunks = docs
+        logger.info(f"[embed_and_store] Using {len(docs)} semantic chunks")
+        print(f"[embed_and_store] Using {len(docs)} semantic chunks")
+    else:
+        # Traditional text splitting
+        splitter = RecursiveCharacterTextSplitter(
+            chunk_size=chunk_size, chunk_overlap=chunk_overlap
+        )
+        logger.info(f"[embed_and_store] Splitting {len(docs)} docs into chunks...")
+        print(f"[embed_and_store] Splitting {len(docs)} docs into chunks...")
+        doc_chunks = splitter.split_documents(docs)
+        logger.info(f"[embed_and_store] Split {len(docs)} docs thành {len(doc_chunks)} chunks")
+        print(f"[embed_and_store] Split {len(docs)} docs thành {len(doc_chunks)} chunks")
+    
     model_key, model = get_embedding_model(model_name)
     texts = [chunk.page_content for chunk in doc_chunks]
-    logger.info(
-        f"[embed_and_store] Embedding {len(texts)} chunks with model {model_key}"
-    )
+    logger.info(f"[embed_and_store] Embedding {len(texts)} chunks with model {model_key}")
     print(f"[embed_and_store] Embedding {len(texts)} chunks with model {model_key}")
+    
     if model_key == "gemini-embedding-exp-03-07":
         # Dùng API gốc Google Generative AI
         genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
@@ -251,29 +383,33 @@ def embed_and_store(
                 vectors.append([0.0] * 3072)  # fallback vector size
     else:
         vectors = model.embed_documents(texts)
+    
     logger.info(f"[embed_and_store] Finished embedding. Storing to Qdrant...")
     print(f"[embed_and_store] Finished embedding. Storing to Qdrant...")
+    
     for i, (chunk, vector) in enumerate(zip(doc_chunks, vectors)):
         meta = metadata.copy() if metadata else {}
         meta.update(chunk.metadata)
         ns = namespace or meta.get("namespace") or "default"
-        logger.info(
-            f"[embed_and_store] Storing chunk {i+1}/{len(doc_chunks)} to Qdrant (namespace={ns})"
-        )
-        print(
-            f"[embed_and_store] Storing chunk {i+1}/{len(doc_chunks)} to Qdrant (namespace={ns})"
-        )
+        
+        # Add namespace to metadata for filtering
+        meta["namespace"] = ns
+        
+        chunk_id = f"chunk_{i+1:03d}"
+        if "section_id" in chunk.metadata:
+            chunk_id = chunk.metadata["section_id"]
+        
+        logger.info(f"[embed_and_store] Storing {chunk_id} to Qdrant (namespace={ns})")
+        print(f"[embed_and_store] Storing {chunk_id} to Qdrant (namespace={ns})")
+        
         qdrant_store.put(
             namespace=ns,
-            key=f"chunk_{i}",
+            key=chunk_id,
             value={"content": chunk.page_content, "embedding": vector, **meta},
         )
-    logger.info(
-        f"Đã lưu {len(doc_chunks)} vectors vào Qdrant collection: {qdrant_store.collection_name if not collection_name else collection_name}"
-    )
-    print(
-        f"Đã lưu {len(doc_chunks)} vectors vào Qdrant collection: {qdrant_store.collection_name if not collection_name else collection_name}"
-    )
+    
+    logger.info(f"✅ Đã lưu {len(doc_chunks)} vectors vào Qdrant collection: {qdrant_store.collection_name}")
+    print(f"✅ Đã lưu {len(doc_chunks)} vectors vào Qdrant collection: {qdrant_store.collection_name}")
 
 
 def check_and_recreate_collection(collection_name: str, vector_size: int):
@@ -337,6 +473,7 @@ def run_embedding_pipeline(
 ):
     """
     High-level API: embed files/urls with metadata and store in Qdrant.
+    Automatically detects structured files and uses semantic chunking.
     """
     metadata = {}
     if domain:
@@ -345,31 +482,39 @@ def run_embedding_pipeline(
         metadata["department"] = department
     if user_id:
         metadata["user_id"] = user_id
-    logger.info(
-        f"[run_embedding_pipeline] Start loading documents: files={files}, urls={urls}"
-    )
-    print(
-        f"[run_embedding_pipeline] Start loading documents: files={files}, urls={urls}"
-    )
+        
+    logger.info(f"[run_embedding_pipeline] Start loading documents: files={files}, urls={urls}")
+    print(f"[run_embedding_pipeline] Start loading documents: files={files}, urls={urls}")
+    
     docs = load_documents(files, urls, extra_metadata=metadata)
     logger.info(f"[run_embedding_pipeline] Loaded {len(docs)} documents")
     print(f"[run_embedding_pipeline] Loaded {len(docs)} documents")
+    
     # Xác định vector size theo model
     model_key, _ = get_embedding_model(model_name)
     vector_size = get_vector_size(model_key)
-    logger.info(
-        f"[run_embedding_pipeline] Model: {model_key}, vector_size: {vector_size}"
-    )
+    logger.info(f"[run_embedding_pipeline] Model: {model_key}, vector_size: {vector_size}")
     print(f"[run_embedding_pipeline] Model: {model_key}, vector_size: {vector_size}")
+    
     check_and_recreate_collection(collection_name, vector_size)
-    logger.info(
-        f"[run_embedding_pipeline] Collection checked/created: {collection_name}"
-    )
+    logger.info(f"[run_embedding_pipeline] Collection checked/created: {collection_name}")
     print(f"[run_embedding_pipeline] Collection checked/created: {collection_name}")
-    print(f"model_key {model_key}")
+    
     qdrant_store = QdrantStore(collection_name=collection_name, embedding_model=model_key)
     logger.info(f"[run_embedding_pipeline] Start embedding and storing...")
     print(f"[run_embedding_pipeline] Start embedding and storing...")
+    
+    # Check if any file is structured (ends with _structured.txt)
+    is_structured = any(file.endswith("_structured.txt") for file in files)
+    semantic_chunking = is_structured
+    
+    if semantic_chunking:
+        logger.info(f"[run_embedding_pipeline] Using semantic chunking for structured content")
+        print(f"[run_embedding_pipeline] Using semantic chunking for structured content")
+    else:
+        logger.info(f"[run_embedding_pipeline] Using traditional text splitting (chunk_size={chunk_size})")
+        print(f"[run_embedding_pipeline] Using traditional text splitting (chunk_size={chunk_size})")
+    
     embed_and_store(
         docs,
         qdrant_store=qdrant_store,
@@ -379,7 +524,9 @@ def run_embedding_pipeline(
         chunk_overlap=chunk_overlap,
         model_name=model_name,
         namespace=namespace,
+        semantic_chunking=semantic_chunking,
     )
+    
     logger.info(f"[run_embedding_pipeline] Finished embedding and storing.")
     print(f"[run_embedding_pipeline] Finished embedding and storing.")
 
@@ -419,10 +566,8 @@ if __name__ == "__main__":
     ensure_user_agent()
     args = parse_args()
 
-    # Default file if none provided
-    #default_file = PROJECT_ROOT / "data" / "menu_combos_for_embedding.json"
-    default_file = PROJECT_ROOT / "data" / "marketing_data.txt"
-    #default_file = PROJECT_ROOT / "data" / "FAQ.txt"
+    # Default file if none provided - use structured version for better semantic chunking
+    default_file = PROJECT_ROOT / "data" / "marketing_data_structured.txt"
     resolved_files: List[str] = []
     if args.files:
         for f in args.files:

@@ -79,6 +79,7 @@ uncompiled_graph = create_adaptive_rag_graph(
     retriever=retriever,
     tools=accounting_tools,
     DOMAIN=WOLT_FOOD,
+    skip_grade_documents=True,  # Skip document grading by default for better performance
 )
 
 

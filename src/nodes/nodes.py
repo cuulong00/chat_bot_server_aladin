@@ -92,30 +92,30 @@ def user_info(state: State, config: RunnableConfig):
             config["configurable"] = {**configurable, "user_id": user_id}
         
   
-        # RESET: Always reset reasoning_steps even when user exists - this is critical!
-        # The smart update function in state.py will detect the user_info step and reset appropriately
-        # Also reset dialog_state if this appears to be a new conversation
-        updates = {
-           
-            "question": question,
-            "session_id": session_id,  # Set session_id for image context retrieval
-            # Also reset other query-specific state to prevent accumulation
-            "documents": [],
-            "rewrite_count": 0,
-            "search_attempts": 0,
-            "datasource": "",
-            "hallucination_score": "",
-            "skip_hallucination": False,
-        }
-        
-        # Reset dialog_state if this seems like a new conversation
-        if any(greeting in question.lower() for greeting in ["xin chào", "hello", "hi", "chào"]):
-            # Don't pass empty list - LangGraph will trigger update with it
-            # Instead, let's clear by not including it in updates
-            logging.info(f"🔄 Would reset dialog_state for new conversation: {question[:50]}")
-            # NOTE: We'll handle dialog_state reset differently to avoid triggering update with []
-        
-        return {**state, **updates}
+    # RESET: Always reset reasoning_steps even when user exists - this is critical!
+    # The smart update function in state.py will detect the user_info step and reset appropriately
+    # Also reset dialog_state if this appears to be a new conversation
+    updates = {
+        "context": state.get("context", {}),  # Ensure context dict exists
+        "question": question,
+        "session_id": session_id,  # Set session_id for image context retrieval
+        # Also reset other query-specific state to prevent accumulation
+        "documents": [],
+        "rewrite_count": 0,
+        "search_attempts": 0,
+        "datasource": "",
+        "hallucination_score": "",
+        "skip_hallucination": False,
+    }
+    
+    # Reset dialog_state if this seems like a new conversation
+    if any(greeting in question.lower() for greeting in ["xin chào", "hello", "hi", "chào"]):
+        # Don't pass empty list - LangGraph will trigger update with it
+        # Instead, let's clear by not including it in updates
+        logging.info(f"🔄 Would reset dialog_state for new conversation: {question[:50]}")
+        # NOTE: We'll handle dialog_state reset differently to avoid triggering update with []
+    
+    return {**state, **updates}
 
     # Allow bypassing DB lookup for user info (e.g., when only Facebook data is available)
     BYPASS_USER_DB = os.getenv("BYPASS_USER_DB", "0") == "1"
@@ -182,7 +182,7 @@ def user_info(state: State, config: RunnableConfig):
         "user": user, 
         "thread_id": thread_id, 
         "session_id": session_id,  # Set session_id for image context retrieval
-      
+        "context": state.get("context", {}),  # Ensure context dict exists
         "question": question,  # Ensure question is set for consistent context
         # Reset other query-specific state to prevent accumulation
         "documents": [],

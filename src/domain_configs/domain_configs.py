@@ -87,6 +87,6 @@ MARKETING_DOMAIN = {
     "collection_name": "tianlong_marketing",
     "namespace": "marketing",
     "faq_namespace": "faq",
-    "embedding_model": "models/text-embedding-004",
+    "embedding_model": "text-embedding-3-small",
     "output_dimensionality_query": 768,
 }

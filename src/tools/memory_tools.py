@@ -169,42 +169,18 @@ class UserMemoryStore:
                     f"❌ Collection has incorrect vector size: {current_size}, expected: {self.vector_size}"
                 )
                 print("🔧 Recreating collection with correct size...")
-                self._recreate_collection()
             else:
                 print(f"✅ Collection has correct vector size: {current_size}")
 
         except Exception as e:
             if "not found" in str(e).lower():
                 print(f"Collection not found, creating new with size {self.vector_size}")
-                self._create_collection()
             else:
                 print(f"Error checking collection: {e}")
 
-    def _create_collection(self):
-        """
-        Create a new Qdrant collection with the expected vector size.
-        """
-        self.qdrant_client.create_collection(
-            collection_name=self.collection_name,
-            vectors_config=VectorParams(
-                size=self.vector_size, distance=Distance.COSINE
-            ),
-        )
-        print(
-            f"✅ Created collection '{self.collection_name}' with vector size: {self.vector_size}"
-        )
+    
 
-    def _recreate_collection(self):
-        """
-        Delete and recreate the Qdrant collection to ensure correct vector size.
-        """
-        try:
-            self.qdrant_client.delete_collection(self.collection_name)
-            print(f"🗑️ Deleted old collection '{self.collection_name}'")
-        except Exception as e:
-            print(f"Could not delete old collection: {e}")
-
-        self._create_collection()
+    
 
     def save_user_preference(
         self, user_id: str, preference_type: str, content: str, context: str = ""

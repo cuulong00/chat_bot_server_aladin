@@ -27,9 +27,8 @@ import os
 from dotenv import load_dotenv
 import logging
 import argparse
-import google.generativeai as genai
+from openai import OpenAI
 from langchain_core.documents import Document
-from langchain_google_genai import GoogleGenerativeAIEmbeddings
 
 try:
     from src.database.qdrant_store import QdrantStore
@@ -44,32 +43,33 @@ from qdrant_client.http.models import VectorParams, Distance
 
 def get_vector_size(model_key: str) -> int:
     """Get vector size for embedding model."""
-    if model_key == "gemini-embedding-exp-03-07":
-        return 3072
-    # text-embedding-004 and other Google models
-    return 768
+    if "3-small" in model_key:
+        return 1536  # OpenAI text-embedding-3-small
+    elif "3-large" in model_key:
+        return 3072  # OpenAI text-embedding-3-large
+    elif model_key == "gemini-embedding-exp-03-07":
+        return 3072  # Legacy Google model
+    else:
+        return 1536  # Default to OpenAI small
 
 # Embedding model registry
 EMBEDDING_MODELS: Dict[str, Any] = {
-    "google-text-embedding-004": lambda: GoogleGenerativeAIEmbeddings(
-        model="models/text-embedding-004"
-    ),
-    "gemini-embedding-exp-03-07": lambda: None,  # handled specially
+    "openai-text-embedding-3-small": lambda: OpenAI(api_key=os.getenv("OPENAI_API_KEY")),
+    "openai-text-embedding-3-large": lambda: OpenAI(api_key=os.getenv("OPENAI_API_KEY")),
 }
 
 def get_embedding_model(model_name: Optional[str] = None):
     """Get embedding model from friendly name or environment variable."""
     load_dotenv()
     model_env = os.getenv("EMBEDDING_MODEL")
-    model_name = model_name or model_env or "google-text-embedding-004"
+    model_name = model_name or model_env or "text-embedding-3-small"
     
     # Map common aliases to registry keys
     model_aliases = {
-        "google": "google-text-embedding-004",
-        "text-embedding-004": "google-text-embedding-004",
-        "models/text-embedding-004": "google-text-embedding-004",
-        "google-text-embedding-004": "google-text-embedding-004",
-        "gemini-embedding-exp-03-07": "gemini-embedding-exp-03-07",
+        "text-embedding-3-small": "openai-text-embedding-3-small",
+        "text-embedding-3-large": "openai-text-embedding-3-large",
+        "openai-text-embedding-3-small": "openai-text-embedding-3-small",
+        "openai-text-embedding-3-large": "openai-text-embedding-3-large",
     }
     
     model_key = model_aliases.get(model_name.lower(), model_name)
@@ -83,8 +83,10 @@ def check_and_recreate_collection(collection_name: str, vector_size: int):
     """Check Qdrant collection, recreate if vector size doesn't match."""
     from qdrant_client import QdrantClient
 
-    qdrant_url = os.getenv("QDRANT_URL", "http://localhost:6333")
-    qdrant_client = QdrantClient(url=qdrant_url)
+    # Use same connection method as other files
+    qdrant_host = os.getenv("QDRANT_HOST", "localhost")
+    qdrant_port = int(os.getenv("QDRANT_PORT", "6333"))
+    qdrant_client = QdrantClient(host=qdrant_host, port=qdrant_port)
     
     try:
         info = qdrant_client.get_collection(collection_name)
@@ -117,9 +119,9 @@ def ensure_user_agent():
 
 def validate_env_for_model(model_alias: str):
     """Validate environment variables for the chosen model."""
-    if model_alias.lower() in {"gemini-embedding-exp-03-07", "google", "text-embedding-004", "google-text-embedding-004", "models/text-embedding-004"}:
-        if not os.getenv("GOOGLE_API_KEY"):
-            print("⚠️  GOOGLE_API_KEY not set. Gemini embedding calls may fail.")
+    if "openai" in model_alias.lower() or "text-embedding-3" in model_alias.lower():
+        if not os.getenv("OPENAI_API_KEY"):
+            print("⚠️  OPENAI_API_KEY not set. OpenAI embedding calls may fail.")
 
 logger = logging.getLogger("combo_embedding_pipeline")
 
@@ -324,27 +326,30 @@ def embed_combo_data(
     print(f"🧠 Embedding {len(texts)} combo documents with model {model_key}")
     
     # Generate embeddings
-    if model_key == "gemini-embedding-exp-03-07":
-        # Use direct Gemini API
-        genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
+    if "openai" in model_key.lower():
+        # Use OpenAI embedding API
+        openai_client = model
+        model_name = "text-embedding-3-small" if "3-small" in model_key else "text-embedding-3-large"
         vectors = []
+        
         for idx, text in enumerate(texts):
             try:
                 logger.info(f"Embedding combo {idx+1}/{len(texts)}")
                 print(f"⚡ Embedding combo {idx+1}/{len(texts)}: {combo_docs[idx].metadata.get('title', 'Unknown')}")
-                result = genai.embed_content(
-                    model="gemini-embedding-exp-03-07",
-                    content=text,
-                    task_type="SEMANTIC_SIMILARITY",
+                response = openai_client.embeddings.create(
+                    model=model_name,
+                    input=text
                 )
-                vectors.append(result["embedding"])
+                vectors.append(response.data[0].embedding)
             except Exception as e:
-                logger.error(f"Error embedding combo {idx+1} with Gemini: {e}")
-                print(f"❌ Error embedding combo {idx+1} with Gemini: {e}")
-                vectors.append([0.0] * 3072)  # fallback vector size
+                logger.error(f"Error embedding combo {idx+1} with OpenAI: {e}")
+                print(f"❌ Error embedding combo {idx+1} with OpenAI: {e}")
+                vector_size = 1536 if "3-small" in model_key else 3072
+                vectors.append([0.0] * vector_size)  # fallback vector size
     else:
-        print("⚡ Generating embeddings with Google text-embedding-004...")
-        vectors = model.embed_documents(texts)
+        # Legacy support for other models
+        print("⚡ Generating embeddings with legacy model...")
+        vectors = [[0.0] * 1536] * len(texts)  # Fallback
     
     logger.info(f"Finished embedding. Storing to Qdrant...")
     print(f"💾 Finished embedding. Storing to Qdrant...")
@@ -382,7 +387,7 @@ def run_combo_embedding_pipeline(
     combo_file: Optional[str] = None,
     collection_name: str = "tianlong_marketing",
     domain: str = "restaurant_menu",
-    model_name: str = "text-embedding-004",
+    model_name: str = "text-embedding-3-small",
     namespace: str = "images",
 ):
     """
@@ -442,7 +447,7 @@ def parse_args():
     parser.add_argument("--collection", default="tianlong_marketing", help="Qdrant collection name")
     parser.add_argument("--domain", default="restaurant_menu", help="Domain metadata tag")
     parser.add_argument("--namespace", default="images", help="Namespace for storage")
-    parser.add_argument("--model", default="text-embedding-004", help="Embedding model alias")
+    parser.add_argument("--model", default="text-embedding-3-small", help="Embedding model alias")
     return parser.parse_args()
 
 

@@ -5,6 +5,7 @@ from langchain_groq import ChatGroq
 from src.graphs.core.adaptive_rag_graph import (
     compile_adaptive_rag_graph_with_checkpointing,
     create_adaptive_rag_graph,
+    get_skip_grade_documents_from_env,  # Import environment helper
 )
 from src.database.qdrant_store import QdrantStore
 from src.tools.accounting_tools import accounting_tools  # Reuse generic tools; replace with marketing tools if available
@@ -49,6 +50,7 @@ uncompiled_graph = create_adaptive_rag_graph(
     retriever=retriever,
     tools=domain_tools,  # NEW: Use combined tools
     DOMAIN=MARKETING_DOMAIN,
+    skip_grade_documents=get_skip_grade_documents_from_env(),  # Use environment variable
 )
 
 

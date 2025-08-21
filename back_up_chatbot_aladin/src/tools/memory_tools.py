@@ -1,131 +1,34 @@
 from langchain_core.tools import tool
 from typing import Dict, List
-from qdrant_client import QdrantClient
-from qdrant_client.http.models import Distance, VectorParams, PointStruct
-import google.generativeai as genai
-from google.generativeai import types
 import uuid
 import os
 from dotenv import load_dotenv
 
+# Import QdrantStore instead of defining our own
+from src.database.qdrant_store import qdrant_store
+
 load_dotenv()
 
-# Khởi tạo clients
-QDRANT_HOST = os.getenv("QDRANT_HOST", "69.197.187.234")
-QDRANT_PORT = int(os.getenv("QDRANT_PORT", "6333"))
-USER_MEMORY_COLLECTION = os.getenv("USER_MEMORY_COLLECTION", "tianlong_marketing")
-USER_MEMORY_NAMESPACE = os.getenv("USER_MEMORY_NAMESPACE", "user_ref")
-
-qdrant_client = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT)
-# Configure the Google GenAI library directly
-genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
-embedding_model = os.getenv("EMBEDDING_MODEL", "gemini-embedding-exp-03-07")
-
-# Gemini embedding size là 768
-EXPECTED_VECTOR_SIZE = 768
+# Configuration constants
+USER_MEMORY_NAMESPACE = os.getenv("USER_MEMORY_NAMESPACE", "user_memory")
 
 
 class UserMemoryStore:
     """
-    Store and manage personalized user memory in Qdrant vector database.
+    Store and manage personalized user memory using QdrantStore.
 
     This class provides methods to save and retrieve user preferences and profile information
     as vector embeddings, enabling personalized recommendations and context-aware responses.
     """
 
-    def __init__(self, qdrant_client: QdrantClient, collection_name: str):
+    def __init__(self, qdrant_store):
         """
         Initialize the UserMemoryStore.
 
         Args:
-            qdrant_client: An instance of QdrantClient for database operations.
-            collection_name: The name of the Qdrant collection to use for storing user memory.
+            qdrant_store: An instance of QdrantStore for database operations.
         """
-        self.qdrant_client = qdrant_client
-        self.collection_name = collection_name
-        self.vector_size = EXPECTED_VECTOR_SIZE
-        self._ensure_correct_collection()
-
-    def _get_embedding(self, text: str) -> List[float]:
-        """
-        Generate an embedding vector for the given text using the Gemini embedding model.
-
-        Args:
-            text: The input text to embed.
-
-        Returns:
-            A list of floats representing the embedding vector.
-            If embedding fails, returns a zero vector of the expected size.
-        """
-        try:
-            result = genai.embed_content(
-                model=embedding_model,
-                content=text,
-                task_type="SEMANTIC_SIMILARITY",
-            )
-            embedding = result["embedding"]
-            if len(embedding) != self.vector_size:
-                print(
-                    f"⚠️ Warning: Expected vector size {self.vector_size}, got {len(embedding)}"
-                )
-            return embedding
-        except Exception as e:
-            print(f"Error generating embedding: {e}")
-            return [0.0] * self.vector_size
-
-    def _ensure_correct_collection(self):
-        """
-        Ensure that the Qdrant collection exists and has the correct vector size.
-
-        If the collection does not exist, it will be created.
-        If the collection exists but has the wrong vector size, it will be recreated.
-        """
-        try:
-            print(f"self.collection_name:{self.collection_name}")
-            collection_info = self.qdrant_client.get_collection(self.collection_name)
-            current_size = collection_info.config.params.vectors.size
-
-            if current_size != self.vector_size:
-                print(
-                    f"❌ Collection has incorrect vector size: {current_size}, expected: {self.vector_size}"
-                )
-                print("🔧 Recreating collection with correct size...")
-                self._recreate_collection()
-            else:
-                print(f"✅ Collection has correct vector size: {current_size}")
-
-        except Exception as e:
-            if "not found" in str(e).lower():
-                print(f"Collection not found, creating new with size {self.vector_size}")
-                self._create_collection()
-            else:
-                print(f"Error checking collection: {e}")
-
-    def _create_collection(self):
-        """
-        Create a new Qdrant collection with the expected vector size.
-        """
-        self.qdrant_client.create_collection(
-            collection_name=self.collection_name,
-            vectors_config=VectorParams(
-                size=self.vector_size, distance=Distance.COSINE
-            ),
-        )
-        print(
-            f"✅ Created collection '{self.collection_name}' with vector size: {self.vector_size}"
-        )
-
-    def _recreate_collection(self):
-        """
-        Delete and recreate the Qdrant collection to ensure correct vector size.
-        """
-        try:
-            self.qdrant_client.delete_collection(self.collection_name)
-            print(f"🗑️ Deleted old collection '{self.collection_name}'")
-        except Exception as e:
-            print(f"Could not delete old collection: {e}")
-
-        self._create_collection()
+        self.qdrant_store = qdrant_store
 
     def save_user_preference(
         self, user_id: str, preference_type: str, content: str, context: str = ""
@@ -149,25 +52,25 @@ class UserMemoryStore:
         if context:
             text_to_embed += f" Context: {context}"
 
-        embedding = self._get_embedding(text_to_embed)
-        preference_id = str(uuid.uuid4())
+        # Create unique key for this user preference
+        preference_key = f"user_{user_id}_pref_{str(uuid.uuid4())[:8]}"
+        
+        # Prepare data to store
+        preference_data = {
+            "user_id": user_id,
+            "preference_type": preference_type,
+            "content": content,
+            "context": context,
+            "text_content": text_to_embed,
+            "timestamp": str(uuid.uuid1().time),  # Simple timestamp
+        }
 
-        # Store in collection with a namespace tag to isolate user memory
-        point = PointStruct(
-            id=preference_id,
-            vector=embedding,
-            payload={
-                "namespace": USER_MEMORY_NAMESPACE,
-                "user_id": user_id,
-                "preference_type": preference_type,
-                "content": content,
-                "context": context,
-                "text_content": text_to_embed,
-                "timestamp": str(uuid.uuid1().time),  # Simple timestamp
-            },
+        # Store using QdrantStore
+        self.qdrant_store.put(
+            namespace=USER_MEMORY_NAMESPACE,
+            key=preference_key,
+            value=preference_data
         )
-
-        self.qdrant_client.upsert(collection_name=self.collection_name, points=[point])
 
         return f"Saved {preference_type} for user {user_id}"
 
@@ -193,33 +96,32 @@ class UserMemoryStore:
         if query_context:
             search_query += f" {query_context}"
 
-        query_embedding = self._get_embedding(search_query)
-
-        # Filter by namespace and user_id to read back only personalized memory
-        search_results = self.qdrant_client.search(
-            collection_name=self.collection_name,
-            query_vector=query_embedding,
-            limit=k,
-            with_payload=True,
-            query_filter={
-                "must": [
-                    {"key": "namespace", "match": {"value": USER_MEMORY_NAMESPACE}},
-                    {"key": "user_id", "match": {"value": user_id}},
-                ]
-            },
+        # Search using QdrantStore
+        search_results = self.qdrant_store.search(
+            namespace=USER_MEMORY_NAMESPACE,
+            query=search_query,
+            limit=k
         )
 
         if not search_results:
             return "No personalized information found for this user."
 
+        # Filter results to only include this user's data
+        user_results = []
+        for key, value, score in search_results:
+            if isinstance(value, dict) and value.get("user_id") == user_id:
+                user_results.append((key, value, score))
+
+        if not user_results:
+            return "No personalized information found for this user."
+
         profile_parts = []
-        for result in search_results:
-            payload = result.payload
+        for key, value, score in user_results:
             profile_parts.append(
-                f"- {payload['preference_type']}: {payload['content']}"
+                f"- {value['preference_type']}: {value['content']}"
                 + (
-                    f" (Context: {payload['context']})"
-                    if payload.get("context")
+                    f" (Context: {value['context']})"
+                    if value.get("context")
                     else ""
                 )
             )
@@ -227,8 +129,8 @@ class UserMemoryStore:
         return "User's personalized information:\n" + "\n".join(profile_parts)
 
 
-# Initialize the user memory store
-user_memory_store = UserMemoryStore(qdrant_client, USER_MEMORY_COLLECTION)
+# Initialize the user memory store using the global qdrant_store instance
+user_memory_store = UserMemoryStore(qdrant_store)
 
 
 @tool
