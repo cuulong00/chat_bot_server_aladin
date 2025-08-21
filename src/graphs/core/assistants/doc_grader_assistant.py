@@ -25,67 +25,36 @@ class DocGraderAssistant(BaseAssistant):
     """
     An assistant that grades the relevance of a document to the user's question.
     """
-    def __init__(self, llm: Runnable, domain_context: str):
-        logging.info(f"🔍 DocGraderAssistant.__init__ - domain_context: {domain_context}")
+    def __init__(self, llm: Runnable):
+        logging.info(f"🔍 DocGraderAssistant.__init__ - simplified prompt")
         logging.info(f"🔍 DocGraderAssistant.__init__ - llm type: {type(llm)}")
         
         prompt = ChatPromptTemplate.from_messages(
             [
                 (
                 "system",
-                # ROLE DEFINITION
-                "You are a document relevance expert. Evaluate if documents are relevant to user questions.\n\n"
+                "You are a document relevance classifier.\n\n"
                 
-                # CORE EVALUATION CRITERIA
-                "📋 RELEVANCE CRITERIA:\n"
-                "✅ RELEVANT (yes) when document contains:\n"
-                "• Direct information answering the question\n"
-                "• Related topics/concepts to the question\n"
-                "• Important keywords matching the query\n"
-                "• Useful context for the conversation\n\n"
+                "TASK: Determine if the document can help answer the user's question.\n\n"
                 
-                # DOMAIN-SPECIFIC RULES - PROMOTION PRIORITY
-                "🎯 PROMOTION QUERY MATCHING (HIGHEST PRIORITY):\n"
-                "**IF query contains ANY promotion keywords ('ưu đãi', 'khuyến mãi', 'chương trình', 'giảm giá', 'combo', 'tặng', 'promotion', 'discount'):**\n"
-                "• Documents with 'ưu đãi', 'khuyến mãi', 'chương trình', 'combo', 'tặng', 'thành viên', 'giảm' = **ALWAYS YES**\n"
-                "• Documents mentioning prices, discounts, offers = **ALWAYS YES**\n"
-                "• Menu documents (may contain combo/promotion info) = **YES**\n"
-                "• Restaurant info documents (may mention offers) = **YES**\n"
-                "• **FOR PROMOTION QUERIES: When in doubt → YES**\n\n"
+                "RULES:\n"
+                "• Document directly answers the question → YES\n"
+                "• Document contains relevant keywords/concepts → YES\n"
+                "• Document provides useful background context → YES\n"
+                "• Document is completely unrelated → NO\n\n"
                 
-                "🎯 OTHER DOMAIN-SPECIFIC MATCHING:\n"
-                "• Menu queries ('ảnh menu', 'món ăn', 'giá cả') → menu/combo/food docs = YES\n"
-                "• Booking queries ('đặt bàn', 'ship') → booking/delivery docs = YES\n"
-                "• Delivery queries ('giao hàng', 'ship mang về', 'delivery') → shipping docs = YES\n"
-                "• Branch queries ('chi nhánh', 'cơ sở', 'địa chỉ', location names) → location docs = YES\n"
-                "• Any location keywords (hà nội, tp.hcm, vincom, times city) → branch info = YES\n"
-                "• **Restaurant info, brand story, menu info → potentially relevant for most restaurant queries = LEAN YES**\n\n"
+                "When in doubt, choose YES (better to include than exclude).\n\n"
                 
-                # DECISION RULES - AGGRESSIVE PROMOTION MATCHING
-                "⚖️ DECISION RULES:\n"
-                "• **PROMOTION QUERIES: BIAS HEAVILY TOWARD YES** - Any restaurant document may contain relevant promotion info\n"
-                "• **GENERAL QUERIES: BIAS TOWARD RELEVANCE** - When uncertain but potentially useful → YES\n"
-                "• Restaurant context: most restaurant docs can help answer restaurant questions\n"
-                "• Only choose NO when document is completely off-topic (non-restaurant content)\n"
-                "• Context understanding > strict keyword matching\n\n"
-                
-                # CURRENT CONTEXT
-                "📅 Context: {current_date} | Domain: {domain_context} | Conversation: {conversation_summary}\n\n"
-                
-                "**OUTPUT:** 'yes' or 'no' only"
+                "OUTPUT: Only 'yes' or 'no'"
             ),
             ("human", 
-             "**Document:** {document}\n"
-             "**Question:** {messages}\n"
-             "**Task:** Is document relevant to question? (yes/no)"
+             "Document: {document}\n"
+             "Question: {messages}\n"
+             "Relevant?"
             ),
             ]
-        ).partial(domain_context=domain_context, current_date=datetime.now())
-        
-        logging.info(f"🔍 DocGraderAssistant.__init__ - prompt created with partial values")
-
+        )
         runnable = prompt | llm.with_structured_output(GradeDocuments)
-        logging.info(f"🔍 DocGraderAssistant.__init__ - runnable created with structured output")
         
         super().__init__(runnable)
         logging.info(f"🔍 DocGraderAssistant.__init__ - completed")

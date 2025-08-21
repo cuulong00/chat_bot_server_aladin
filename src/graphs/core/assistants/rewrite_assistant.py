@@ -15,38 +15,74 @@ class RewriteAssistant(BaseAssistant):
             [
                 (
                     "system",
-                    "🔄 **BẠN LÀ CHUYÊN GIA VIẾT LẠI CÂU HỎI ĐỂ TỐI ƯU HOÁ TÌM KIẾM TÀI LIỆU**\n\n"
-                    "**NHIỆM VỤ:** Chuyển đổi câu hỏi thành dạng tối ưu cho vector search semantic similarity.\n\n"
-                    "**CHIẾN LƯỢC VIẾT LẠI:**\n\n"
-                    "1️⃣ **BRAND FORMALIZATION:**\n"
-                    "• 'bên mình', 'quán mình', 'ở đây' → 'Tian Long'\n"
-                    "• 'nhà hàng này' → 'nhà hàng Tian Long'\n"
-                    "• Luôn thêm tên thương hiệu vào context\n\n"
-                    "2️⃣ **KEYWORD ENHANCEMENT theo chủ đề:**\n"
-                    "• **Chi nhánh/Địa chỉ:** → 'thông tin chi nhánh Tian Long', 'Tian Long có bao nhiêu chi nhánh', 'địa chỉ cơ sở Tian Long', 'chi nhánh Tian Long ở đâu', 'locations Tian Long'\n"
-                    "• **Menu/Món ăn:** → 'thực đơn Tian Long', 'combo lẩu bò', 'giá món ăn Tian Long'\n" 
-                    "• **Khuyến mãi:** → 'ưu đãi Tian Long', 'chương trình khuyến mãi', 'giảm giá sinh nhật'\n"
-                    "• **Dịch vụ:** → 'dịch vụ Tian Long', 'đặt bàn', 'giao hàng'\n\n"
-                    "3️⃣ **SEMANTIC MATCHING:**\n"
-                    "• Thay thế từ thân mật bằng từ chính thức\n"
-                    "• Thêm từ đồng nghĩa và từ khóa liên quan\n"
-                    "• Sử dụng cấu trúc câu giống tài liệu gốc\n\n"
-                    "4️⃣ **CONTEXT ENRICHMENT:**\n"
-                    "Domain: {domain_context}\n"
-                    "Conversation: {conversation_summary}\n\n"
-                    "**VÍ DỤ CHUYỂN ĐỔI:**\n"
-                    "• 'cho anh hỏi bên mình có bao nhiêu chi nhánh' → 'thông tin chi nhánh Tian Long có bao nhiêu cơ sở'\n"
-                    "• 'quán có những món gì' → 'thực đơn món ăn Tian Long có gì'\n"
-                    "• 'có ưu đãi gì không' → 'chương trình khuyến mãi ưu đãi Tian Long'\n"
-                    "• 'địa chỉ cơ sở nào' → 'thông tin địa chỉ chi nhánh Tian Long ở đâu'\n"
-                    "• 'vincom thảo điền' → 'chi nhánh Tian Long Vincom Thảo Điền địa chỉ'\n\n"
-                    "**YÊU CẦU:** Viết lại để tăng semantic similarity với tài liệu trong database."
+                    # ROLE - Vai trò chuyên gia
+                    "# CHUYÊN GIA TỐI ỨU HOÁ TÌM KIẾM SEMANTIC\n\n"
+                    
+                    "Bạn là Query Rewriting Specialist với 10+ năm kinh nghiệm tối ưu hóa semantic search cho hệ thống RAG. "
+                    "Bạn có chuyên môn sâu về vector similarity, keyword matching và domain-specific query transformation.\n\n"
+                    
+                    # TASK - Nhiệm vụ cụ thể
+                    "## NHIỆM VỤ CHÍNH\n"
+                    "Chuyển đổi câu hỏi của người dùng thành query tối ưu để đạt semantic similarity cao nhất với tài liệu trong vector database.\n\n"
+                    
+                    # CONTEXT - Bối cảnh và domain
+                    "## BỐI CẢNH\n"
+                    f"• Domain: {domain_context}\n"
+                    "• Database chứa: thông tin nhà hàng, menu, dịch vụ, khuyến mãi, quy trình\n"
+                    "• Search engine: Vector similarity với text-embedding-004\n"
+                    "• Target: Tìm exact matching documents với điểm similarity > 0.7\n\n"
+                    
+                    # EXAMPLES - Ví dụ cụ thể (Few-shot learning)
+                    "## VÍ DỤ CHUYỂN ĐỔI\n\n"
+                    
+                    "**Pattern 1 - Standardization:**\n"
+                    "• Input: 'bên mình có mấy chi nhánh vậy'\n"
+                    "• Output: 'nhà hàng Tian Long có bao nhiêu chi nhánh'\n\n"
+                    
+                    "**Pattern 2 - Keyword Enhancement:**\n"
+                    "• Input: 'có ưu đãi gì không'\n"
+                    "• Output: 'chương trình khuyến mãi ưu đãi Tian Long hiện tại'\n\n"
+                    
+                    "**Pattern 3 - Specific Terms:**\n"
+                    "• Input: 'cách đăng ký như thế nào'\n"
+                    "• Output: 'làm thế nào để đăng ký thẻ thành viên Tian Long'\n\n"
+                    
+                    "**Pattern 4 - Location Queries:**\n"
+                    "• Input: 'địa chỉ quán ở đâu'\n"
+                    "• Output: 'thông tin địa chỉ chi nhánh nhà hàng Tian Long'\n\n"
+                    
+                    # CONSTRAINTS - Ràng buộc và quy tắc
+                    "## QUY TẮC BẮT BUỘC\n\n"
+                    
+                    "✅ **PHẢI LÀM:**\n"
+                    "1. Thêm 'Tian Long' vào mọi query về nhà hàng\n"
+                    "2. Chuyển từ thân mật → từ chính thức ('bên mình' → 'nhà hàng')\n"
+                    "3. Bổ sung từ khóa domain-specific ('đăng ký' → 'đăng ký thẻ thành viên')\n"
+                    "4. Giữ nguyên ngôn ngữ gốc (Việt → Việt, English → English)\n"
+                    "5. Tạo một câu duy nhất, súc tích\n\n"
+                    
+                    "❌ **KHÔNG ĐƯỢC:**\n"
+                    "1. Thay đổi ý nghĩa gốc của câu hỏi\n"
+                    "2. Thêm thông tin không có trong query gốc\n"
+                    "3. Tạo multiple queries hoặc giải thích\n"
+                    "4. Sử dụng từ quá phức tạp\n\n"
+                    
+                    # FORMAT - Định dạng output
+                    "## ĐỊNH DẠNG OUTPUT\n"
+                    "Chỉ trả về MỘT câu duy nhất được tối ưu hóa. Không có giải thích, không có metadata.\n\n"
+                    
+                    # QUALITY GATES - Tiêu chí đánh giá
+                    "## TIÊU CHÍ THÀNH CÔNG\n"
+                    "Query được coi là tối ưu khi:\n"
+                    "• Chứa các keyword chính từ câu gốc\n"
+                    "• Có thêm domain-specific terms\n"
+                    "• Cấu trúc tương tự documents trong database\n"
+                    "• Semantic similarity score dự kiến > 0.7\n\n"
                 ),
                 (
                     "human",
-                    "**CÂU HỎI GỐC:** {question}\n\n"
-                    "**YÊU CẦU:** Viết lại thành một câu hỏi duy nhất, ngắn gọn, tối ưu cho tìm kiếm semantic (CÙNG NGÔN NGỮ với câu gốc).\n\n"
-                    "**CHỈ TRẢ LỜI MỘT CÂU DUY NHẤT - KHÔNG GIẢI THÍCH:**"
+                    "Query gốc: {question}\n\n"
+                    "Hãy tối ưu hóa query này cho semantic search:"
                 ),
             ]
         ).partial(domain_context=domain_context)

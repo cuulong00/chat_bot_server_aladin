@@ -390,8 +390,8 @@ def parse_args():
     parser.add_argument("--urls", nargs="*", default=None, help="List of URLs to load")
     parser.add_argument("--collection", default="tianlong_marketing", help="Qdrant collection name")
     parser.add_argument("--domain", default="marketing", help="Domain metadata tag")
-    #parser.add_argument("--namespace", default="marketing", help="Namespace for storage")
-    parser.add_argument("--namespace", default="faq", help="Namespace for storage")
+    parser.add_argument("--namespace", default="marketing", help="Namespace for storage")
+    #parser.add_argument("--namespace", default="faq", help="Namespace for storage")
     #parser.add_argument("--namespace", default="images", help="Namespace for storage")
     parser.add_argument("--model", default="text-embedding-004", help="Embedding model alias")
     parser.add_argument("--chunk-size", type=int, default=800)
@@ -421,8 +421,8 @@ if __name__ == "__main__":
 
     # Default file if none provided
     #default_file = PROJECT_ROOT / "data" / "menu_combos_for_embedding.json"
-    #default_file = PROJECT_ROOT / "data" / "marketing_data.txt"
-    default_file = PROJECT_ROOT / "data" / "FAQ.txt"
+    default_file = PROJECT_ROOT / "data" / "marketing_data.txt"
+    #default_file = PROJECT_ROOT / "data" / "FAQ.txt"
     resolved_files: List[str] = []
     if args.files:
         for f in args.files:

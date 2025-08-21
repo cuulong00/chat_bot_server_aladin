@@ -349,7 +349,7 @@ def create_adaptive_rag_graph(
     router_assistant = RouterAssistant(llm_router, domain_context, domain_instructions)
 
     # 2. Document Grader Assistant
-    doc_grader_assistant = DocGraderAssistant(llm_grade_documents, domain_context)
+    doc_grader_assistant = DocGraderAssistant(llm_grade_documents)
 
     # 3. Rewrite Assistant
     rewrite_assistant = RewriteAssistant(llm_rewrite, domain_context)
@@ -452,12 +452,7 @@ def create_adaptive_rag_graph(
             rewrite_count = state.get("rewrite_count", 0)
             
             # Progressive search strategy: start focused, then expand
-            if search_attempts == 0 and rewrite_count == 0:
-                # First attempt: use higher limit to ensure combo documents are included
-                limit = 10  # Increased from 12 to capture combo documents
-            else:
-                # Later attempts or rewrites: cast even wider net
-                limit = 10  # Increased to ensure comprehensive coverage
+            limit = 10
             
             logging.info(f"🎯 Collection-wide search strategy")
             logging.info(f"   Search attempts: {search_attempts}, Rewrites: {rewrite_count}")
@@ -516,24 +511,7 @@ def create_adaptive_rag_graph(
                 context=f"Multi-namespace retrieve failure for question: {question[:100]}",
                 user_id=user_id
             )
-            
-            # Fallback to basic single-namespace search on error
-            try:
-                logging.warning(f"⚠️ Falling back to basic search in default namespace")
-                default_namespace = DOMAIN.get("namespace", "marketing")
-                documents = retriever.search(namespace=default_namespace, query=question, limit=10)
-                cleaned_documents = clean_documents_remove_embeddings(documents)
-                
-                return {
-                    "documents": cleaned_documents,
-                    "search_attempts": state.get("search_attempts", 0) + 1,
-                }
-            except Exception as fallback_e:
-                logging.error(f"❌ Fallback search also failed: {fallback_e}")
-                return {
-                    "documents": [],
-                    "search_attempts": state.get("search_attempts", 0) + 1,
-                }
+           
 
     def grade_documents_node(state: RagState, config: RunnableConfig):
         logging.info("---NODE: GRADE DOCUMENTS---")
@@ -679,7 +657,10 @@ def create_adaptive_rag_graph(
         logging.info(f"   ❓ Current question: {current_question}")
         logging.info(f"   📄 Documents count: {documents_count}")
         logging.info(f"   📊 All state keys: {list(state.keys())}")
-        
+        context = state.get("context")
+        summarized_messages = state.get("summarized_messages")
+        print(f"generate->context:{context}")
+        print(f"generate->summarized_messages:{summarized_messages}")
         # Log documents details that GENERATE will receive
         documents = state.get("documents", [])
         if documents:
