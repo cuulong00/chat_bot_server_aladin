@@ -49,8 +49,11 @@ class RouterAssistant(BaseAssistant):
                     "• If both booking details and menu/food keywords appear → choose 'vectorstore'.\n"
                     "• If conversation summary indicates the user is asking about món/menu/gợi ý → choose 'vectorstore' even if the current turn includes counts/time.\n"
                     "• Never route to 'direct_answer' for restaurant knowledge that should be grounded in documents.\n\n"
-                   
-                    "Return ONLY one of: retrieve | web_search | generate_direct | process_document. No explanations.\n",
+                    "CONVERSATION CONTEXT SUMMARY (may strengthen decision toward vectorstore):\n{conversation_summary}\n\n"
+                    "User info:\n<UserInfo>\n{user_info}\n</UserInfo>\n"
+                    "User profile:\n<UserProfile>\n{user_profile}\n</UserProfile>\n\n"
+                    "Domain instructions (reinforce vectorstore bias):\n{domain_instructions}\n\n"
+                    "Return ONLY one of: vectorstore | web_search | direct_answer | process_document. No explanations.\n",
                 ),
                 ("human", "{messages}"),
             ]
@@ -61,8 +64,3 @@ class RouterAssistant(BaseAssistant):
         )
         runnable = prompt | llm.with_structured_output(RouteQuery)
         super().__init__(runnable)
-
-        # "CONVERSATION CONTEXT SUMMARY (may strengthen decision toward vectorstore):\n{conversation_summary}\n\n"
-        #            "User info:\n<UserInfo>\n{user_info}\n</UserInfo>\n"
-        #           "User profile:\n<UserProfile>\n{user_profile}\n</UserProfile>\n\n"
-        #            "Domain instructions (reinforce vectorstore bias):\n{domain_instructions}\n\n"
