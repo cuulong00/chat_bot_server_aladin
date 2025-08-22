@@ -84,7 +84,7 @@ class QdrantStore:
         except Exception:
             # Collection doesn't exist, create it
             print(f"🔨 Creating collection '{self.collection_name}'...")
-            self._create_collection()
+            #self._create_collection()
     
     def _create_collection(self) -> None:
         """Create new collection."""

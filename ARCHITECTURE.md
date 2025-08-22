@@ -70,6 +70,8 @@ Note for Windows users:
 
 .\.venv\Scripts\python.exe scripts\console_facebook_chat.py --base http://127.0.0.1:2024 --psid 24769757262629049 --app-secret "3a382791ab377abc0e622367b516e802"
 
+tranduong24h@gmail.com
 
+.\.venv-1\bin\python.exe scripts\console_facebook_chat.py --base http://127.0.0.1:2024 --psid 24769757262629049 --app-secret 3a382791ab377abc0e622367b51
 
-.\.venv\Scripts\python.exe scripts\console_facebook_chat.py --base http://127.0.0.1:2024 --psid 24769757262629049 --app-secret 3a382791ab377abc0e622367b516e802
+python scripts/console_facebook_chat.py --base http://127.0.0.1:2024 --psid 24769757262629049 --app-secret 3a382791ab377abc0e622367b516e802
